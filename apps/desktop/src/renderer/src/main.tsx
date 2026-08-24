@@ -77,6 +77,9 @@ function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [activeSessionId, setActiveSessionId] = useState("");
   const [draftSessionId, setDraftSessionId] = useState("");
+  const [pendingLabel, setPendingLabel] = useState("");
+  const [notice, setNotice] = useState("");
+  const [appError, setAppError] = useState("");
 
   const groupedModels = useMemo(() => {
     return models.reduce((groups, model) => {
@@ -85,8 +88,11 @@ function App() {
     }, new Map<string, ModelItem[]>());
   }, [models]);
 
-  const showError = (error: unknown) =>
-    dispatch({ type: "error", error: error instanceof Error ? error.message : String(error) });
+  const showError = (error: unknown) => {
+    const message = error instanceof Error ? error.message : String(error);
+    dispatch({ type: "error", error: message });
+    setAppError(`Something went wrong. ${message} Try again.`);
+  };
 
   const refreshSessions = async (): Promise<void> => {
     const remoteSessions = (await window.applePi.session.list()) as SessionItem[];
@@ -122,7 +128,10 @@ function App() {
     void refreshSessions();
   };
 
-  const snapshotOp = async (operation: Promise<SessionSnapshot>): Promise<void> => {
+  const snapshotOp = async (operation: Promise<SessionSnapshot>, label = "Updating session…"): Promise<void> => {
+    setPendingLabel(label);
+    setAppError("");
+    setNotice("");
     try {
       const snapshot = await operation;
       dispatch({ type: "snapshot", snapshot });
@@ -130,10 +139,15 @@ function App() {
       await refreshSessions();
     } catch (error) {
       showError(error);
+    } finally {
+      setPendingLabel("");
     }
   };
 
   const openWorkspace = async (path?: string): Promise<void> => {
+    setPendingLabel(path ? "Opening workspace…" : "Choosing workspace…");
+    setAppError("");
+    setNotice("");
     try {
       const result = path
         ? await window.applePi.workspace.select(path)
@@ -141,6 +155,8 @@ function App() {
       applyWorkspace(result);
     } catch (error) {
       showError(error);
+    } finally {
+      setPendingLabel("");
     }
   };
 
@@ -182,7 +198,7 @@ function App() {
     }
 
     setDraftSessionId("");
-    await snapshotOp(window.applePi.session.select(session.path));
+    await snapshotOp(window.applePi.session.select(session.path), "Opening session…");
   };
 
   const send = async (): Promise<void> => {
@@ -201,19 +217,25 @@ function App() {
 
   const changeDefaultModel = async (value: string): Promise<void> => {
     if (!value) return;
+    setPendingLabel("Saving default model…");
+    setAppError("");
+    setNotice("");
     try {
       setCatalog(await window.applePi.model.setDefault(parseModelKey(value)));
+      setNotice("Default model saved");
     } catch (error) {
       showError(error);
+    } finally {
+      setPendingLabel("");
     }
   };
 
   return (
-    <div className="shell">
+    <div className="shell" aria-busy={Boolean(pendingLabel)}>
       <a className="skip-link" href="#conversation">Skip to conversation</a>
       <aside className="sidebar">
         <div className="brand"><span className="brand-mark">π</span><span>Apple Pi<small>Local agent</small></span></div>
-        <button className="workspace" onClick={() => void openWorkspace()}><FolderInput size={16} /><span>Open workspace</span><kbd>⌘O</kbd></button>
+        <button className="workspace" onClick={() => void openWorkspace()}><FolderInput size={17} /><span>Open Workspace</span><kbd>⌘O</kbd></button>
         <div className="section-title"><span>Workspaces</span><small>{catalog.workspaces.length}</small></div>
         <nav aria-label="Workspaces">
           {catalog.workspaces.map((workspace) => (
@@ -221,6 +243,7 @@ function App() {
               key={workspace.path}
               title={workspace.path}
               className={workspacePath === workspace.path ? "selected" : ""}
+              aria-current={workspacePath === workspace.path ? "page" : undefined}
               onClick={() => void openWorkspace(workspace.path)}
             >
               <span className="aside-icon"><Folder size={15} /> <span>{workspace.name}</span></span>
@@ -238,6 +261,7 @@ function App() {
                 <button
                   key={session.id}
                   className={activeSessionId === session.id ? "selected" : ""}
+                  aria-current={activeSessionId === session.id ? "page" : undefined}
                   onClick={() => void openSession(session)}
                 >
                   <span className="session-name"><MessageSquare size={13} />{session.persisted ? session.name : "Untitled session"}</span>
@@ -266,30 +290,32 @@ function App() {
         </header>
         {settingsOpen ? (
           <section className="settings">
-            <div className="settings-intro"><span className="settings-icon"><Settings2 size={22} /></span><div><h1>Make Apple Pi yours</h1><p>Choose how new sessions begin. Changes are saved automatically.</p></div></div>
+            <div className="settings-intro"><span className="settings-icon"><Settings2 size={22} /></span><div><h1>Make Apple Pi Yours</h1><p>Choose how new sessions begin. Changes are saved automatically.</p></div></div>
             <div className="settings-card">
-              <div><h2>Default model</h2><p>Used when you create a workspace or begin a new session. You can still switch models from the composer.</p></div>
+              <div><h2>Default Model</h2><p>Used when you create a workspace or begin a new session. You can still switch models from the composer.</p></div>
               <div className="settings-control"><label htmlFor="default-model">Model</label><ModelSelect id="default-model" models={groupedModels} value={catalog.defaultModel ? modelKey(catalog.defaultModel) : ""} onChange={(value) => void changeDefaultModel(value)} emptyLabel="Use pi default" /></div>
             </div>
           </section>
         ) : (
           <>
-            <section className="timeline" id="conversation" aria-label="Conversation" tabIndex={-1}>
-              {!state.opened && <div className="empty"><div className="orb"><Sparkles size={26} /></div><span className="empty-kicker">PRIVATE · LOCAL · YOURS</span><h1>Build with an agent<br />that lives on your Mac.</h1><p>Open a workspace to start a focused coding session. Your projects and transcripts stay on this machine.</p><button onClick={() => void openWorkspace()}><FolderInput size={16} /> Open a workspace</button></div>}
+            <section className="timeline" id="conversation" aria-label="Conversation" role="log" aria-live="polite" tabIndex={-1}>
+              {!state.opened && <div className="empty"><div className="orb"><Sparkles size={26} /></div><span className="empty-kicker">PRIVATE · LOCAL · YOURS</span><h1>Build with an agent that lives on your Mac.</h1><p>Open a workspace to start a focused coding session. Your projects and transcripts stay on this machine.</p><button onClick={() => void openWorkspace()}><FolderInput size={17} /> Open a Workspace</button></div>}
               {state.messages.map((message, index) => {
                 const text = textOf(message);
                 return (
                   <article key={index} className={`message ${(message as { role?: string }).role ?? "event"}`}>
-                    <label><span>{(message as { role?: string }).role === "user" ? "You" : "Pi"}</span></label>
+                    <header className="message-author"><span>{(message as { role?: string }).role === "user" ? "You" : "Pi"}</span></header>
                     <div className="message-content" dangerouslySetInnerHTML={markdownToHtml(text)} />
                   </article>
                 );
               })}
-              {state.error && <div className="error">{state.error}</div>}
+              {state.error && <div className="error" role="alert">{state.error}</div>}
             </section>
             <footer className="composer">
               <div className="input-toolbar">
                 <textarea
+                  name="message"
+                  autoComplete="off"
                   disabled={!state.opened || state.running}
                   value={draft}
                   onChange={(event) => setDraft(event.target.value)}
@@ -302,21 +328,27 @@ function App() {
                   aria-label="Message Pi"
                   placeholder={state.opened ? "Ask Pi to build, debug, or explain…" : "Open a workspace to start"}
                 />
-                <div className="composer-bottom"><div className="model-select-wrap">{state.opened && !draftSessionId ? <Sparkles size={14} /> : <CircleDashed size={14} />}<ModelSelect models={groupedModels} value={state.model?.replace("/", "::") ?? ""} onChange={(value) => void snapshotOp(window.applePi.model.setSession(parseModelKey(value)))} emptyLabel={state.opened ? "Default model" : "Select model"} disabled={!state.opened} /><ChevronDown size={13} className="select-chevron" /></div><span className="send-hint">↵ send · ⇧↵ new line</span></div>
+                <div className="composer-bottom"><div className="model-select-wrap">{state.opened && !draftSessionId ? <Sparkles size={14} /> : <CircleDashed size={14} />}<ModelSelect ariaLabel="Session model" models={groupedModels} value={state.model?.replace("/", "::") ?? ""} onChange={(value) => void snapshotOp(window.applePi.model.setSession(parseModelKey(value)))} emptyLabel={state.opened ? "Default model" : "Select model"} disabled={!state.opened} /><ChevronDown size={13} className="select-chevron" /></div><span className="send-hint">↵ send · ⇧↵ new line</span></div>
               </div>
-              <button disabled={!state.opened || !draft.trim() || state.running} onClick={() => void send()} title="Send message">
+              <button aria-label="Send message" disabled={!state.opened || !draft.trim() || state.running} onClick={() => void send()} title="Send message">
                 <Send size={16} />
               </button>
             </footer>
           </>
         )}
       </main>
+      <div className="app-feedback" aria-live="polite" aria-atomic="true">
+        {pendingLabel && <div className="app-status"><CircleDashed size={14} />{pendingLabel}</div>}
+        {!pendingLabel && notice && <div className="app-status success">{notice}</div>}
+        {appError && <div className="app-error" role="alert">{appError}</div>}
+      </div>
     </div>
   );
 }
 
 function ModelSelect({
   id,
+  ariaLabel,
   models,
   value,
   onChange,
@@ -324,6 +356,7 @@ function ModelSelect({
   disabled = false,
 }: {
   id?: string;
+  ariaLabel?: string;
   models: Map<string, ModelItem[]>;
   value: string;
   onChange(value: string): void;
@@ -331,7 +364,7 @@ function ModelSelect({
   disabled?: boolean;
 }) {
   return (
-    <select id={id} className="model-select" value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)}>
+    <select id={id} aria-label={ariaLabel} className="model-select" value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)}>
       <option value="">{emptyLabel}</option>
       {[...models].map(([provider, items]) => (
         <optgroup key={provider} label={provider}>
