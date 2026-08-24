@@ -4,11 +4,19 @@ import { describe, expect, it } from "vitest";
 const source = readFileSync(new URL("./src/main.tsx", import.meta.url), "utf8");
 const styles = readFileSync(new URL("./src/styles.css", import.meta.url), "utf8");
 const document = readFileSync(new URL("./index.html", import.meta.url), "utf8");
+const rule = (selector: string): string => {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return styles.match(new RegExp(`${escaped}\\s*\\{([^}]*)\\}`))?.[1] ?? "";
+};
 
 describe("renderer accessibility contract", () => {
   it("exposes selected navigation state to assistive technology", () => {
     expect(source).toContain('aria-current={workspacePath === workspace.path ? "page" : undefined}');
     expect(source).toContain('aria-current={activeSessionId === session.id ? "page" : undefined}');
+  });
+
+  it("keeps compact session counts meaningful to assistive technology", () => {
+    expect(source).toContain('className="sr-only">{session.messageCount === 1 ? " message" : " messages"}');
   });
 
   it("labels composer controls", () => {
@@ -32,6 +40,89 @@ describe("renderer accessibility contract", () => {
 });
 
 describe("renderer visual contract", () => {
+  it("uses a compact single-line conversation header", () => {
+    expect(source).not.toContain('state.opened ? "Active session"');
+    expect(source).toContain('className="header-context"');
+    expect(rule("main")).toContain("grid-template-rows: 48px minmax(0, 1fr) auto");
+    expect(rule(".header-title")).toContain("flex-direction: row");
+  });
+
+  it("renders ordinary messages without card chrome", () => {
+    const userMessage = rule(".message.user .message-content");
+    expect(userMessage).not.toContain("border:");
+    expect(userMessage).not.toContain("background:");
+    expect(userMessage).not.toContain("padding:");
+    expect(rule(".message")).toContain("margin: 0 0 22px");
+  });
+
+  it("renders tool activity as a disclosure row rather than a card", () => {
+    const activity = rule(".tool-activity");
+    expect(activity).not.toContain("border:");
+    expect(activity).not.toContain("background:");
+    expect(rule(".tool-icon")).not.toContain("border:");
+    expect(rule(".tool-icon")).not.toContain("background:");
+  });
+
+  it("isolates tool statuses from conversation error styling", () => {
+    expect(source).toContain('className={`tool-activity status-${item.status}`}');
+    expect(source).toContain('className="timeline-error"');
+    expect(source).not.toContain('className={`tool-activity ${item.status}`}');
+    expect(rule(".timeline-error")).toContain("border: 1px solid #75413a");
+  });
+
+  it("uses quiet local focus treatments for tool rows and the composer", () => {
+    expect(rule(".timeline:focus-visible")).toContain("box-shadow: inset 2px 0 var(--text-tertiary)");
+    expect(rule(".tool-activity summary:focus-visible")).toContain("outline: 0");
+    expect(rule(".tool-activity summary:focus-visible")).toContain("box-shadow: inset 2px 0 var(--text-secondary)");
+    expect(rule(".composer:focus-within")).toContain("outline: 0");
+    expect(rule(".composer:focus-within")).toContain("border-color: var(--text-tertiary)");
+    expect(rule(".composer:focus-within")).not.toContain("var(--accent)");
+  });
+
+  it("keeps collapsed tool activity visually subordinate to conversation text", () => {
+    expect(rule(".tool-activity")).toContain("margin: 0 0 14px");
+    expect(rule(".tool-activity summary")).toContain("padding: 2px 0");
+    expect(rule(".tool-heading strong")).toContain("color: var(--text-tertiary)");
+    expect(rule(".tool-heading strong")).toContain("font-size: 11px");
+    expect(rule(".tool-heading code")).toContain("color: var(--text-tertiary)");
+    expect(rule(".tool-status")).toContain("color: var(--text-tertiary)");
+    expect(rule(".tool-activity summary:hover .tool-heading strong")).toContain("color: var(--text-secondary)");
+    expect(rule(".tool-icon")).toContain("width: 20px");
+  });
+
+  it("keeps the composer compact and reserves emphasis for focus", () => {
+    expect(rule(".composer textarea")).toContain("min-height: 42px");
+    expect(rule(".composer")).not.toContain("box-shadow:");
+    expect(rule(".composer:focus-within")).toContain("border-color:");
+  });
+
+  it("uses compact navigation and plain settings content", () => {
+    expect(rule(".shell")).toContain("grid-template-columns: 248px minmax(0, 1fr)");
+    expect(source).toContain('className="session-meta"');
+    expect(rule(".settings-card")).not.toContain("border:");
+    expect(rule(".settings-card")).not.toContain("background:");
+  });
+
+  it("omits implementation-status copy from the sidebar", () => {
+    expect(source).not.toContain("Local agent");
+    expect(source).not.toContain("Running locally");
+    expect(styles).not.toContain(".local-status");
+  });
+
+  it("prioritizes the session title over workspace context on narrow screens", () => {
+    expect(styles).toContain(".header-context { display: none; }");
+  });
+
+  it("keeps the chat composer inside the viewport while messages scroll", () => {
+    const mainRule = rule("main");
+    const timelineRule = rule(".timeline");
+
+    expect(mainRule).toContain("min-height: 0");
+    expect(mainRule).toContain("overflow: hidden");
+    expect(timelineRule).toContain("min-height: 0");
+    expect(timelineRule).toContain("overflow: auto");
+  });
+
   it("uses a local system type stack and explicit readable type tokens", () => {
     expect(styles).not.toContain("fonts.googleapis.com");
     expect(styles).toContain("--text-body: 15px");

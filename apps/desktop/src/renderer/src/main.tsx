@@ -1,22 +1,13 @@
 import React, { useEffect, useMemo, useReducer, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { ChevronDown, CircleDashed, Folder, FolderInput, MessageSquare, Plus, Send, Settings2, Sparkles, Square, X } from "lucide-react";
+import { AlertCircle, Check, ChevronDown, CircleDashed, Folder, FolderInput, MessageSquare, Plus, Send, Settings2, Sparkles, Square, Terminal, X } from "lucide-react";
 import { initialSessionState, reduceSession, type SessionSnapshot } from "../session-state.js";
+import { toTimelineItems, type ToolItem } from "../tool-activity.js";
 import type { Catalog, ModelItem, ModelRef, SessionItem, WorkspaceOpenResult } from "../global.js";
 import "./styles.css";
 
 type UiSessionItem = SessionItem & { persisted: boolean };
 
-function textOf(message: unknown): string {
-  const record = message as { role?: string; content?: unknown };
-  if (typeof record?.content === "string") return record.content;
-  if (Array.isArray(record?.content)) {
-    return record.content
-      .map((part) => (typeof part === "string" ? part : typeof part?.text === "string" ? part.text : ""))
-      .join("");
-  }
-  return JSON.stringify(message, null, 2);
-}
 const modelKey = (model: ModelRef) => `${model.provider}::${model.modelId}`;
 const parseModelKey = (value: string): ModelRef => {
   const [provider, modelId] = value.split("::");
@@ -87,6 +78,11 @@ function App() {
       return groups;
     }, new Map<string, ModelItem[]>());
   }, [models]);
+  const timelineItems = useMemo(() => toTimelineItems(state.messages), [state.messages]);
+  const workspaceName = workspacePath.split("/").filter(Boolean).at(-1) ?? "No workspace";
+  const activeSessionName = activeSessionId
+    ? sessions.find((session) => session.id === activeSessionId)?.name ?? "New session"
+    : "Welcome to Apple Pi";
 
   const showError = (error: unknown) => {
     const message = error instanceof Error ? error.message : String(error);
@@ -234,7 +230,7 @@ function App() {
     <div className="shell" aria-busy={Boolean(pendingLabel)}>
       <a className="skip-link" href="#conversation">Skip to conversation</a>
       <aside className="sidebar">
-        <div className="brand"><span className="brand-mark">π</span><span>Apple Pi<small>Local agent</small></span></div>
+        <div className="brand"><span className="brand-mark">π</span><span>Apple Pi</span></div>
         <button className="workspace" onClick={() => void openWorkspace()}><FolderInput size={17} /><span>Open Workspace</span><kbd>⌘O</kbd></button>
         <div className="section-title"><span>Workspaces</span><small>{catalog.workspaces.length}</small></div>
         <nav aria-label="Workspaces">
@@ -265,23 +261,22 @@ function App() {
                   onClick={() => void openSession(session)}
                 >
                   <span className="session-name"><MessageSquare size={13} />{session.persisted ? session.name : "Untitled session"}</span>
-                  <small>{session.persisted ? `${session.messageCount} message${session.messageCount === 1 ? "" : "s"}` : "Draft · not saved"}</small>
+                  <small className="session-meta">{session.persisted ? <>{session.messageCount}<span className="sr-only">{session.messageCount === 1 ? " message" : " messages"}</span></> : "Draft"}</small>
                 </button>
               ))}
             </nav>
           </>
         )}
         <div className="sidebar-footer">
-          <span className="local-status"><i /> Running locally</span>
           <button className="settings-button" aria-pressed={settingsOpen} onClick={() => setSettingsOpen(!settingsOpen)}><Settings2 size={15} /> Settings</button>
         </div>
       </aside>
       <main>
         <header>
           <div className="header-title">
-            <span className="eyebrow">{settingsOpen ? "Preferences" : state.opened ? "Active session" : "Start here"}</span>
-            <strong>{settingsOpen ? "Settings" : activeSessionId ? sessions.find((session) => session.id === activeSessionId)?.name ?? "New session" : "Welcome to Apple Pi"}</strong>
-            <small title={workspacePath}>{workspacePath || "No workspace selected"}</small>
+            {settingsOpen ? <strong>Settings</strong> : (
+              <><span className="header-context" title={workspacePath}>{workspaceName}</span><span className="header-separator">/</span><strong>{activeSessionName}</strong></>
+            )}
           </div>
           <div className="header-actions">
             {settingsOpen && <button className="icon-button" aria-label="Close settings" onClick={() => setSettingsOpen(false)}><X size={17} /></button>}
@@ -290,7 +285,7 @@ function App() {
         </header>
         {settingsOpen ? (
           <section className="settings">
-            <div className="settings-intro"><span className="settings-icon"><Settings2 size={22} /></span><div><h1>Make Apple Pi Yours</h1><p>Choose how new sessions begin. Changes are saved automatically.</p></div></div>
+            <div className="settings-intro"><div><h1>Make Apple Pi Yours</h1><p>Choose how new sessions begin. Changes are saved automatically.</p></div></div>
             <div className="settings-card">
               <div><h2>Default Model</h2><p>Used when you create a workspace or begin a new session. You can still switch models from the composer.</p></div>
               <div className="settings-control"><label htmlFor="default-model">Model</label><ModelSelect id="default-model" models={groupedModels} value={catalog.defaultModel ? modelKey(catalog.defaultModel) : ""} onChange={(value) => void changeDefaultModel(value)} emptyLabel="Use pi default" /></div>
@@ -300,16 +295,15 @@ function App() {
           <>
             <section className="timeline" id="conversation" aria-label="Conversation" role="log" aria-live="polite" tabIndex={-1}>
               {!state.opened && <div className="empty"><div className="orb"><Sparkles size={26} /></div><span className="empty-kicker">PRIVATE · LOCAL · YOURS</span><h1>Build with an agent that lives on your Mac.</h1><p>Open a workspace to start a focused coding session. Your projects and transcripts stay on this machine.</p><button onClick={() => void openWorkspace()}><FolderInput size={17} /> Open a Workspace</button></div>}
-              {state.messages.map((message, index) => {
-                const text = textOf(message);
-                return (
-                  <article key={index} className={`message ${(message as { role?: string }).role ?? "event"}`}>
-                    <header className="message-author"><span>{(message as { role?: string }).role === "user" ? "You" : "Pi"}</span></header>
-                    <div className="message-content" dangerouslySetInnerHTML={markdownToHtml(text)} />
-                  </article>
-                );
-              })}
-              {state.error && <div className="error" role="alert">{state.error}</div>}
+              {timelineItems.map((item, index) => item.kind === "tool" ? (
+                <ToolActivity key={`tool-${item.id}-${index}`} item={item} />
+              ) : (
+                <article key={`message-${index}`} className={`message ${item.role}`}>
+                  <header className="message-author"><span>{item.role === "user" ? "You" : "Pi"}</span></header>
+                  <div className="message-content" dangerouslySetInnerHTML={markdownToHtml(item.text)} />
+                </article>
+              ))}
+              {state.error && <div className="timeline-error" role="alert">{state.error}</div>}
             </section>
             <footer className="composer">
               <div className="input-toolbar">
@@ -343,6 +337,42 @@ function App() {
         {appError && <div className="app-error" role="alert">{appError}</div>}
       </div>
     </div>
+  );
+}
+
+function ToolActivity({ item }: { item: ToolItem }) {
+  const statusLabel = item.status === "running" ? "Running" : item.status === "error" ? "Failed" : "Completed";
+  const statusIcon = item.status === "running"
+    ? <CircleDashed size={12} />
+    : item.status === "error" ? <AlertCircle size={12} /> : <Check size={12} />;
+  const toolLabel = item.name === "bash" ? "Terminal" : item.name.replaceAll("_", " ");
+
+  return (
+    <details className={`tool-activity status-${item.status}`}>
+      <summary>
+        <span className="tool-icon"><Terminal size={14} /></span>
+        <span className="tool-heading"><strong>{toolLabel}</strong><code title={item.summary}>{item.summary || "Tool call"}</code></span>
+        <span className="tool-status">{statusIcon}{statusLabel}</span>
+        <ChevronDown className="tool-chevron" size={13} />
+      </summary>
+      <div className="tool-details">
+        {item.argumentsText && <section><span>Input</span><pre><code>{item.argumentsText}</code></pre></section>}
+        {item.status === "running" ? <p>Waiting for the tool to finish…</p> : (
+          <section>
+            <span>Output</span>
+            {item.outputParts.length === 0 ? <p className="tool-empty-output">Tool returned no output.</p> : (
+              <div className="tool-output">
+                {item.outputParts.map((part, index) => part.kind === "text" ? (
+                  <pre key={`text-${index}`}><code>{part.text}</code></pre>
+                ) : (
+                  <img key={`image-${index}`} src={`data:${part.mimeType};base64,${part.data}`} alt={`${toolLabel} output`} width="960" height="540" loading="lazy" />
+                ))}
+              </div>
+            )}
+          </section>
+        )}
+      </div>
+    </details>
   );
 }
 
