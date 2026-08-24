@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useReducer, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { CircleDashed, Plus, Send, Settings2, Sparkles, FolderInput, ChevronDown } from "lucide-react";
+import { ChevronDown, CircleDashed, Folder, FolderInput, MessageSquare, Plus, Send, Settings2, Sparkles, Square, X } from "lucide-react";
 import { initialSessionState, reduceSession, type SessionSnapshot } from "../session-state.js";
 import type { Catalog, ModelItem, ModelRef, SessionItem, WorkspaceOpenResult } from "../global.js";
 import "./styles.css";
@@ -210,11 +210,12 @@ function App() {
 
   return (
     <div className="shell">
-      <aside>
-        <div className="brand"><span>π</span> Apple Pi</div>
-        <button className="workspace" onClick={() => void openWorkspace()}><FolderInput size={15} /> Add workspace</button>
-        <div className="section-title">WORKSPACES</div>
-        <nav>
+      <a className="skip-link" href="#conversation">Skip to conversation</a>
+      <aside className="sidebar">
+        <div className="brand"><span className="brand-mark">π</span><span>Apple Pi<small>Local agent</small></span></div>
+        <button className="workspace" onClick={() => void openWorkspace()}><FolderInput size={16} /><span>Open workspace</span><kbd>⌘O</kbd></button>
+        <div className="section-title"><span>Workspaces</span><small>{catalog.workspaces.length}</small></div>
+        <nav aria-label="Workspaces">
           {catalog.workspaces.map((workspace) => (
             <button
               key={workspace.path}
@@ -222,15 +223,15 @@ function App() {
               className={workspacePath === workspace.path ? "selected" : ""}
               onClick={() => void openWorkspace(workspace.path)}
             >
-              <span className="aside-icon"><FolderInput size={15} /> <span>{workspace.name}</span></span>
+              <span className="aside-icon"><Folder size={15} /> <span>{workspace.name}</span></span>
             </button>
           ))}
         </nav>
         {workspacePath && (
           <>
             <div className="sessions-head">
-              <span>SESSIONS</span>
-              <button title="New session" onClick={startDraftSession}><Plus size={14} /></button>
+              <span>Sessions</span><small>{sessions.length}</small>
+              <button aria-label="New session" title="New session" onClick={startDraftSession}><Plus size={14} /></button>
             </div>
             <nav className="sessions">
               {sessions.map((session) => (
@@ -239,65 +240,55 @@ function App() {
                   className={activeSessionId === session.id ? "selected" : ""}
                   onClick={() => void openSession(session)}
                 >
-                  <span>{session.persisted ? session.name : "Draft session"}</span>
-                  <small>{session.persisted ? `${session.messageCount} messages` : "Not saved yet"}</small>
+                  <span className="session-name"><MessageSquare size={13} />{session.persisted ? session.name : "Untitled session"}</span>
+                  <small>{session.persisted ? `${session.messageCount} message${session.messageCount === 1 ? "" : "s"}` : "Draft · not saved"}</small>
                 </button>
               ))}
             </nav>
           </>
         )}
-        <button className="settings-button" onClick={() => setSettingsOpen(!settingsOpen)}><Settings2 size={14} /> Settings</button>
+        <div className="sidebar-footer">
+          <span className="local-status"><i /> Running locally</span>
+          <button className="settings-button" aria-pressed={settingsOpen} onClick={() => setSettingsOpen(!settingsOpen)}><Settings2 size={15} /> Settings</button>
+        </div>
       </aside>
       <main>
         <header>
-          <div>
-            <strong>{state.opened ? "Current session" : "Welcome"}</strong>
-            <small>{workspacePath || "Select a project to begin"}</small>
+          <div className="header-title">
+            <span className="eyebrow">{settingsOpen ? "Preferences" : state.opened ? "Active session" : "Start here"}</span>
+            <strong>{settingsOpen ? "Settings" : activeSessionId ? sessions.find((session) => session.id === activeSessionId)?.name ?? "New session" : "Welcome to Apple Pi"}</strong>
+            <small title={workspacePath}>{workspacePath || "No workspace selected"}</small>
           </div>
           <div className="header-actions">
-            {state.running && <button className="cancel" onClick={() => void snapshotOp(window.applePi.session.cancel())}>Stop</button>}
+            {settingsOpen && <button className="icon-button" aria-label="Close settings" onClick={() => setSettingsOpen(false)}><X size={17} /></button>}
+            {state.running && <button className="cancel" onClick={() => void snapshotOp(window.applePi.session.cancel())}><Square size={11} fill="currentColor" /> Stop</button>}
           </div>
         </header>
         {settingsOpen ? (
           <section className="settings">
-            <h1>Settings</h1>
-            <h2>Default model</h2>
-            <p>New workspaces and sessions inherit this model. Override it for the current session from the chat header.</p>
-            <ModelSelect
-              models={groupedModels}
-              value={catalog.defaultModel ? modelKey(catalog.defaultModel) : ""}
-              onChange={(value) => void changeDefaultModel(value)}
-              emptyLabel="Use pi default"
-            />
+            <div className="settings-intro"><span className="settings-icon"><Settings2 size={22} /></span><div><h1>Make Apple Pi yours</h1><p>Choose how new sessions begin. Changes are saved automatically.</p></div></div>
+            <div className="settings-card">
+              <div><h2>Default model</h2><p>Used when you create a workspace or begin a new session. You can still switch models from the composer.</p></div>
+              <div className="settings-control"><label htmlFor="default-model">Model</label><ModelSelect id="default-model" models={groupedModels} value={catalog.defaultModel ? modelKey(catalog.defaultModel) : ""} onChange={(value) => void changeDefaultModel(value)} emptyLabel="Use pi default" /></div>
+            </div>
           </section>
         ) : (
           <>
-            <section className="timeline">
-              {!state.opened && <div className="empty"><div className="orb">π</div><h1>Your local pi desktop</h1><p>Add or select a workspace, then open a session or start a new one.</p></div>}
+            <section className="timeline" id="conversation" aria-label="Conversation" tabIndex={-1}>
+              {!state.opened && <div className="empty"><div className="orb"><Sparkles size={26} /></div><span className="empty-kicker">PRIVATE · LOCAL · YOURS</span><h1>Build with an agent<br />that lives on your Mac.</h1><p>Open a workspace to start a focused coding session. Your projects and transcripts stay on this machine.</p><button onClick={() => void openWorkspace()}><FolderInput size={16} /> Open a workspace</button></div>}
               {state.messages.map((message, index) => {
                 const text = textOf(message);
                 return (
                   <article key={index} className={`message ${(message as { role?: string }).role ?? "event"}`}>
-                    <label>{(message as { role?: string }).role ?? "event"}</label>
+                    <label><span>{(message as { role?: string }).role === "user" ? "You" : "Pi"}</span></label>
                     <div className="message-content" dangerouslySetInnerHTML={markdownToHtml(text)} />
                   </article>
                 );
               })}
               {state.error && <div className="error">{state.error}</div>}
             </section>
-            <footer>
+            <footer className="composer">
               <div className="input-toolbar">
-                <div className="model-select-wrap">
-                  {state.opened && !draftSessionId ? <Sparkles size={14} /> : <CircleDashed size={14} />}
-                  <ModelSelect
-                    models={groupedModels}
-                    value={state.model?.replace("/", "::") ?? ""}
-                    onChange={(value) => void snapshotOp(window.applePi.model.setSession(parseModelKey(value)))}
-                    emptyLabel={state.opened ? "Default for model" : "Select model"}
-                    disabled={!state.opened}
-                  />
-                  <ChevronDown size={14} className="select-chevron" />
-                </div>
                 <textarea
                   disabled={!state.opened || state.running}
                   value={draft}
@@ -308,8 +299,10 @@ function App() {
                       void send();
                     }
                   }}
-                  placeholder={state.opened ? "Ask pi anything…" : "Select a workspace first"}
+                  aria-label="Message Pi"
+                  placeholder={state.opened ? "Ask Pi to build, debug, or explain…" : "Open a workspace to start"}
                 />
+                <div className="composer-bottom"><div className="model-select-wrap">{state.opened && !draftSessionId ? <Sparkles size={14} /> : <CircleDashed size={14} />}<ModelSelect models={groupedModels} value={state.model?.replace("/", "::") ?? ""} onChange={(value) => void snapshotOp(window.applePi.model.setSession(parseModelKey(value)))} emptyLabel={state.opened ? "Default model" : "Select model"} disabled={!state.opened} /><ChevronDown size={13} className="select-chevron" /></div><span className="send-hint">↵ send · ⇧↵ new line</span></div>
               </div>
               <button disabled={!state.opened || !draft.trim() || state.running} onClick={() => void send()} title="Send message">
                 <Send size={16} />
@@ -323,12 +316,14 @@ function App() {
 }
 
 function ModelSelect({
+  id,
   models,
   value,
   onChange,
   emptyLabel = "Select model",
   disabled = false,
 }: {
+  id?: string;
   models: Map<string, ModelItem[]>;
   value: string;
   onChange(value: string): void;
@@ -336,7 +331,7 @@ function ModelSelect({
   disabled?: boolean;
 }) {
   return (
-    <select className="model-select" value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)}>
+    <select id={id} className="model-select" value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)}>
       <option value="">{emptyLabel}</option>
       {[...models].map(([provider, items]) => (
         <optgroup key={provider} label={provider}>
