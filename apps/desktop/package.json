@@ -1,0 +1,41 @@
+{
+  "name": "@apple-pi/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "out/main/index.js",
+  "scripts": {
+    "dev": "pnpm --filter @apple-pi/protocol build && pnpm --filter @apple-pi/pi-adapter build && pnpm --filter @apple-pi/agent-host build && electron-vite dev",
+    "build": "pnpm --filter @apple-pi/agent-host build && electron-vite build && mkdir -p out/agent-host && cp ../agent-host/dist/index.js ../agent-host/dist/server.js out/agent-host/",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.node.json --noEmit",
+    "test": "vitest run",
+    "package:mac": "pnpm build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac --dir --publish never"
+  },
+  "dependencies": {
+    "@apple-pi/agent-host": "workspace:*",
+    "@apple-pi/pi-adapter": "workspace:*",
+    "@apple-pi/protocol": "workspace:*",
+    "lucide-react": "^0.525.0",
+    "react": "19.2.4",
+    "react-dom": "19.2.4"
+  },
+  "devDependencies": {
+    "@types/node": "22.19.19",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "5.1.4",
+    "electron": "39.8.2",
+    "electron-builder": "26.8.1",
+    "electron-vite": "5.0.0",
+    "typescript": "5.9.3",
+    "vite": "7.3.1",
+    "vitest": "4.0.18"
+  },
+  "build": {
+    "appId": "works.earendil.applepi",
+    "productName": "Apple Pi",
+    "directories": { "output": "release" },
+    "files": ["out/**/*", "package.json"],
+    "mac": { "identity": null, "target": [{ "target": "dir", "arch": ["arm64"] }], "category": "public.app-category.developer-tools" }
+  }
+}

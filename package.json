@@ -1,0 +1,19 @@
+{
+  "name": "apple-pi",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "packageManager": "pnpm@10.25.0",
+  "scripts": {
+    "dev": "pnpm --filter @apple-pi/desktop dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm --filter @apple-pi/protocol build && pnpm --filter @apple-pi/pi-adapter build && pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "package:mac": "pnpm --filter @apple-pi/desktop package:mac"
+  },
+  "devDependencies": {
+    "@types/node": "22.19.19",
+    "typescript": "5.9.3",
+    "vitest": "4.0.18"
+  }
+}
