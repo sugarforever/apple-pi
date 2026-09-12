@@ -115,7 +115,7 @@ export function mapPiEvent(value: unknown): ApplePiSessionEvent {
       else if (update?.type === "thinking_delta" && typeof update.delta === "string") mapped = { type: "thinking_delta", text: update.delta };
       else if (update?.type === "toolcall_start" || update?.type === "toolcall_delta" || update?.type === "toolcall_end") {
         const toolCall = streamedToolCall(update);
-        mapped = typeof toolCall?.id === "string" && typeof toolCall.name === "string"
+        mapped = typeof toolCall?.id === "string" && toolCall.id.length > 0 && typeof toolCall.name === "string" && toolCall.name.length > 0
           ? {
               type: "tool_call",
               phase: update.type === "toolcall_start" ? "started" : update.type === "toolcall_delta" ? "updated" : "completed",
@@ -128,9 +128,7 @@ export function mapPiEvent(value: unknown): ApplePiSessionEvent {
       break;
     }
     case "tool_execution_start":
-      mapped = typeof event.toolCallId === "string" && typeof event.toolName === "string"
-        ? { type: "tool_call", phase: "started", id: event.toolCallId, name: event.toolName, arguments: jsonObject(event.args) }
-        : { type: "resync_required", reason: `Malformed Pi event: ${event.type}` };
+      mapped = { type: "resync_required", reason: `Pi tool execution started: ${printable(event.toolName)}` };
       break;
     case "tool_execution_update":
       mapped = { type: "resync_required", reason: `Pi tool execution updated: ${printable(event.toolName)}` };

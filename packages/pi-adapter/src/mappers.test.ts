@@ -41,7 +41,7 @@ describe("Pi boundary mappers", () => {
     [{ type: "message_update", message: {}, assistantMessageEvent: { type: "toolcall_start", contentIndex: 0, partial: { content: [{ type: "toolCall", id: "call-1", name: "bash", arguments: {} }] } } }, { type: "tool_call", phase: "started", id: "call-1", name: "bash", arguments: {} }],
     [{ type: "message_update", message: {}, assistantMessageEvent: { type: "toolcall_delta", contentIndex: 0, delta: '{"command":"pwd"}', partial: { content: [{ type: "toolCall", id: "call-1", name: "bash", arguments: { command: "pwd" } }] } } }, { type: "tool_call", phase: "updated", id: "call-1", name: "bash", arguments: { command: "pwd" } }],
     [{ type: "message_update", message: {}, assistantMessageEvent: { type: "toolcall_end", contentIndex: 0, toolCall: { type: "toolCall", id: "call-1", name: "bash", arguments: { command: "pwd" } }, partial: {} } }, { type: "tool_call", phase: "completed", id: "call-1", name: "bash", arguments: { command: "pwd" } }],
-    [{ type: "tool_execution_start", toolCallId: "call-1", toolName: "bash", args: { command: "pwd" } }, { type: "tool_call", phase: "started", id: "call-1", name: "bash", arguments: { command: "pwd" } }],
+    [{ type: "tool_execution_start", toolCallId: "call-1", toolName: "bash", args: { command: "pwd" } }, { type: "resync_required", reason: "Pi tool execution started: bash" }],
     [{ type: "tool_execution_update", toolCallId: "call-1", toolName: "bash", args: { command: "pwd" }, partialResult: { content: [{ type: "text", text: "/tm" }] } }, { type: "resync_required", reason: "Pi tool execution updated: bash" }],
     [{ type: "tool_execution_end", toolCallId: "call-1", toolName: "bash", result: { content: [{ type: "text", text: "/tmp" }] }, isError: false }, { type: "tool_result", id: "call-1", name: "bash", output: [{ type: "text", text: "/tmp" }], isError: false }],
     [{ type: "queue_update", steering: ["Correct course"], followUp: ["Then test"] }, { type: "resync_required", reason: "Pi queue changed" }],
@@ -65,9 +65,9 @@ describe("Pi boundary mappers", () => {
   it("uses explicit safe fallbacks for unsupported Pi values", () => {
     const cyclic: Record<string, unknown> = {};
     cyclic.self = cyclic;
-    expect(mapPiEvent({ type: "tool_execution_start", toolCallId: "call-1", toolName: "bash", args: { timeout: 1n, score: Number.NaN, cyclic, date: new Date("2026-09-12T10:00:00.000Z"), map: new Map() } })).toEqual({
+    expect(mapPiEvent({ type: "message_update", assistantMessageEvent: { type: "toolcall_end", toolCall: { type: "toolCall", id: "call-1", name: "bash", arguments: { timeout: 1n, score: Number.NaN, cyclic, date: new Date("2026-09-12T10:00:00.000Z"), map: new Map() } } } })).toEqual({
       type: "tool_call",
-      phase: "started",
+      phase: "completed",
       id: "call-1",
       name: "bash",
       arguments: { timeout: "1", score: "[Unsupported number: NaN]", cyclic: { self: "[Circular Pi value]" }, date: "[Unsupported Pi object: Date]", map: "[Unsupported Pi object: Map]" },
@@ -107,6 +107,30 @@ describe("Pi boundary mappers", () => {
       name: "read",
       output: [{ type: "text", text: "[Unsupported Pi tool output: unknown]" }],
       isError: false,
+    });
+  });
+
+  it("keeps a tool-call lifecycle monotonic across generation and execution", () => {
+    const events = [
+      { type: "message_update", assistantMessageEvent: { type: "toolcall_start", contentIndex: 0, partial: { content: [{ type: "toolCall", id: "call-1", name: "bash", arguments: {} }] } } },
+      { type: "message_update", assistantMessageEvent: { type: "toolcall_delta", contentIndex: 0, partial: { content: [{ type: "toolCall", id: "call-1", name: "bash", arguments: { command: "pwd" } }] } } },
+      { type: "message_update", assistantMessageEvent: { type: "toolcall_end", contentIndex: 0, toolCall: { type: "toolCall", id: "call-1", name: "bash", arguments: { command: "pwd" } } } },
+      { type: "tool_execution_start", toolCallId: "call-1", toolName: "bash", args: { command: "pwd" } },
+    ].map(mapPiEvent);
+
+    expect(events.map((event) => event.type === "tool_call" ? event.phase : event.type)).toEqual([
+      "started", "updated", "completed", "resync_required",
+    ]);
+  });
+
+  it("safely resyncs incomplete streamed tool-call identities", () => {
+    expect(mapPiEvent({ type: "message_update", assistantMessageEvent: { type: "toolcall_start", contentIndex: 0, partial: { content: [{ type: "toolCall", id: "", name: "bash", arguments: {} }] } } })).toEqual({
+      type: "resync_required",
+      reason: "Malformed Pi message update: toolcall_start",
+    });
+    expect(mapPiEvent({ type: "message_update", assistantMessageEvent: { type: "toolcall_delta", contentIndex: 0, partial: { content: [{ type: "toolCall", id: "call-1", name: "", arguments: {} }] } } })).toEqual({
+      type: "resync_required",
+      reason: "Malformed Pi message update: toolcall_delta",
     });
   });
 });
