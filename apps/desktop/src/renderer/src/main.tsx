@@ -53,6 +53,7 @@ const makeDraftSession = (workspacePath: string): UiSessionItem => ({
   id: `draft-${Math.random().toString(36).slice(2)}`,
   path: "",
   name: `${workspacePath.split("/").at(-1) ?? "workspace"} · New session`,
+  created: new Date().toISOString(),
   modified: new Date().toISOString(),
   messageCount: 0,
   persisted: false,
@@ -100,9 +101,9 @@ function App() {
   };
 
   const updateActiveSessionFromSnapshot = (snapshot: SessionSnapshot): void => {
-    setActiveSessionId(snapshot.sessionId ?? snapshot.sessionFile ?? "");
-    if (snapshot.opened) setDraftSessionId(snapshot.sessionId?.startsWith("draft-") ? snapshot.sessionId : "");
-    else if (!snapshot.opened) setDraftSessionId("");
+    setActiveSessionId(snapshot.opened ? snapshot.sessionId : "");
+    if (snapshot.opened) setDraftSessionId(snapshot.sessionId.startsWith("draft-") ? snapshot.sessionId : "");
+    else setDraftSessionId("");
   };
 
   useEffect(() => {
@@ -170,7 +171,7 @@ function App() {
         sessionFile: session.path,
         messages: [],
         running: false,
-        model: catalog.defaultModel ? `${catalog.defaultModel.provider}/${catalog.defaultModel.modelId}` : state.model,
+        model: catalog.defaultModel ? models.find((model) => model.provider === catalog.defaultModel?.provider && model.modelId === catalog.defaultModel.modelId) : state.model,
       },
     });
   };
@@ -187,7 +188,7 @@ function App() {
           sessionFile: session.path,
           messages: [],
           running: false,
-          model: catalog.defaultModel ? `${catalog.defaultModel.provider}/${catalog.defaultModel.modelId}` : state.model,
+          model: catalog.defaultModel ? models.find((model) => model.provider === catalog.defaultModel?.provider && model.modelId === catalog.defaultModel.modelId) : state.model,
         },
       });
       return;
@@ -322,7 +323,7 @@ function App() {
                   aria-label="Message Pi"
                   placeholder={state.opened ? "Ask Pi to build, debug, or explain…" : "Open a workspace to start"}
                 />
-                <div className="composer-bottom"><div className="model-select-wrap">{state.opened && !draftSessionId ? <Sparkles size={14} /> : <CircleDashed size={14} />}<ModelSelect ariaLabel="Session model" models={groupedModels} value={state.model?.replace("/", "::") ?? ""} onChange={(value) => void snapshotOp(window.applePi.model.setSession(parseModelKey(value)))} emptyLabel={state.opened ? "Default model" : "Select model"} disabled={!state.opened} /><ChevronDown size={13} className="select-chevron" /></div><span className="send-hint">↵ send · ⇧↵ new line</span></div>
+                <div className="composer-bottom"><div className="model-select-wrap">{state.opened && !draftSessionId ? <Sparkles size={14} /> : <CircleDashed size={14} />}<ModelSelect ariaLabel="Session model" models={groupedModels} value={state.model ? modelKey(state.model) : ""} onChange={(value) => void snapshotOp(window.applePi.model.setSession(parseModelKey(value)))} emptyLabel={state.opened ? "Default model" : "Select model"} disabled={!state.opened} /><ChevronDown size={13} className="select-chevron" /></div><span className="send-hint">↵ send · ⇧↵ new line</span></div>
               </div>
               <button aria-label="Send message" disabled={!state.opened || !draft.trim() || state.running} onClick={() => void send()} title="Send message">
                 <Send size={16} />

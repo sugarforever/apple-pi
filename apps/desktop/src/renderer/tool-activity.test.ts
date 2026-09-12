@@ -7,16 +7,13 @@ describe("tool activity timeline", () => {
       {
         role: "assistant",
         content: [
-          { type: "thinking", thinking: "Inspect the workspace" },
-          { type: "toolCall", id: "call-1", name: "bash", arguments: { command: "ls -la" } },
+          { type: "thinking", text: "Inspect the workspace" },
+          { type: "tool_call", id: "call-1", name: "bash", arguments: { command: "ls -la" } },
         ],
       },
       {
-        role: "toolResult",
-        toolCallId: "call-1",
-        toolName: "bash",
-        content: [{ type: "text", text: "total 0" }],
-        isError: false,
+        role: "tool",
+        content: [{ type: "tool_result", toolCallId: "call-1", name: "bash", output: [{ type: "text", text: "total 0" }], isError: false }],
       },
     ]);
 
@@ -35,9 +32,9 @@ describe("tool activity timeline", () => {
 
   it("marks failed and unfinished calls with their distinct statuses", () => {
     const items = toTimelineItems([
-      { role: "assistant", content: [{ type: "toolCall", id: "failed", name: "bash", arguments: { command: "git log" } }] },
-      { role: "toolResult", toolCallId: "failed", toolName: "bash", content: [{ type: "text", text: "exit 128" }], isError: true },
-      { role: "assistant", content: [{ type: "toolCall", id: "running", name: "read", arguments: { path: "/tmp/file" } }] },
+      { role: "assistant", content: [{ type: "tool_call", id: "failed", name: "bash", arguments: { command: "git log" } }] },
+      { role: "tool", content: [{ type: "tool_result", toolCallId: "failed", name: "bash", output: [{ type: "text", text: "exit 128" }], isError: true }] },
+      { role: "assistant", content: [{ type: "tool_call", id: "running", name: "read", arguments: { path: "/tmp/file" } }] },
     ]);
 
     expect(items).toMatchObject([
@@ -49,7 +46,7 @@ describe("tool activity timeline", () => {
   it("keeps user and assistant text while omitting thinking content", () => {
     const items = toTimelineItems([
       { role: "user", content: [{ type: "text", text: "What changed?" }] },
-      { role: "assistant", content: [{ type: "thinking", thinking: "Do not display" }, { type: "text", text: "Two files changed." }] },
+      { role: "assistant", content: [{ type: "thinking", text: "Do not display" }, { type: "text", text: "Two files changed." }] },
     ]);
 
     expect(items).toEqual([
@@ -60,9 +57,9 @@ describe("tool activity timeline", () => {
 
   it("preserves image output and distinguishes an empty completed result", () => {
     const items = toTimelineItems([
-      { role: "assistant", content: [{ type: "toolCall", id: "image", name: "screenshot", arguments: {} }, { type: "toolCall", id: "empty", name: "write", arguments: {} }] },
-      { role: "toolResult", toolCallId: "image", toolName: "screenshot", content: [{ type: "image", data: "aW1hZ2U=", mimeType: "image/png" }], isError: false },
-      { role: "toolResult", toolCallId: "empty", toolName: "write", content: [], isError: false },
+      { role: "assistant", content: [{ type: "tool_call", id: "image", name: "screenshot", arguments: {} }, { type: "tool_call", id: "empty", name: "write", arguments: {} }] },
+      { role: "tool", content: [{ type: "tool_result", toolCallId: "image", name: "screenshot", output: [{ type: "image", data: "aW1hZ2U=", mimeType: "image/png" }], isError: false }] },
+      { role: "tool", content: [{ type: "tool_result", toolCallId: "empty", name: "write", output: [], isError: false }] },
     ]);
 
     expect(items).toMatchObject([
