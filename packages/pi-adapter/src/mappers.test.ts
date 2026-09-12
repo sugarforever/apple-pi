@@ -144,4 +144,18 @@ describe("Pi boundary mappers", () => {
     ]);
     expect(mapPiMessages([{ role: "toolResult", toolCallId: "", toolName: "bash", content: [], isError: false }])).toEqual([]);
   });
+
+  it("safely degrades tool images with an empty MIME type", () => {
+    const fallback = [{ type: "text" as const, text: "[Unsupported Pi tool output: image]" }];
+    expect(mapPiEvent({ type: "tool_execution_end", toolCallId: "call-1", toolName: "image", result: { content: [{ type: "image", data: "aW1hZ2U=", mimeType: "" }] }, isError: false })).toEqual({
+      type: "tool_result",
+      id: "call-1",
+      name: "image",
+      output: fallback,
+      isError: false,
+    });
+    expect(mapPiMessages([{ role: "toolResult", toolCallId: "call-1", toolName: "image", content: [{ type: "image", data: "aW1hZ2U=", mimeType: "" }], isError: false }])).toEqual([
+      { role: "tool", content: [{ type: "tool_result", toolCallId: "call-1", name: "image", output: fallback, isError: false }] },
+    ]);
+  });
 });

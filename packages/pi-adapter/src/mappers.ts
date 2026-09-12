@@ -51,7 +51,7 @@ function outputParts(value: unknown): ToolOutputPart[] {
   return value.flatMap((part): ToolOutputPart[] => {
     const item = record(part);
     if (item?.type === "text" && typeof item.text === "string") return [{ type: "text", text: item.text }];
-    if (item?.type === "image" && typeof item.data === "string" && typeof item.mimeType === "string") {
+    if (item?.type === "image" && typeof item.data === "string" && nonEmptyString(item.mimeType)) {
       return [{ type: "image", data: item.data, mimeType: item.mimeType }];
     }
     return [{ type: "text", text: `[Unsupported Pi tool output: ${printable(item?.type)}]` }];
