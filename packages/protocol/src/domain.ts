@@ -1,5 +1,6 @@
 import { Type, type Static, type TSchema } from "typebox";
 import { Value } from "typebox/value";
+import { isJsonSerializable } from "./wire-value.js";
 
 const closedObject = <T extends Parameters<typeof Type.Object>[0]>(properties: T) =>
   Type.Object(properties, { additionalProperties: false });
@@ -86,12 +87,20 @@ export const ModelItemSchema = closedObject({
 });
 export type ModelItem = Static<typeof ModelItemSchema>;
 
+const IsoTimestampSchema = Type.Refine(
+  Type.String({ pattern: "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$" }),
+  (value) => {
+    const timestamp = new Date(value);
+    return Number.isFinite(timestamp.valueOf()) && timestamp.toISOString() === value;
+  },
+);
+
 export const SessionItemSchema = closedObject({
   id: Type.String({ minLength: 1 }),
   path: Type.String({ minLength: 1 }),
   name: Type.String({ minLength: 1 }),
-  created: Type.String({ minLength: 1 }),
-  modified: Type.String({ minLength: 1 }),
+  created: IsoTimestampSchema,
+  modified: IsoTimestampSchema,
   messageCount: Type.Integer({ minimum: 0 }),
 });
 export type SessionItem = Static<typeof SessionItemSchema>;
@@ -122,12 +131,10 @@ export type HostCapabilities = Static<typeof HostCapabilitiesSchema>;
 export const ApplePiSessionEventSchema = Type.Union([
   closedObject({
     type: Type.Literal("text_delta"),
-    messageId: Type.String({ minLength: 1 }),
     text: Type.String(),
   }),
   closedObject({
     type: Type.Literal("thinking_delta"),
-    messageId: Type.String({ minLength: 1 }),
     text: Type.String(),
   }),
   closedObject({
@@ -159,31 +166,6 @@ export type ApplePiSessionEvent = Static<typeof ApplePiSessionEventSchema>;
 function decode<TSchemaType extends TSchema>(schema: TSchemaType, value: unknown, label: string): Static<TSchemaType> {
   if (!isJsonSerializable(value) || !Value.Check(schema, value)) throw new Error(`Invalid ${label}`);
   return value as Static<TSchemaType>;
-}
-
-export function isJsonSerializable(value: unknown, ancestors = new Set<object>()): boolean {
-  if (value === null || typeof value === "string" || typeof value === "boolean") return true;
-  if (typeof value === "number") return Number.isFinite(value);
-  if (typeof value !== "object" || ancestors.has(value)) return false;
-
-  const prototype = Object.getPrototypeOf(value);
-  if (!Array.isArray(value) && prototype !== Object.prototype && prototype !== null) return false;
-
-  const enumerableKeys = Object.keys(value);
-  const ownKeys = Reflect.ownKeys(value);
-  if (Array.isArray(value)) {
-    if (ownKeys.length !== enumerableKeys.length + 1 || ownKeys.at(-1) !== "length" ||
-        enumerableKeys.length !== value.length || enumerableKeys.some((key, index) => key !== String(index))) return false;
-  } else if (ownKeys.length !== enumerableKeys.length) {
-    return false;
-  }
-
-  ancestors.add(value);
-  const valid = Array.isArray(value)
-    ? value.every((item) => isJsonSerializable(item, ancestors))
-    : Object.values(value).every((item) => isJsonSerializable(item, ancestors));
-  ancestors.delete(value);
-  return valid;
 }
 
 export const decodeApplePiContentPart = (value: unknown): ApplePiContentPart => decode(ApplePiContentPartSchema, value, "Apple Pi content part");

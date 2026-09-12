@@ -1,6 +1,8 @@
-import { createAgentSession, ModelRuntime, SessionManager, type AgentSession } from "@earendil-works/pi-coding-agent";
+import { createAgentSession, ModelRuntime, SessionManager, type AgentSession, type AgentSessionEvent } from "@earendil-works/pi-coding-agent";
+import { decodeSessionSnapshot, type ApplePiSessionEvent, type ModelItem, type SessionItem, type SessionSnapshot } from "@apple-pi/protocol";
+import { mapPiEvent, mapPiMessages, mapPiModel, mapPiSessionItem } from "./mappers.js";
 
-export type PiEventListener = (event: unknown) => void;
+export type PiEventListener = (event: ApplePiSessionEvent) => void;
 
 export class PiSessionService {
   private session?: AgentSession;
@@ -12,16 +14,16 @@ export class PiSessionService {
 
   private async getRuntime(): Promise<ModelRuntime> { return this.runtime ??= await ModelRuntime.create(); }
 
-  async listSessions(cwd: string) {
-    return (await SessionManager.list(cwd)).map((item) => ({ id: item.id, path: item.path, name: item.name || item.firstMessage || "New session", created: item.created.toISOString(), modified: item.modified.toISOString(), messageCount: item.messageCount }));
+  async listSessions(cwd: string): Promise<SessionItem[]> {
+    return (await SessionManager.list(cwd)).map(mapPiSessionItem);
   }
 
-  async listModels() {
+  async listModels(): Promise<ModelItem[]> {
     const models = (await this.getRuntime()).getAvailableSnapshot();
-    return models.map((model) => ({ provider: model.provider, modelId: model.id, name: model.name || model.id })).sort((a, b) => `${a.provider}/${a.name}`.localeCompare(`${b.provider}/${b.name}`));
+    return models.map(mapPiModel).sort((a, b) => `${a.provider}/${a.name}`.localeCompare(`${b.provider}/${b.name}`));
   }
 
-  async open(cwd: string, sessionPath?: string, modelRef?: { provider?: string; modelId?: string }, createNew = false): Promise<ReturnType<PiSessionService["snapshot"]>> {
+  async open(cwd: string, sessionPath?: string, modelRef?: { provider?: string; modelId?: string }, createNew = false): Promise<SessionSnapshot> {
     this.unsubscribe?.();
     const recent = createNew ? [] : await SessionManager.list(cwd);
     const selectedPath = sessionPath ?? recent[0]?.path;
@@ -30,7 +32,7 @@ export class PiSessionService {
     const model = modelRef?.provider && modelRef.modelId ? runtime.getModel(modelRef.provider, modelRef.modelId) : undefined;
     const result = await createAgentSession({ cwd, sessionManager: manager, modelRuntime: runtime, ...(model ? { model } : {}) });
     this.session = result.session;
-    this.unsubscribe = this.session.subscribe((event) => this.listener?.(toSerializable(event)));
+    this.unsubscribe = this.session.subscribe((event: AgentSessionEvent) => this.listener?.(mapPiEvent(event)));
     return this.snapshot();
   }
 
@@ -41,7 +43,7 @@ export class PiSessionService {
 
   async cancel(): Promise<void> { await this.session?.abort(); }
 
-  async setModel(provider: string, modelId: string): Promise<ReturnType<PiSessionService["snapshot"]>> {
+  async setModel(provider: string, modelId: string): Promise<SessionSnapshot> {
     if (!this.session) throw new Error("Open a session first");
     const model = (await this.getRuntime()).getModel(provider, modelId);
     if (!model) throw new Error(`Model not found: ${provider}/${modelId}`);
@@ -49,21 +51,17 @@ export class PiSessionService {
     return this.snapshot();
   }
 
-  snapshot() {
-    if (!this.session) return { opened: false, messages: [], running: false };
-    return {
+  snapshot(): SessionSnapshot {
+    if (!this.session) return decodeSessionSnapshot({ opened: false, messages: [], running: false });
+    return decodeSessionSnapshot({
       opened: true,
       sessionId: this.session.sessionId,
       sessionFile: this.session.sessionFile,
-      messages: toSerializable(this.session.messages),
+      messages: mapPiMessages(this.session.messages),
       running: this.session.isStreaming,
-      model: this.session.model ? `${this.session.model.provider}/${this.session.model.id}` : undefined,
-    };
+      model: this.session.model ? mapPiModel(this.session.model) : undefined,
+    });
   }
 
   async close(): Promise<void> { this.unsubscribe?.(); await this.session?.abort(); }
-}
-
-function toSerializable(value: unknown): unknown {
-  return JSON.parse(JSON.stringify(value, (_key, item) => typeof item === "bigint" ? item.toString() : item));
 }

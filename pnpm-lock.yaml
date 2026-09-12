@@ -91,6 +91,9 @@ importers:
 
   packages/pi-adapter:
     dependencies:
+      '@apple-pi/protocol':
+        specifier: workspace:*
+        version: link:../protocol
       '@earendil-works/pi-coding-agent':
         specifier: 0.84.2
         version: 0.84.2(ws@8.21.3)

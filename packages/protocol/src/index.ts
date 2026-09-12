@@ -6,8 +6,8 @@ import {
   SessionItemSchema,
   SessionSnapshotSchema,
   type ApplePiSessionEvent,
-  isJsonSerializable,
 } from "./domain.js";
+import { isJsonSerializable } from "./wire-value.js";
 
 export * from "./domain.js";
 
@@ -38,6 +38,13 @@ export const ResultSchemas = {
   "model.list": Type.Array(ModelItemSchema),
   "model.set": SessionSnapshotSchema,
 } as const;
+
+export const HostEventSchema = Type.Object({
+  protocolVersion: Type.Literal(PROTOCOL_VERSION),
+  type: Type.Literal("session.event"),
+  sequence: Type.Integer({ minimum: 1 }),
+  payload: ApplePiSessionEventSchema,
+}, { additionalProperties: false });
 
 export type HostCommandType = keyof typeof Payloads;
 export type HostCommandPayloads = { [Command in HostCommandType]: import("typebox").Static<(typeof Payloads)[Command]> };
@@ -76,13 +83,7 @@ export function decodeCommandResult<Command extends HostCommandType>(command: Co
 }
 
 export function decodeHostEvent(value: unknown): HostEvent {
-  const schema = Type.Object({
-    protocolVersion: Type.Literal(PROTOCOL_VERSION),
-    type: Type.Literal("session.event"),
-    sequence: Type.Integer({ minimum: 1 }),
-    payload: ApplePiSessionEventSchema,
-  }, { additionalProperties: false });
-  if (!isJsonSerializable(value) || !Value.Check(schema, value)) throw new Error("Invalid host event");
+  if (!isJsonSerializable(value) || !Value.Check(HostEventSchema, value)) throw new Error("Invalid host event");
   return value as HostEvent;
 }
 

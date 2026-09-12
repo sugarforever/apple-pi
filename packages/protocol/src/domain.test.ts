@@ -48,8 +48,8 @@ describe("Apple Pi domain decoders", () => {
   });
 
   it.each([
-    { type: "text_delta", messageId: "message-1", text: "Hello" },
-    { type: "thinking_delta", messageId: "message-1", text: "Reasoning" },
+    { type: "text_delta", text: "Hello" },
+    { type: "thinking_delta", text: "Reasoning" },
     { type: "tool_call", phase: "started", id: "call-1", name: "bash", arguments: { command: "pwd" } },
     { type: "tool_result", id: "call-1", name: "bash", output: [{ type: "text", text: "/tmp" }], isError: false },
     { type: "lifecycle", phase: "started" },
@@ -67,6 +67,8 @@ describe("Apple Pi domain decoders", () => {
     expect(() => decodeApplePiSessionEvent({ messageId: "m1", text: "Hello" })).toThrow("Invalid Apple Pi session event");
     expect(() => decodeApplePiSessionEvent({ type: "lifecycle", phase: "paused" })).toThrow("Invalid Apple Pi session event");
     expect(() => decodeSessionItem({ id: "s", path: "/s", name: "S", created: "now", modified: "now", messageCount: -1 })).toThrow("Invalid session item");
+    expect(() => decodeSessionItem({ id: "s", path: "/s", name: "S", created: "yesterday", modified: "2026-09-12T10:01:00.000Z", messageCount: 0 })).toThrow("Invalid session item");
+    expect(() => decodeSessionItem({ id: "s", path: "/s", name: "S", created: "2026-04-31T10:00:00.000Z", modified: "2026-09-12T10:01:00.000Z", messageCount: 0 })).toThrow("Invalid session item");
   });
 
   it("rejects non-serializable values", () => {
