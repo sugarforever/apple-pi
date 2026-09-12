@@ -34,6 +34,22 @@ describe("host protocol", () => {
     expectTypeOf<Extract<HostResponse<"model.list">, { ok: true }>["result"]>().toEqualTypeOf<ModelItem[]>();
   });
 
+  it("validates the complete closed host handshake", () => {
+    const hello = {
+      protocolVersion: 1,
+      hostVersion: "0.1.0",
+      piVersion: "0.84.2",
+      capabilities: { sessionEvents: true, modelSelection: true },
+      pid: 42,
+    } as const;
+
+    expect(decodeCommandResult("system.hello", hello)).toEqual(hello);
+    expect(() => decodeCommandResult("system.hello", { ...hello, piVersion: "" })).toThrow("Invalid result for system.hello");
+    expect(() => decodeCommandResult("system.hello", { ...hello, capabilities: { sessionEvents: true } })).toThrow("Invalid result for system.hello");
+    expect(() => decodeCommandResult("system.hello", { ...hello, capabilities: { ...hello.capabilities, shellAccess: true } })).toThrow("Invalid result for system.hello");
+    expect(() => decodeCommandResult("system.hello", { ...hello, protocolVersion: 2 })).toThrow("Invalid result for system.hello");
+  });
+
   it("validates typed host events", () => {
     const event = { protocolVersion: 1, type: "session.event", sequence: 1, payload: { type: "lifecycle", phase: "started" } } as const;
     expect(decodeHostEvent(event)).toEqual(event);

@@ -6,7 +6,12 @@ import { AppCatalog, type ModelRef } from "./app-catalog.js";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
-const host = new AgentHostSupervisor();
+const host = new AgentHostSupervisor({
+  hostPath: () => app.isPackaged
+    ? path.join(app.getAppPath(), "out", "agent-host", "index.js")
+    : path.resolve(process.cwd(), "../agent-host/dist/index.js"),
+  hostVersion: () => app.getVersion(),
+});
 let mainWindow: BrowserWindow | undefined;
 let workspacePath: string | undefined;
 let catalog: AppCatalog;

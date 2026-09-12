@@ -2,6 +2,7 @@ import { Type } from "typebox";
 import { Value } from "typebox/value";
 import {
   ApplePiSessionEventSchema,
+  HostCapabilitiesSchema,
   ModelItemSchema,
   SessionItemSchema,
   SessionSnapshotSchema,
@@ -12,6 +13,7 @@ import { isJsonSerializable } from "./wire-value.js";
 export * from "./domain.js";
 
 export const PROTOCOL_VERSION = 1 as const;
+export const SUPPORTED_PI_VERSION = "0.84.2" as const;
 
 export const Payloads = {
   "system.hello": Type.Object({}, { additionalProperties: false }),
@@ -27,7 +29,13 @@ export const Payloads = {
 } as const;
 
 export const ResultSchemas = {
-  "system.hello": Type.Object({ protocolVersion: Type.Literal(1), pid: Type.Integer({ minimum: 1 }) }, { additionalProperties: false }),
+  "system.hello": Type.Object({
+    protocolVersion: Type.Literal(PROTOCOL_VERSION),
+    hostVersion: Type.String({ minLength: 1 }),
+    piVersion: Type.String({ minLength: 1 }),
+    capabilities: HostCapabilitiesSchema,
+    pid: Type.Integer({ minimum: 1 }),
+  }, { additionalProperties: false }),
   "session.open": SessionSnapshotSchema,
   "session.openPath": SessionSnapshotSchema,
   "session.create": SessionSnapshotSchema,
