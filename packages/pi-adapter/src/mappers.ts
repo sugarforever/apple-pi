@@ -153,6 +153,7 @@ export function mapPiEvent(value: unknown): ApplePiSessionEvent {
       const detail = typeof event.errorMessage === "string" ? `: ${event.errorMessage}` : "";
       if (event.willRetry === true) mapped = { type: "resync_required", reason: `Pi compaction will retry (${reason})${detail}` };
       else if (event.aborted === true) mapped = { type: "resync_required", reason: `Pi compaction aborted (${reason})${detail}` };
+      else if (event.result === undefined) mapped = { type: "resync_required", reason: `Pi compaction failed (${reason})${detail}` };
       else mapped = { type: "resync_required", reason: `Pi compaction completed (${reason})` };
       break;
     }
@@ -167,6 +168,22 @@ export function mapPiEvent(value: unknown): ApplePiSessionEvent {
         type: "resync_required",
         reason: `Pi retry ${printable(event.attempt)} ${event.success === true ? "succeeded" : "failed"}${typeof event.finalError === "string" ? `: ${event.finalError}` : ""}`,
       };
+      break;
+    case "summarization_retry_scheduled":
+      mapped = {
+        type: "resync_required",
+        reason: `Pi summarization retry ${printable(event.attempt)}/${printable(event.maxAttempts)} scheduled in ${printable(event.delayMs)}ms${typeof event.errorMessage === "string" ? `: ${event.errorMessage}` : ""}`,
+      };
+      break;
+    case "summarization_retry_attempt_start":
+      mapped = event.source === "compaction"
+        ? { type: "resync_required", reason: `Pi compaction summarization retry started (${printable(event.reason)})` }
+        : event.source === "branchSummary"
+          ? { type: "resync_required", reason: "Pi branch summary retry started" }
+          : { type: "resync_required", reason: "Pi summarization retry started" };
+      break;
+    case "summarization_retry_finished":
+      mapped = { type: "resync_required", reason: "Pi summarization retry finished" };
       break;
     default: mapped = { type: "resync_required", reason: `Unsupported Pi event: ${printable(event?.type)}` };
   }

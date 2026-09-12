@@ -49,9 +49,14 @@ describe("Pi boundary mappers", () => {
     [{ type: "compaction_end", reason: "overflow", result: {}, aborted: false, willRetry: false }, { type: "resync_required", reason: "Pi compaction completed (overflow)" }],
     [{ type: "compaction_end", reason: "manual", result: undefined, aborted: true, willRetry: false }, { type: "resync_required", reason: "Pi compaction aborted (manual)" }],
     [{ type: "compaction_end", reason: "overflow", result: undefined, aborted: false, willRetry: true, errorMessage: "Context too large" }, { type: "resync_required", reason: "Pi compaction will retry (overflow): Context too large" }],
+    [{ type: "compaction_end", reason: "threshold", result: undefined, aborted: false, willRetry: false, errorMessage: "Auto-compaction failed: Provider unavailable" }, { type: "resync_required", reason: "Pi compaction failed (threshold): Auto-compaction failed: Provider unavailable" }],
     [{ type: "auto_retry_start", attempt: 2, maxAttempts: 3, delayMs: 500, errorMessage: "Rate limited" }, { type: "resync_required", reason: "Pi retry 2/3 scheduled in 500ms: Rate limited" }],
     [{ type: "auto_retry_end", success: true, attempt: 2 }, { type: "resync_required", reason: "Pi retry 2 succeeded" }],
     [{ type: "auto_retry_end", success: false, attempt: 3, finalError: "Still unavailable" }, { type: "resync_required", reason: "Pi retry 3 failed: Still unavailable" }],
+    [{ type: "summarization_retry_scheduled", attempt: 1, maxAttempts: 3, delayMs: 500, errorMessage: "Stream closed" }, { type: "resync_required", reason: "Pi summarization retry 1/3 scheduled in 500ms: Stream closed" }],
+    [{ type: "summarization_retry_attempt_start", source: "compaction", reason: "threshold" }, { type: "resync_required", reason: "Pi compaction summarization retry started (threshold)" }],
+    [{ type: "summarization_retry_attempt_start", source: "branchSummary" }, { type: "resync_required", reason: "Pi branch summary retry started" }],
+    [{ type: "summarization_retry_finished" }, { type: "resync_required", reason: "Pi summarization retry finished" }],
     [{ type: "future_pi_event", internal: true }, { type: "resync_required", reason: "Unsupported Pi event: future_pi_event" }],
   ])("maps a Pi event into an Apple Pi event", (input, expected) => {
     expect(mapPiEvent(input)).toEqual(expected);
