@@ -39,8 +39,17 @@ describe("Pi boundary mappers", () => {
     [{ type: "message_update", message: {}, assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: "Hi", partial: {} } }, { type: "text_delta", text: "Hi" }],
     [{ type: "message_update", message: {}, assistantMessageEvent: { type: "thinking_delta", contentIndex: 0, delta: "Hmm", partial: {} } }, { type: "thinking_delta", text: "Hmm" }],
     [{ type: "tool_execution_start", toolCallId: "call-1", toolName: "bash", args: { command: "pwd" } }, { type: "tool_call", phase: "started", id: "call-1", name: "bash", arguments: { command: "pwd" } }],
+    [{ type: "tool_execution_update", toolCallId: "call-1", toolName: "bash", args: { command: "pwd" }, partialResult: { content: [{ type: "text", text: "/tm" }] } }, { type: "tool_call", phase: "updated", id: "call-1", name: "bash", arguments: { command: "pwd" } }],
     [{ type: "tool_execution_end", toolCallId: "call-1", toolName: "bash", result: { content: [{ type: "text", text: "/tmp" }] }, isError: false }, { type: "tool_result", id: "call-1", name: "bash", output: [{ type: "text", text: "/tmp" }], isError: false }],
-    [{ type: "queue_update", steering: [], followUp: [] }, { type: "resync_required", reason: "Unsupported Pi event: queue_update" }],
+    [{ type: "queue_update", steering: ["Correct course"], followUp: ["Then test"] }, { type: "resync_required", reason: "Pi queue changed" }],
+    [{ type: "compaction_start", reason: "threshold" }, { type: "resync_required", reason: "Pi compaction started (threshold)" }],
+    [{ type: "compaction_end", reason: "overflow", result: {}, aborted: false, willRetry: false }, { type: "resync_required", reason: "Pi compaction completed (overflow)" }],
+    [{ type: "compaction_end", reason: "manual", result: undefined, aborted: true, willRetry: false }, { type: "resync_required", reason: "Pi compaction aborted (manual)" }],
+    [{ type: "compaction_end", reason: "overflow", result: undefined, aborted: false, willRetry: true, errorMessage: "Context too large" }, { type: "resync_required", reason: "Pi compaction will retry (overflow): Context too large" }],
+    [{ type: "auto_retry_start", attempt: 2, maxAttempts: 3, delayMs: 500, errorMessage: "Rate limited" }, { type: "resync_required", reason: "Pi retry 2/3 scheduled in 500ms: Rate limited" }],
+    [{ type: "auto_retry_end", success: true, attempt: 2 }, { type: "resync_required", reason: "Pi retry 2 succeeded" }],
+    [{ type: "auto_retry_end", success: false, attempt: 3, finalError: "Still unavailable" }, { type: "resync_required", reason: "Pi retry 3 failed: Still unavailable" }],
+    [{ type: "future_pi_event", internal: true }, { type: "resync_required", reason: "Unsupported Pi event: future_pi_event" }],
   ])("maps a Pi event into an Apple Pi event", (input, expected) => {
     expect(mapPiEvent(input)).toEqual(expected);
   });
@@ -75,5 +84,12 @@ describe("Pi boundary mappers", () => {
       isError: false,
     });
     expect(mapPiMessages([{ role: "custom", content: "Internal notice", timestamp: 1 }])).toEqual([]);
+  });
+
+  it("safely degrades an event with an unprintable discriminator", () => {
+    expect(mapPiEvent({ type: Object.create(null) })).toEqual({
+      type: "resync_required",
+      reason: "Unsupported Pi event: unknown",
+    });
   });
 });

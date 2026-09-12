@@ -15,6 +15,11 @@ import {
 const record = (value: unknown): Record<string, unknown> | undefined =>
   value !== null && typeof value === "object" ? value as Record<string, unknown> : undefined;
 
+const printable = (value: unknown): string =>
+  typeof value === "string" || typeof value === "number" || typeof value === "boolean" || typeof value === "bigint"
+    ? String(value)
+    : "unknown";
+
 function jsonObject(value: unknown): Record<string, JsonValue> {
   const mapped = jsonValue(value);
   return mapped !== null && typeof mapped === "object" && !Array.isArray(mapped) ? mapped : { _applePiFallback: mapped };
@@ -116,7 +121,33 @@ export function mapPiEvent(value: unknown): ApplePiSessionEvent {
         : { type: "resync_required", reason: "Malformed Pi event: tool_execution_end" };
       break;
     }
-    default: mapped = { type: "resync_required", reason: `Unsupported Pi event: ${String(event?.type ?? "unknown")}` };
+    case "queue_update":
+      mapped = { type: "resync_required", reason: "Pi queue changed" };
+      break;
+    case "compaction_start":
+      mapped = { type: "resync_required", reason: `Pi compaction started (${String(event.reason ?? "unknown")})` };
+      break;
+    case "compaction_end": {
+      const reason = String(event.reason ?? "unknown");
+      const detail = typeof event.errorMessage === "string" ? `: ${event.errorMessage}` : "";
+      if (event.willRetry === true) mapped = { type: "resync_required", reason: `Pi compaction will retry (${reason})${detail}` };
+      else if (event.aborted === true) mapped = { type: "resync_required", reason: `Pi compaction aborted (${reason})${detail}` };
+      else mapped = { type: "resync_required", reason: `Pi compaction completed (${reason})` };
+      break;
+    }
+    case "auto_retry_start":
+      mapped = {
+        type: "resync_required",
+        reason: `Pi retry ${String(event.attempt ?? "unknown")}/${String(event.maxAttempts ?? "unknown")} scheduled in ${String(event.delayMs ?? "unknown")}ms${typeof event.errorMessage === "string" ? `: ${event.errorMessage}` : ""}`,
+      };
+      break;
+    case "auto_retry_end":
+      mapped = {
+        type: "resync_required",
+        reason: `Pi retry ${String(event.attempt ?? "unknown")} ${event.success === true ? "succeeded" : "failed"}${typeof event.finalError === "string" ? `: ${event.finalError}` : ""}`,
+      };
+      break;
+    default: mapped = { type: "resync_required", reason: `Unsupported Pi event: ${printable(event?.type)}` };
   }
   return decodeApplePiSessionEvent(mapped);
 }
