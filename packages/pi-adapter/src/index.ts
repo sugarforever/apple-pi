@@ -1,10 +1,13 @@
 import { createAgentSession, ModelRuntime, SessionManager, type AgentSession, type AgentSessionEvent } from "@earendil-works/pi-coding-agent";
 import { decodeSessionSnapshot, type ApplePiSessionEvent, type ModelItem, type SessionItem, type SessionSnapshot } from "@apple-pi/protocol";
 import { mapPiEvent, mapPiMessages, mapPiModel, mapPiSessionItem } from "./mappers.js";
+import adapterPackage from "../package.json" with { type: "json" };
 
 export { mapPiEvent, mapPiMessages, mapPiModel, mapPiSessionItem } from "./mappers.js";
 
 export type PiEventListener = (event: ApplePiSessionEvent) => void;
+
+export const PI_VERSION = adapterPackage.dependencies["@earendil-works/pi-coding-agent"];
 
 export class PiSessionService {
   private session?: AgentSession;

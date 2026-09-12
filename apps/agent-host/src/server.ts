@@ -1,5 +1,7 @@
 import { PROTOCOL_VERSION, decodeCommandResult, type HostCommandResults, type HostCommandType, decodeHostMessage, type HostEvent, type HostMessage, type HostResponse } from "@apple-pi/protocol";
-import { PiSessionService } from "@apple-pi/pi-adapter";
+import { PI_VERSION, PiSessionService } from "@apple-pi/pi-adapter";
+
+export const HOST_VERSION = "0.1.0" as const;
 
 export class HostServer {
   private readonly pi: PiSessionService;
@@ -16,7 +18,13 @@ export class HostServer {
     }
     try {
       switch (message.type) {
-        case "system.hello": return success("system.hello", message.requestId, { protocolVersion: PROTOCOL_VERSION, pid: process.pid });
+        case "system.hello": return success("system.hello", message.requestId, {
+          protocolVersion: PROTOCOL_VERSION,
+          hostVersion: HOST_VERSION,
+          piVersion: PI_VERSION,
+          capabilities: { sessionEvents: true, modelSelection: true },
+          pid: process.pid,
+        });
         case "session.open": return success("session.open", message.requestId, await this.pi.open(message.payload.cwd));
         case "session.openPath": return success("session.openPath", message.requestId, await this.pi.open(message.payload.cwd, message.payload.path));
         case "session.create": return success("session.create", message.requestId, await this.pi.open(message.payload.cwd, undefined, message.payload, true));
