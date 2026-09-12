@@ -1,4 +1,4 @@
-import { PROTOCOL_VERSION, decodeHostMessage, type HostMessage, type HostResponse } from "@apple-pi/protocol";
+import { PROTOCOL_VERSION, decodeHostMessage, type HostCommandResults, type HostCommandType, type HostMessage, type HostResponse } from "@apple-pi/protocol";
 import { PiSessionService } from "@apple-pi/pi-adapter";
 
 export class HostServer {
@@ -28,7 +28,7 @@ export class HostServer {
         case "model.list": result = await this.pi.listModels(); break;
         case "model.set": { const payload = message.payload as { provider: string; modelId: string }; result = await this.pi.setModel(payload.provider, payload.modelId); break; }
       }
-      return { protocolVersion: 1, requestId: message.requestId, ok: true, result };
+      return { protocolVersion: 1, requestId: message.requestId, ok: true, result: result as HostCommandResults[HostCommandType] };
     } catch (error) {
       return { protocolVersion: 1, requestId: message.requestId, ok: false, error: error instanceof Error ? error.message : String(error) };
     }
