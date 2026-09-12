@@ -1,5 +1,5 @@
 import { describe, expect, expectTypeOf, it } from "vitest";
-import { decodeCommandResult, decodeHostEvent, decodeHostMessage, encodeRecord, JsonlDecoder, type HostResponse, type ModelItem } from "./index.js";
+import { decodeCommandResult, decodeHostEvent, decodeHostMessage, decodeHostRecord, encodeRecord, JsonlDecoder, type HostResponse, type ModelItem } from "./index.js";
 
 describe("host protocol", () => {
   it("accepts a versioned hello command", () => {
@@ -55,5 +55,63 @@ describe("host protocol", () => {
     expect(decodeHostEvent(event)).toEqual(event);
     expect(() => decodeHostEvent({ ...event, sequence: 0 })).toThrow("Invalid host event");
     expect(() => decodeHostEvent({ ...event, payload: { type: "agent_start" } })).toThrow("Invalid host event");
+  });
+
+  it("decodes a command-specific success response", () => {
+    const response = {
+      protocolVersion: 1,
+      requestId: "r-models",
+      ok: true,
+      result: [{ provider: "openai", modelId: "gpt-5", name: "GPT-5" }],
+    } as const;
+
+    expect(decodeHostRecord(response, "model.list")).toEqual(response);
+    expect(() => decodeHostRecord({ ...response, result: { opened: false } }, "model.list"))
+      .toThrow("Invalid host success response for model.list");
+  });
+
+  it("rejects malformed error responses without echoing their content", () => {
+    const secret = "sk-private-transcript-fragment";
+    let thrown: Error | undefined;
+
+    try {
+      decodeHostRecord({ protocolVersion: 1, requestId: "r-error", ok: false, error: secret, transcript: secret }, "session.send");
+    } catch (error) {
+      thrown = error as Error;
+    }
+
+    expect(thrown?.message).toBe("Invalid host error response");
+    expect(thrown?.message).not.toContain(secret);
+  });
+
+  it("preserves protocol v1 response string compatibility", () => {
+    expect(decodeHostRecord({ protocolVersion: 1, requestId: "", ok: false, error: "" }))
+      .toEqual({ protocolVersion: 1, requestId: "", ok: false, error: "" });
+    expect(decodeHostRecord({
+      protocolVersion: 1,
+      requestId: "",
+      ok: true,
+      result: { opened: false, messages: [], running: false },
+    }, "session.snapshot")).toEqual({
+      protocolVersion: 1,
+      requestId: "",
+      ok: true,
+      result: { opened: false, messages: [], running: false },
+    });
+  });
+
+  it("rejects unknown event types and invalid event sequences", () => {
+    expect(() => decodeHostRecord({
+      protocolVersion: 1,
+      type: "session.event",
+      sequence: 1,
+      payload: { type: "agent_start" },
+    })).toThrow("Invalid host event");
+    expect(() => decodeHostRecord({
+      protocolVersion: 1,
+      type: "session.event",
+      sequence: 0,
+      payload: { type: "lifecycle", phase: "started" },
+    })).toThrow("Invalid host event");
   });
 });

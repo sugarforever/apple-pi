@@ -1,4 +1,4 @@
-import { PROTOCOL_VERSION, decodeCommandResult, type HostCommandResults, type HostCommandType, decodeHostMessage, type HostEvent, type HostMessage, type HostResponse } from "@apple-pi/protocol";
+import { PROTOCOL_VERSION, decodeHostRecord, type HostCommandResults, type HostCommandType, decodeHostMessage, type HostEvent, type HostMessage, type HostResponse } from "@apple-pi/protocol";
 import { PI_VERSION, PiSessionService } from "@apple-pi/pi-adapter";
 
 export const HOST_VERSION = "0.1.0" as const;
@@ -8,13 +8,23 @@ export class HostServer {
   constructor(onEvent: (event: HostEvent) => void = () => {}) {
     this.pi = new PiSessionService();
     let sequence = 0;
-    this.pi.onEvent((payload) => onEvent({ protocolVersion: 1, type: "session.event", sequence: ++sequence, payload }));
+    this.pi.onEvent((payload) => {
+      let record: HostEvent;
+      try {
+        const decoded = decodeHostRecord({ protocolVersion: PROTOCOL_VERSION, type: "session.event", sequence: ++sequence, payload });
+        if (!("type" in decoded)) throw new HostProtocolFault();
+        record = decoded;
+      } catch {
+        throw new HostProtocolFault();
+      }
+      onEvent(record);
+    });
   }
 
   async handle(input: unknown): Promise<HostResponse> {
     let message: HostMessage;
     try { message = decodeHostMessage(input); } catch (error) {
-      return { protocolVersion: 1, requestId: typeof (input as { requestId?: unknown })?.requestId === "string" ? (input as { requestId: string }).requestId : "unknown", ok: false, error: error instanceof Error ? error.message : String(error) };
+      return failure(typeof (input as { requestId?: unknown })?.requestId === "string" ? (input as { requestId: string }).requestId : "unknown", error);
     }
     try {
       switch (message.type) {
@@ -36,11 +46,30 @@ export class HostServer {
         case "model.set": return success("model.set", message.requestId, await this.pi.setModel(message.payload.provider, message.payload.modelId));
       }
     } catch (error) {
-      return { protocolVersion: 1, requestId: message.requestId, ok: false, error: error instanceof Error ? error.message : String(error) };
+      return failure(message.requestId, error);
     }
   }
 }
 
 function success<Command extends HostCommandType>(command: Command, requestId: string, result: HostCommandResults[Command]): HostResponse<Command> {
-  return { protocolVersion: PROTOCOL_VERSION, requestId, ok: true, result: decodeCommandResult(command, result) };
+  try {
+    const record = decodeHostRecord({ protocolVersion: PROTOCOL_VERSION, requestId, ok: true, result }, command);
+    if ("type" in record) throw new HostProtocolFault();
+    return record;
+  } catch {
+    throw new HostProtocolFault();
+  }
+}
+
+function failure(requestId: string, error: unknown): HostResponse {
+  const message = error instanceof HostProtocolFault
+    ? error.message
+    : error instanceof Error && error.message
+      ? error.message
+      : "Agent host request failed";
+  return decodeHostRecord({ protocolVersion: PROTOCOL_VERSION, requestId, ok: false, error: message }) as HostResponse;
+}
+
+class HostProtocolFault extends Error {
+  constructor() { super("Agent host protocol fault"); }
 }
