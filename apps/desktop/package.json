@@ -6,9 +6,10 @@
   "main": "out/main/index.js",
   "scripts": {
     "dev": "pnpm --filter @apple-pi/protocol build && pnpm --filter @apple-pi/pi-adapter build && pnpm --filter @apple-pi/agent-host build && electron-vite dev",
-    "build": "pnpm --filter @apple-pi/agent-host build && electron-vite build && mkdir -p out/agent-host && cp ../agent-host/dist/index.js ../agent-host/dist/server.js out/agent-host/",
+    "build": "pnpm --filter @apple-pi/agent-host build && electron-vite build && mkdir -p out/agent-host && cp ../agent-host/dist/index.js ../agent-host/dist/server.js ../agent-host/dist/host-process.js out/agent-host/",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.node.json --noEmit",
     "test": "vitest run",
+    "test:package": "pnpm build && vitest run src/main/agent-host-package.test.ts",
     "package:mac": "pnpm build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac --dir --publish never"
   },
   "dependencies": {

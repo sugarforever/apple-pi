@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { AgentHostSupervisor } from "./agent-host-supervisor.js";
 import { AppCatalog, type ModelRef } from "./app-catalog.js";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { installGracefulShutdown } from "./graceful-shutdown.js";
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 const host = new AgentHostSupervisor({
@@ -43,7 +44,7 @@ app.whenReady().then(async () => {
 });
 app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });
 app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
-app.on("before-quit", () => host.stop());
+installGracefulShutdown(app, host);
 
 ipcMain.handle("workspace:pick", async () => {
   const result = await dialog.showOpenDialog(mainWindow!, { properties: ["openDirectory"] });
