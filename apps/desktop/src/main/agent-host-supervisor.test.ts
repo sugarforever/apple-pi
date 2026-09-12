@@ -23,7 +23,7 @@ describe("agent host supervisor handshake", () => {
     });
 
     await supervisor.start();
-    await expect(supervisor.request("session.snapshot", {})).resolves.toEqual({ opened: false });
+    await expect(supervisor.request("session.snapshot", {})).resolves.toEqual({ opened: false, messages: [], running: false });
     expect(received).toEqual(["system.hello", "session.snapshot"]);
   });
 
@@ -82,6 +82,101 @@ describe("agent host supervisor handshake", () => {
       capabilities: { ...compatibleHandshake.capabilities, [capability]: false },
     }, "0.1.0")).toThrow(`Agent host is missing required capability: ${capability}`);
   });
+
+  it("rejects a pending request once when a split success response has a malformed result", async () => {
+    const host = controllableHost();
+    const supervisor = new AgentHostSupervisor({
+      hostPath: () => "/fake/agent-host.js",
+      hostVersion: () => "0.1.0",
+      spawnHost: () => host.child,
+    });
+    const faults: unknown[] = [];
+    supervisor.on("protocol.fault", (fault) => faults.push(fault));
+    await supervisor.start();
+
+    const request = supervisor.request("session.snapshot", {});
+    const requestId = host.received.at(-1)!.requestId;
+    host.write({ protocolVersion: 1, requestId, ok: true, result: { opened: false } }, [1, 2, 5, 3]);
+
+    await expect(request).rejects.toThrow(`Agent host protocol fault for request ${requestId}`);
+    expect(faults).toEqual([{
+      code: "INVALID_HOST_RECORD",
+      message: `Agent host protocol fault for request ${requestId}`,
+      requestId,
+    }]);
+    expect(host.kill).toHaveBeenCalledOnce();
+    host.exit();
+    expect(faults).toHaveLength(1);
+  });
+
+  it("rejects malformed error responses without exposing their content", async () => {
+    const host = controllableHost();
+    const supervisor = new AgentHostSupervisor({
+      hostPath: () => "/fake/agent-host.js",
+      hostVersion: () => "0.1.0",
+      spawnHost: () => host.child,
+    });
+    await supervisor.start();
+
+    const request = supervisor.request("session.snapshot", {});
+    const requestId = host.received.at(-1)!.requestId;
+    host.write({
+      protocolVersion: 1,
+      requestId,
+      ok: false,
+      error: "sk-private-transcript-fragment",
+      transcript: "private conversation",
+    });
+
+    await expect(request).rejects.toThrow(`Agent host protocol fault for request ${requestId}`);
+  });
+
+  it.each([
+    { sequence: 1, payload: { type: "agent_start" } },
+    { sequence: 0, payload: { type: "lifecycle", phase: "started" } },
+  ])("faults on an invalid host event %#", async ({ sequence, payload }) => {
+    const host = controllableHost();
+    const supervisor = new AgentHostSupervisor({
+      hostPath: () => "/fake/agent-host.js",
+      hostVersion: () => "0.1.0",
+      spawnHost: () => host.child,
+    });
+    const fault = vi.fn();
+    supervisor.on("protocol.fault", fault);
+    await supervisor.start();
+
+    host.write({ protocolVersion: 1, type: "session.event", sequence, payload });
+
+    expect(fault).toHaveBeenCalledWith({
+      code: "INVALID_HOST_RECORD",
+      message: "Agent host protocol fault",
+    });
+    expect(host.kill).toHaveBeenCalledOnce();
+  });
+
+  it("does not copy an unsolicited request id into a protocol fault", async () => {
+    const host = controllableHost();
+    const supervisor = new AgentHostSupervisor({
+      hostPath: () => "/fake/agent-host.js",
+      hostVersion: () => "0.1.0",
+      spawnHost: () => host.child,
+    });
+    const fault = vi.fn();
+    supervisor.on("protocol.fault", fault);
+    await supervisor.start();
+
+    host.write({
+      protocolVersion: 1,
+      requestId: "sk-private-transcript-fragment",
+      ok: true,
+      result: { opened: false, messages: [], running: false },
+    });
+
+    expect(fault).toHaveBeenCalledWith({
+      code: "INVALID_HOST_RECORD",
+      message: "Agent host protocol fault",
+    });
+  });
 });
 
 function fakeHost(handshake: unknown): {
@@ -102,7 +197,7 @@ function fakeHost(handshake: unknown): {
     for (const line of chunk.trim().split("\n")) {
       const request = JSON.parse(line) as { requestId: string; type: string };
       received.push(request.type);
-      const result = request.type === "system.hello" ? handshake : { opened: false };
+      const result = request.type === "system.hello" ? handshake : { opened: false, messages: [], running: false };
       stdout.write(`${JSON.stringify({ protocolVersion: 1, requestId: request.requestId, ok: true, result })}\n`);
     }
   });
@@ -112,5 +207,46 @@ function fakeHost(handshake: unknown): {
     kill,
     exit: () => processEvents.emit("exit", 1, null),
     received,
+  };
+}
+
+function controllableHost(): {
+  child: ChildProcessWithoutNullStreams;
+  kill: ReturnType<typeof vi.fn>;
+  exit: () => void;
+  received: Array<{ requestId: string; type: string }>;
+  write: (record: unknown, chunkSizes?: number[]) => void;
+} {
+  const processEvents = new EventEmitter();
+  const stdin = new PassThrough();
+  const stdout = new PassThrough();
+  const stderr = new PassThrough();
+  const kill = vi.fn(() => true);
+  const received: Array<{ requestId: string; type: string }> = [];
+
+  stdin.setEncoding("utf8");
+  stdin.on("data", (chunk: string) => {
+    for (const line of chunk.trim().split("\n")) {
+      const request = JSON.parse(line) as { requestId: string; type: string };
+      received.push(request);
+      if (request.type === "system.hello") {
+        stdout.write(`${JSON.stringify({ protocolVersion: 1, requestId: request.requestId, ok: true, result: compatibleHandshake })}\n`);
+      }
+    }
+  });
+
+  return {
+    child: Object.assign(processEvents, { stdin, stdout, stderr, kill }) as unknown as ChildProcessWithoutNullStreams,
+    kill,
+    exit: () => processEvents.emit("exit", 1, null),
+    received,
+    write: (record, chunkSizes = []) => {
+      let encoded = `${JSON.stringify(record)}\n`;
+      for (const size of chunkSizes) {
+        stdout.write(encoded.slice(0, size));
+        encoded = encoded.slice(size);
+      }
+      stdout.write(encoded);
+    },
   };
 }

@@ -1,7 +1,15 @@
 import { ChildProcessWithoutNullStreams, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
-import { encodeRecord, JsonlDecoder, type HostResponse } from "@apple-pi/protocol";
+import {
+  decodeHostRecord,
+  encodeRecord,
+  JsonlDecoder,
+  type HostCommandPayloads,
+  type HostCommandResults,
+  type HostCommandType,
+  type HostResponse,
+} from "@apple-pi/protocol";
 import { validateHostHandshake } from "./host-compatibility.js";
 
 export interface AgentHostSupervisorOptions {
@@ -10,10 +18,20 @@ export interface AgentHostSupervisorOptions {
   spawnHost?: (hostPath: string) => ChildProcessWithoutNullStreams;
 }
 
+export interface AgentHostProtocolFault {
+  code: "INVALID_HOST_RECORD";
+  message: string;
+  requestId?: string;
+}
+
 export class AgentHostSupervisor extends EventEmitter {
   private child?: ChildProcessWithoutNullStreams;
   private ready = false;
-  private readonly pending = new Map<string, { resolve: (value: unknown) => void; reject: (error: Error) => void }>();
+  private readonly pending = new Map<string, {
+    type: HostCommandType;
+    resolve: (value: unknown) => void;
+    reject: (error: Error) => void;
+  }>();
 
   constructor(private readonly options: AgentHostSupervisorOptions) { super(); }
 
@@ -25,7 +43,11 @@ export class AgentHostSupervisor extends EventEmitter {
     const decoder = new JsonlDecoder();
     this.child.stdout.setEncoding("utf8");
     this.child.stdout.on("data", (chunk: string) => {
-      for (const record of decoder.push(chunk)) this.onRecord(record);
+      try {
+        for (const record of decoder.push(chunk)) this.onRecord(record);
+      } catch {
+        this.failProtocol();
+      }
     });
     this.child.stderr.setEncoding("utf8");
     this.child.stderr.on("data", (chunk: string) => console.error(`[agent-host] ${chunk.trimEnd()}`));
@@ -46,16 +68,16 @@ export class AgentHostSupervisor extends EventEmitter {
     }
   }
 
-  request(type: string, payload: Record<string, unknown>): Promise<unknown> {
+  request<Command extends HostCommandType>(type: Command, payload: HostCommandPayloads[Command]): Promise<HostCommandResults[Command]> {
     if (!this.ready) return Promise.reject(new Error("Agent host handshake is not complete"));
     return this.sendRequest(type, payload);
   }
 
-  private sendRequest(type: string, payload: Record<string, unknown>): Promise<unknown> {
+  private sendRequest<Command extends HostCommandType>(type: Command, payload: HostCommandPayloads[Command]): Promise<HostCommandResults[Command]> {
     if (!this.child) return Promise.reject(new Error("Agent host is not running"));
     const requestId = randomUUID();
-    return new Promise((resolve, reject) => {
-      this.pending.set(requestId, { resolve, reject });
+    return new Promise<HostCommandResults[Command]>((resolve, reject) => {
+      this.pending.set(requestId, { type, resolve: resolve as (value: unknown) => void, reject });
       this.child!.stdin.write(encodeRecord({ protocolVersion: 1, requestId, type, payload }));
     });
   }
@@ -63,11 +85,44 @@ export class AgentHostSupervisor extends EventEmitter {
   stop(): void { this.ready = false; this.child?.kill(); this.child = undefined; }
 
   private onRecord(record: unknown): void {
-    if ((record as { type?: unknown })?.type === "session.event") { this.emit("session.event", record); return; }
-    const response = record as HostResponse;
-    const pending = this.pending.get(response.requestId);
-    if (!pending) return;
+    const requestId = typeof (record as { requestId?: unknown })?.requestId === "string"
+      ? (record as { requestId: string }).requestId
+      : undefined;
+    const pending = requestId ? this.pending.get(requestId) : undefined;
+    let decoded;
+    try {
+      decoded = pending ? decodeHostRecord(record, pending.type) : decodeHostRecord(record);
+    } catch {
+      this.failProtocol(pending ? requestId : undefined);
+      return;
+    }
+    if ("type" in decoded) { this.emit("session.event", decoded); return; }
+    const response = decoded as HostResponse;
+    const responsePending = this.pending.get(response.requestId);
+    if (!responsePending) return;
     this.pending.delete(response.requestId);
-    response.ok ? pending.resolve(response.result) : pending.reject(new Error(response.error));
+    response.ok ? responsePending.resolve(response.result) : responsePending.reject(new Error(response.error));
+  }
+
+  private failProtocol(requestId?: string): void {
+    if (!this.child) return;
+    const message = requestId
+      ? `Agent host protocol fault for request ${requestId}`
+      : "Agent host protocol fault";
+    const fault: AgentHostProtocolFault = {
+      code: "INVALID_HOST_RECORD",
+      message,
+      ...(requestId ? { requestId } : {}),
+    };
+    this.ready = false;
+    const child = this.child;
+    this.child = undefined;
+    const pendingRequests = [...this.pending.entries()];
+    this.pending.clear();
+    for (const [pendingId, pending] of pendingRequests) {
+      pending.reject(new Error(`Agent host protocol fault for request ${pendingId}`));
+    }
+    this.emit("protocol.fault", fault);
+    child.kill();
   }
 }
