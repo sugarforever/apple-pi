@@ -38,29 +38,39 @@ export class AgentHostSupervisor extends EventEmitter {
   async start(): Promise<void> {
     this.ready = false;
     const hostPath = this.options.hostPath();
-    this.child = this.options.spawnHost?.(hostPath)
+    const child = this.options.spawnHost?.(hostPath)
       ?? spawn(process.execPath, [hostPath], { stdio: ["pipe", "pipe", "pipe"], env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" } });
+    this.child = child;
     const decoder = new JsonlDecoder();
-    this.child.stdout.setEncoding("utf8");
-    this.child.stdout.on("data", (chunk: string) => {
+    child.stdout.setEncoding("utf8");
+    child.stdout.on("data", (chunk: string) => {
+      if (this.child !== child) return;
+      let records: unknown[];
       try {
-        for (const record of decoder.push(chunk)) this.onRecord(record);
+        records = decoder.push(chunk);
       } catch {
-        this.failProtocol();
+        this.failProtocol(child);
+        return;
+      }
+      for (const record of records) {
+        if (this.child !== child) return;
+        this.onRecord(child, record);
       }
     });
-    this.child.stderr.setEncoding("utf8");
-    this.child.stderr.on("data", (chunk: string) => console.error(`[agent-host] ${chunk.trimEnd()}`));
-    this.child.once("exit", () => {
+    child.stderr.setEncoding("utf8");
+    child.stderr.on("data", (chunk: string) => {
+      if (this.child === child) console.error(`[agent-host] ${chunk.trimEnd()}`);
+    });
+    child.once("exit", () => {
+      if (this.child !== child) return;
       this.ready = false;
       this.child = undefined;
-      const error = new Error("Agent host stopped");
-      for (const pending of this.pending.values()) pending.reject(error);
-      this.pending.clear();
+      this.rejectPending(() => "Agent host stopped");
       this.emit("disconnected");
     });
     try {
       validateHostHandshake(await this.sendRequest("system.hello", {}), this.options.hostVersion());
+      if (this.child !== child) throw new Error("Agent host stopped during handshake");
       this.ready = true;
     } catch (error) {
       this.stop();
@@ -82,9 +92,17 @@ export class AgentHostSupervisor extends EventEmitter {
     });
   }
 
-  stop(): void { this.ready = false; this.child?.kill(); this.child = undefined; }
+  stop(): void {
+    this.ready = false;
+    const child = this.child;
+    if (!child) return;
+    this.child = undefined;
+    this.rejectPending(() => "Agent host stopped");
+    child.kill();
+    this.emit("disconnected");
+  }
 
-  private onRecord(record: unknown): void {
+  private onRecord(child: ChildProcessWithoutNullStreams, record: unknown): void {
     const requestId = typeof (record as { requestId?: unknown })?.requestId === "string"
       ? (record as { requestId: string }).requestId
       : undefined;
@@ -93,19 +111,22 @@ export class AgentHostSupervisor extends EventEmitter {
     try {
       decoded = pending ? decodeHostRecord(record, pending.type) : decodeHostRecord(record);
     } catch {
-      this.failProtocol(pending ? requestId : undefined);
+      this.failProtocol(child, pending ? requestId : undefined);
       return;
     }
     if ("type" in decoded) { this.emit("session.event", decoded); return; }
     const response = decoded as HostResponse;
     const responsePending = this.pending.get(response.requestId);
-    if (!responsePending) return;
+    if (!responsePending) {
+      this.failProtocol(child);
+      return;
+    }
     this.pending.delete(response.requestId);
     response.ok ? responsePending.resolve(response.result) : responsePending.reject(new Error(response.error));
   }
 
-  private failProtocol(requestId?: string): void {
-    if (!this.child) return;
+  private failProtocol(child: ChildProcessWithoutNullStreams, requestId?: string): void {
+    if (this.child !== child) return;
     const message = requestId
       ? `Agent host protocol fault for request ${requestId}`
       : "Agent host protocol fault";
@@ -115,14 +136,15 @@ export class AgentHostSupervisor extends EventEmitter {
       ...(requestId ? { requestId } : {}),
     };
     this.ready = false;
-    const child = this.child;
     this.child = undefined;
+    this.rejectPending((pendingId) => `Agent host protocol fault for request ${pendingId}`);
+    child.kill();
+    this.emit("protocol.fault", fault);
+  }
+
+  private rejectPending(message: (requestId: string) => string): void {
     const pendingRequests = [...this.pending.entries()];
     this.pending.clear();
-    for (const [pendingId, pending] of pendingRequests) {
-      pending.reject(new Error(`Agent host protocol fault for request ${pendingId}`));
-    }
-    this.emit("protocol.fault", fault);
-    child.kill();
+    for (const [requestId, pending] of pendingRequests) pending.reject(new Error(message(requestId)));
   }
 }

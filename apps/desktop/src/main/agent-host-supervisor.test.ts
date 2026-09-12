@@ -15,41 +15,41 @@ const compatibleHandshake = {
 
 describe("agent host supervisor handshake", () => {
   it("marks the host ready only after a compatible handshake", async () => {
-    const { child, received } = fakeHost(compatibleHandshake);
+    const host = controllableHost({ autoBusinessResult: { opened: false, messages: [], running: false } });
     const supervisor = new AgentHostSupervisor({
       hostPath: () => "/fake/agent-host.js",
       hostVersion: () => "0.1.0",
-      spawnHost: () => child,
+      spawnHost: () => host.child,
     });
 
     await supervisor.start();
     await expect(supervisor.request("session.snapshot", {})).resolves.toEqual({ opened: false, messages: [], running: false });
-    expect(received).toEqual(["system.hello", "session.snapshot"]);
+    expect(host.received.map(({ type }) => type)).toEqual(["system.hello", "session.snapshot"]);
   });
 
   it("stops an incompatible host and keeps business commands blocked", async () => {
-    const { child, kill } = fakeHost({ ...compatibleHandshake, piVersion: "0.85.0" });
+    const host = controllableHost({ handshake: { ...compatibleHandshake, piVersion: "0.85.0" } });
     const supervisor = new AgentHostSupervisor({
       hostPath: () => "/fake/agent-host.js",
       hostVersion: () => "0.1.0",
-      spawnHost: () => child,
+      spawnHost: () => host.child,
     });
 
     await expect(supervisor.start()).rejects.toThrow("Incompatible Pi version: expected 0.84.2, received 0.85.0");
-    expect(kill).toHaveBeenCalledOnce();
+    expect(host.kill).toHaveBeenCalledOnce();
     await expect(supervisor.request("session.snapshot", {})).rejects.toThrow("Agent host handshake is not complete");
   });
 
   it("revokes readiness when the compatible host exits", async () => {
-    const { child, exit } = fakeHost(compatibleHandshake);
+    const host = controllableHost();
     const supervisor = new AgentHostSupervisor({
       hostPath: () => "/fake/agent-host.js",
       hostVersion: () => "0.1.0",
-      spawnHost: () => child,
+      spawnHost: () => host.child,
     });
 
     await supervisor.start();
-    exit();
+    host.exit();
 
     await expect(supervisor.request("session.snapshot", {})).rejects.toThrow("Agent host handshake is not complete");
   });
@@ -83,7 +83,7 @@ describe("agent host supervisor handshake", () => {
     }, "0.1.0")).toThrow(`Agent host is missing required capability: ${capability}`);
   });
 
-  it("rejects a pending request once when a split success response has a malformed result", async () => {
+  it("rejects every pending request before exit when a split success response is malformed", async () => {
     const host = controllableHost();
     const supervisor = new AgentHostSupervisor({
       hostPath: () => "/fake/agent-host.js",
@@ -94,15 +94,18 @@ describe("agent host supervisor handshake", () => {
     supervisor.on("protocol.fault", (fault) => faults.push(fault));
     await supervisor.start();
 
-    const request = supervisor.request("session.snapshot", {});
-    const requestId = host.received.at(-1)!.requestId;
-    host.write({ protocolVersion: 1, requestId, ok: true, result: { opened: false } }, [1, 2, 5, 3]);
+    const snapshotRequest = supervisor.request("session.snapshot", {});
+    const modelRequest = supervisor.request("model.list", {});
+    const snapshotId = host.received.at(-2)!.requestId;
+    const modelId = host.received.at(-1)!.requestId;
+    host.write({ protocolVersion: 1, requestId: snapshotId, ok: true, result: { opened: false } }, [1, 2, 5, 3]);
 
-    await expect(request).rejects.toThrow(`Agent host protocol fault for request ${requestId}`);
+    await expect(snapshotRequest).rejects.toThrow(`Agent host protocol fault for request ${snapshotId}`);
+    await expect(modelRequest).rejects.toThrow(`Agent host protocol fault for request ${modelId}`);
     expect(faults).toEqual([{
       code: "INVALID_HOST_RECORD",
-      message: `Agent host protocol fault for request ${requestId}`,
-      requestId,
+      message: `Agent host protocol fault for request ${snapshotId}`,
+      requestId: snapshotId,
     }]);
     expect(host.kill).toHaveBeenCalledOnce();
     host.exit();
@@ -177,40 +180,130 @@ describe("agent host supervisor handshake", () => {
       message: "Agent host protocol fault",
     });
   });
-});
 
-function fakeHost(handshake: unknown): {
-  child: ChildProcessWithoutNullStreams;
-  kill: ReturnType<typeof vi.fn>;
-  exit: () => void;
-  received: string[];
-} {
-  const processEvents = new EventEmitter();
-  const stdin = new PassThrough();
-  const stdout = new PassThrough();
-  const stderr = new PassThrough();
-  const kill = vi.fn(() => true);
-  const received: string[] = [];
+  it("does not classify a session event consumer failure as a protocol fault", async () => {
+    const host = controllableHost();
+    const supervisor = new AgentHostSupervisor({
+      hostPath: () => "/fake/agent-host.js",
+      hostVersion: () => "0.1.0",
+      spawnHost: () => host.child,
+    });
+    const fault = vi.fn();
+    supervisor.on("protocol.fault", fault);
+    supervisor.on("session.event", () => { throw new Error("consumer failed"); });
+    await supervisor.start();
 
-  stdin.setEncoding("utf8");
-  stdin.on("data", (chunk: string) => {
-    for (const line of chunk.trim().split("\n")) {
-      const request = JSON.parse(line) as { requestId: string; type: string };
-      received.push(request.type);
-      const result = request.type === "system.hello" ? handshake : { opened: false, messages: [], running: false };
-      stdout.write(`${JSON.stringify({ protocolVersion: 1, requestId: request.requestId, ok: true, result })}\n`);
-    }
+    expect(() => host.write({
+      protocolVersion: 1,
+      type: "session.event",
+      sequence: 1,
+      payload: { type: "lifecycle", phase: "started" },
+    })).toThrow("consumer failed");
+    expect(fault).not.toHaveBeenCalled();
+    expect(host.kill).not.toHaveBeenCalled();
   });
 
-  return {
-    child: Object.assign(processEvents, { stdin, stdout, stderr, kill }) as unknown as ChildProcessWithoutNullStreams,
-    kill,
-    exit: () => processEvents.emit("exit", 1, null),
-    received,
-  };
-}
+  it("does not become ready when a valid hello and invalid record share a chunk", async () => {
+    const host = controllableHost({
+      helloRecords: (requestId) => [
+        { protocolVersion: 1, requestId, ok: true, result: compatibleHandshake },
+        { protocolVersion: 1, type: "session.event", sequence: 0, payload: { type: "lifecycle", phase: "started" } },
+      ],
+    });
+    const supervisor = new AgentHostSupervisor({
+      hostPath: () => "/fake/agent-host.js",
+      hostVersion: () => "0.1.0",
+      spawnHost: () => host.child,
+    });
 
-function controllableHost(): {
+    await expect(supervisor.start()).rejects.toThrow("Agent host stopped during handshake");
+    await expect(supervisor.request("session.snapshot", {})).rejects.toThrow("Agent host handshake is not complete");
+  });
+
+  it("ignores stale output and exit callbacks after starting a replacement host", async () => {
+    const first = controllableHost();
+    const second = controllableHost();
+    const hosts = [first.child, second.child];
+    const supervisor = new AgentHostSupervisor({
+      hostPath: () => "/fake/agent-host.js",
+      hostVersion: () => "0.1.0",
+      spawnHost: () => hosts.shift()!,
+    });
+    const event = vi.fn();
+    supervisor.on("session.event", event);
+    await supervisor.start();
+    first.write({ protocolVersion: 1, type: "session.event", sequence: 0, payload: { type: "lifecycle", phase: "started" } });
+    await supervisor.start();
+
+    first.write({ protocolVersion: 1, type: "session.event", sequence: 1, payload: { type: "lifecycle", phase: "started" } });
+    first.exit();
+    const request = supervisor.request("session.snapshot", {});
+    const requestId = second.received.at(-1)!.requestId;
+    second.write({ protocolVersion: 1, requestId, ok: true, result: { opened: false, messages: [], running: false } });
+
+    expect(event).not.toHaveBeenCalled();
+    await expect(request).resolves.toEqual({ opened: false, messages: [], running: false });
+  });
+
+  it("faults on an unsolicited valid error response", async () => {
+    const host = controllableHost();
+    const supervisor = new AgentHostSupervisor({
+      hostPath: () => "/fake/agent-host.js",
+      hostVersion: () => "0.1.0",
+      spawnHost: () => host.child,
+    });
+    const fault = vi.fn();
+    supervisor.on("protocol.fault", fault);
+    await supervisor.start();
+
+    host.write({ protocolVersion: 1, requestId: "unsolicited", ok: false, error: "failed" });
+
+    expect(fault).toHaveBeenCalledWith({ code: "INVALID_HOST_RECORD", message: "Agent host protocol fault" });
+    expect(host.kill).toHaveBeenCalledOnce();
+  });
+
+  it("kills a malformed host even when a protocol fault observer throws", async () => {
+    const host = controllableHost();
+    const supervisor = new AgentHostSupervisor({
+      hostPath: () => "/fake/agent-host.js",
+      hostVersion: () => "0.1.0",
+      spawnHost: () => host.child,
+    });
+    supervisor.on("protocol.fault", () => { throw new Error("observer failed"); });
+    await supervisor.start();
+
+    expect(() => host.write({ protocolVersion: 1, type: "session.event", sequence: 0, payload: {} }))
+      .toThrow("observer failed");
+    expect(host.kill).toHaveBeenCalledOnce();
+  });
+
+  it("rejects pending requests and disconnects once when stopped", async () => {
+    const host = controllableHost();
+    const supervisor = new AgentHostSupervisor({
+      hostPath: () => "/fake/agent-host.js",
+      hostVersion: () => "0.1.0",
+      spawnHost: () => host.child,
+    });
+    const disconnected = vi.fn();
+    supervisor.on("disconnected", disconnected);
+    await supervisor.start();
+    const request = supervisor.request("session.snapshot", {});
+
+    supervisor.stop();
+
+    await expect(request).rejects.toThrow("Agent host stopped");
+    expect(disconnected).toHaveBeenCalledOnce();
+    expect(host.kill).toHaveBeenCalledOnce();
+    host.exit();
+    expect(disconnected).toHaveBeenCalledOnce();
+  });
+});
+
+function controllableHost(options: {
+  handshake?: unknown;
+  helloRecords?: (requestId: string) => unknown[];
+  autoBusinessResult?: unknown;
+} = {}): {
   child: ChildProcessWithoutNullStreams;
   kill: ReturnType<typeof vi.fn>;
   exit: () => void;
@@ -230,7 +323,11 @@ function controllableHost(): {
       const request = JSON.parse(line) as { requestId: string; type: string };
       received.push(request);
       if (request.type === "system.hello") {
-        stdout.write(`${JSON.stringify({ protocolVersion: 1, requestId: request.requestId, ok: true, result: compatibleHandshake })}\n`);
+        const records = options.helloRecords?.(request.requestId)
+          ?? [{ protocolVersion: 1, requestId: request.requestId, ok: true, result: options.handshake ?? compatibleHandshake }];
+        stdout.write(`${records.map((record) => JSON.stringify(record)).join("\n")}\n`);
+      } else if ("autoBusinessResult" in options) {
+        stdout.write(`${JSON.stringify({ protocolVersion: 1, requestId: request.requestId, ok: true, result: options.autoBusinessResult })}\n`);
       }
     }
   });

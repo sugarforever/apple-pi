@@ -9,13 +9,15 @@ export class HostServer {
     this.pi = new PiSessionService();
     let sequence = 0;
     this.pi.onEvent((payload) => {
+      let record: HostEvent;
       try {
-        const record = decodeHostRecord({ protocolVersion: PROTOCOL_VERSION, type: "session.event", sequence: ++sequence, payload });
-        if (!("type" in record)) throw new HostProtocolFault();
-        onEvent(record);
+        const decoded = decodeHostRecord({ protocolVersion: PROTOCOL_VERSION, type: "session.event", sequence: ++sequence, payload });
+        if (!("type" in decoded)) throw new HostProtocolFault();
+        record = decoded;
       } catch {
         throw new HostProtocolFault();
       }
+      onEvent(record);
     });
   }
 

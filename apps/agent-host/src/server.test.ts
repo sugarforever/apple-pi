@@ -45,6 +45,14 @@ describe("HostServer", () => {
     expect(events).toEqual([]);
   });
 
+  it("does not relabel a JSONL writer failure as a protocol fault", () => {
+    const server = new HostServer(() => { throw new Error("writer failed"); });
+    const service = (server as unknown as { pi: { listener: (event: unknown) => void } }).pi;
+
+    expect(() => service.listener({ type: "lifecycle", phase: "started" }))
+      .toThrow("writer failed");
+  });
+
   it("emits a schema-valid fallback for an empty error response", async () => {
     const server = new HostServer();
     const service = (server as unknown as { pi: { snapshot: () => unknown } }).pi;
