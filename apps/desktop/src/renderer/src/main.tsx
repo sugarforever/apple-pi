@@ -1,7 +1,9 @@
 import React, { useEffect, useMemo, useReducer, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { AlertCircle, Check, ChevronDown, CircleDashed, Folder, FolderInput, MessageSquare, Plus, Send, Settings2, Sparkles, Square, Terminal, X } from "lucide-react";
-import { initialSessionState, reduceSession, type SessionSnapshot } from "../session-state.js";
+import type { SessionSnapshot } from "@apple-pi/protocol";
+import { runSessionResync } from "../session-resync.js";
+import { initialSessionState, reduceSession } from "../session-state.js";
 import { toTimelineItems, type ToolItem } from "../tool-activity.js";
 import type { Catalog, ModelItem, ModelRef, SessionItem, WorkspaceOpenResult } from "../global.js";
 import "./styles.css";
@@ -92,7 +94,7 @@ function App() {
   };
 
   const refreshSessions = async (): Promise<void> => {
-    const remoteSessions = (await window.applePi.session.list()) as SessionItem[];
+    const remoteSessions = await window.applePi.session.list();
     setSessions((current) => {
       const drafts = current.filter((session) => !session.persisted);
       const remotePaths = new Set(remoteSessions.map((session) => session.path));
@@ -109,11 +111,18 @@ function App() {
   useEffect(() => {
     void window.applePi.workspace.list().then(setCatalog);
     void window.applePi.model.list().then(setModels).catch(() => setModels([]));
-    return window.applePi.session.subscribe((event) => {
-      dispatch({ type: "event", sequence: event.sequence, payload: event.payload });
-      void window.applePi.session.getSnapshot().then((snapshot) => dispatch({ type: "snapshot", snapshot })).catch(showError);
-    });
+    return window.applePi.session.subscribe((event) => dispatch({ type: "event", sequence: event.sequence, payload: event.payload }));
   }, []);
+
+  useEffect(() => {
+    if (state.sync.status !== "resyncing") return;
+    void runSessionResync(window.applePi.session.getSnapshot, state.sync.generation, dispatch);
+  }, [state.sync.status, state.sync.generation]);
+
+  useEffect(() => {
+    if (state.sync.status === "failed") setAppError(`Something went wrong. ${state.sync.error} Try again.`);
+    else if (state.sync.status === "synced") setAppError("");
+  }, [state.sync.status, state.sync.generation]);
 
   const applyWorkspace = (result: WorkspaceOpenResult | null) => {
     if (!result) return;
@@ -121,7 +130,7 @@ function App() {
     setWorkspacePath(result.workspacePath);
     setSessions(result.sessions.map((session) => ({ ...session, persisted: true })));
     updateActiveSessionFromSnapshot(result.session);
-    dispatch({ type: "snapshot", snapshot: result.session });
+    dispatch({ type: "operation_snapshot", snapshot: result.session });
     void refreshSessions();
   };
 
@@ -131,7 +140,7 @@ function App() {
     setNotice("");
     try {
       const snapshot = await operation;
-      dispatch({ type: "snapshot", snapshot });
+      dispatch({ type: "operation_snapshot", snapshot });
       updateActiveSessionFromSnapshot(snapshot);
       await refreshSessions();
     } catch (error) {
@@ -164,14 +173,14 @@ function App() {
     setActiveSessionId(session.id);
     setDraftSessionId(session.id);
     dispatch({
-      type: "snapshot",
+      type: "operation_snapshot",
       snapshot: {
         opened: true,
         sessionId: session.id,
         sessionFile: session.path,
         messages: [],
         running: false,
-        model: catalog.defaultModel ? models.find((model) => model.provider === catalog.defaultModel?.provider && model.modelId === catalog.defaultModel.modelId) : state.model,
+        model: catalog.defaultModel ? models.find((model) => model.provider === catalog.defaultModel?.provider && model.modelId === catalog.defaultModel.modelId) : state.opened ? state.model : undefined,
       },
     });
   };
@@ -181,14 +190,14 @@ function App() {
     if (!session.persisted) {
       setDraftSessionId(session.id);
       dispatch({
-        type: "snapshot",
+        type: "operation_snapshot",
         snapshot: {
           opened: true,
           sessionId: session.id,
           sessionFile: session.path,
           messages: [],
           running: false,
-          model: catalog.defaultModel ? models.find((model) => model.provider === catalog.defaultModel?.provider && model.modelId === catalog.defaultModel.modelId) : state.model,
+          model: catalog.defaultModel ? models.find((model) => model.provider === catalog.defaultModel?.provider && model.modelId === catalog.defaultModel.modelId) : state.opened ? state.model : undefined,
         },
       });
       return;
@@ -205,10 +214,12 @@ function App() {
 
     if (draftSessionId && draftSessionId === activeSessionId) {
       await snapshotOp(window.applePi.session.create());
+      dispatch({ type: "user_message", text });
       await snapshotOp(window.applePi.session.send(text));
       return;
     }
 
+    dispatch({ type: "user_message", text });
     void snapshotOp(window.applePi.session.send(text));
   };
 
@@ -323,7 +334,7 @@ function App() {
                   aria-label="Message Pi"
                   placeholder={state.opened ? "Ask Pi to build, debug, or explain…" : "Open a workspace to start"}
                 />
-                <div className="composer-bottom"><div className="model-select-wrap">{state.opened && !draftSessionId ? <Sparkles size={14} /> : <CircleDashed size={14} />}<ModelSelect ariaLabel="Session model" models={groupedModels} value={state.model ? modelKey(state.model) : ""} onChange={(value) => void snapshotOp(window.applePi.model.setSession(parseModelKey(value)))} emptyLabel={state.opened ? "Default model" : "Select model"} disabled={!state.opened} /><ChevronDown size={13} className="select-chevron" /></div><span className="send-hint">↵ send · ⇧↵ new line</span></div>
+                <div className="composer-bottom"><div className="model-select-wrap">{state.opened && !draftSessionId ? <Sparkles size={14} /> : <CircleDashed size={14} />}<ModelSelect ariaLabel="Session model" models={groupedModels} value={state.opened && state.model ? modelKey(state.model) : ""} onChange={(value) => void snapshotOp(window.applePi.model.setSession(parseModelKey(value)))} emptyLabel={state.opened ? "Default model" : "Select model"} disabled={!state.opened} /><ChevronDown size={13} className="select-chevron" /></div><span className="send-hint">↵ send · ⇧↵ new line</span></div>
               </div>
               <button aria-label="Send message" disabled={!state.opened || !draft.trim() || state.running} onClick={() => void send()} title="Send message">
                 <Send size={16} />
@@ -335,7 +346,7 @@ function App() {
       <div className="app-feedback" aria-live="polite" aria-atomic="true">
         {pendingLabel && <div className="app-status"><CircleDashed size={14} />{pendingLabel}</div>}
         {!pendingLabel && notice && <div className="app-status success">{notice}</div>}
-        {appError && <div className="app-error" role="alert">{appError}</div>}
+        {appError && <div className="app-error" role="alert">{appError}{state.sync.status === "failed" && <button onClick={() => dispatch({ type: "retry_resync" })}>Retry</button>}</div>}
       </div>
     </div>
   );

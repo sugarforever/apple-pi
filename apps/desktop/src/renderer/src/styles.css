@@ -137,6 +137,7 @@ main > header { display: flex; align-items: center; justify-content: space-betwe
 .app-status svg { animation: status-spin 1s linear infinite; }
 .app-status.success { color: #dff5a0; }
 .app-error { border: 1px solid #75413a; background: #2d1917; color: var(--danger); }
+.app-error button { pointer-events: auto; }
 @keyframes status-spin { to { transform: rotate(360deg); } }
 
 @media (max-width: 800px) { .shell { grid-template-columns: 232px minmax(0, 1fr); } .send-hint { display: none; } .timeline { padding-right: 26px; padding-left: 26px; } }
