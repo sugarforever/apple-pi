@@ -40,6 +40,20 @@ describe("agent host supervisor handshake", () => {
     await expect(supervisor.request("session.snapshot", {})).rejects.toThrow("Agent host handshake is not complete");
   });
 
+  it("revokes readiness when the compatible host exits", async () => {
+    const { child, exit } = fakeHost(compatibleHandshake);
+    const supervisor = new AgentHostSupervisor({
+      hostPath: () => "/fake/agent-host.js",
+      hostVersion: () => "0.1.0",
+      spawnHost: () => child,
+    });
+
+    await supervisor.start();
+    exit();
+
+    await expect(supervisor.request("session.snapshot", {})).rejects.toThrow("Agent host handshake is not complete");
+  });
+
   it("accepts the exact compatible runtime contract", () => {
     expect(validateHostHandshake(compatibleHandshake, "0.1.0")).toEqual(compatibleHandshake);
   });
@@ -73,6 +87,7 @@ describe("agent host supervisor handshake", () => {
 function fakeHost(handshake: unknown): {
   child: ChildProcessWithoutNullStreams;
   kill: ReturnType<typeof vi.fn>;
+  exit: () => void;
   received: string[];
 } {
   const processEvents = new EventEmitter();
@@ -95,6 +110,7 @@ function fakeHost(handshake: unknown): {
   return {
     child: Object.assign(processEvents, { stdin, stdout, stderr, kill }) as unknown as ChildProcessWithoutNullStreams,
     kill,
+    exit: () => processEvents.emit("exit", 1, null),
     received,
   };
 }

@@ -30,6 +30,8 @@ export class AgentHostSupervisor extends EventEmitter {
     this.child.stderr.setEncoding("utf8");
     this.child.stderr.on("data", (chunk: string) => console.error(`[agent-host] ${chunk.trimEnd()}`));
     this.child.once("exit", () => {
+      this.ready = false;
+      this.child = undefined;
       const error = new Error("Agent host stopped");
       for (const pending of this.pending.values()) pending.reject(error);
       this.pending.clear();
