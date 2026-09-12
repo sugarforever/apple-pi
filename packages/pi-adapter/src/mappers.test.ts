@@ -38,8 +38,11 @@ describe("Pi boundary mappers", () => {
     [{ type: "agent_end", messages: [], willRetry: true }, { type: "resync_required", reason: "Pi agent scheduled a retry" }],
     [{ type: "message_update", message: {}, assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: "Hi", partial: {} } }, { type: "text_delta", text: "Hi" }],
     [{ type: "message_update", message: {}, assistantMessageEvent: { type: "thinking_delta", contentIndex: 0, delta: "Hmm", partial: {} } }, { type: "thinking_delta", text: "Hmm" }],
+    [{ type: "message_update", message: {}, assistantMessageEvent: { type: "toolcall_start", contentIndex: 0, partial: { content: [{ type: "toolCall", id: "call-1", name: "bash", arguments: {} }] } } }, { type: "tool_call", phase: "started", id: "call-1", name: "bash", arguments: {} }],
+    [{ type: "message_update", message: {}, assistantMessageEvent: { type: "toolcall_delta", contentIndex: 0, delta: '{"command":"pwd"}', partial: { content: [{ type: "toolCall", id: "call-1", name: "bash", arguments: { command: "pwd" } }] } } }, { type: "tool_call", phase: "updated", id: "call-1", name: "bash", arguments: { command: "pwd" } }],
+    [{ type: "message_update", message: {}, assistantMessageEvent: { type: "toolcall_end", contentIndex: 0, toolCall: { type: "toolCall", id: "call-1", name: "bash", arguments: { command: "pwd" } }, partial: {} } }, { type: "tool_call", phase: "completed", id: "call-1", name: "bash", arguments: { command: "pwd" } }],
     [{ type: "tool_execution_start", toolCallId: "call-1", toolName: "bash", args: { command: "pwd" } }, { type: "tool_call", phase: "started", id: "call-1", name: "bash", arguments: { command: "pwd" } }],
-    [{ type: "tool_execution_update", toolCallId: "call-1", toolName: "bash", args: { command: "pwd" }, partialResult: { content: [{ type: "text", text: "/tm" }] } }, { type: "tool_call", phase: "updated", id: "call-1", name: "bash", arguments: { command: "pwd" } }],
+    [{ type: "tool_execution_update", toolCallId: "call-1", toolName: "bash", args: { command: "pwd" }, partialResult: { content: [{ type: "text", text: "/tm" }] } }, { type: "resync_required", reason: "Pi tool execution updated: bash" }],
     [{ type: "tool_execution_end", toolCallId: "call-1", toolName: "bash", result: { content: [{ type: "text", text: "/tmp" }] }, isError: false }, { type: "tool_result", id: "call-1", name: "bash", output: [{ type: "text", text: "/tmp" }], isError: false }],
     [{ type: "queue_update", steering: ["Correct course"], followUp: ["Then test"] }, { type: "resync_required", reason: "Pi queue changed" }],
     [{ type: "compaction_start", reason: "threshold" }, { type: "resync_required", reason: "Pi compaction started (threshold)" }],
@@ -90,6 +93,20 @@ describe("Pi boundary mappers", () => {
     expect(mapPiEvent({ type: Object.create(null) })).toEqual({
       type: "resync_required",
       reason: "Unsupported Pi event: unknown",
+    });
+  });
+
+  it("safely degrades unprintable nested Pi values", () => {
+    const unprintable = Object.create(null);
+    expect(mapPiEvent({ type: "message_update", assistantMessageEvent: { type: unprintable } })).toEqual({ type: "resync_required", reason: "Unsupported Pi message update: unknown" });
+    expect(mapPiEvent({ type: "compaction_start", reason: unprintable })).toEqual({ type: "resync_required", reason: "Pi compaction started (unknown)" });
+    expect(mapPiEvent({ type: "auto_retry_start", attempt: unprintable, maxAttempts: unprintable, delayMs: unprintable })).toEqual({ type: "resync_required", reason: "Pi retry unknown/unknown scheduled in unknownms" });
+    expect(mapPiEvent({ type: "tool_execution_end", toolCallId: "call-1", toolName: "read", result: { content: [{ type: unprintable }] }, isError: false })).toEqual({
+      type: "tool_result",
+      id: "call-1",
+      name: "read",
+      output: [{ type: "text", text: "[Unsupported Pi tool output: unknown]" }],
+      isError: false,
     });
   });
 });

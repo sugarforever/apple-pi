@@ -52,8 +52,16 @@ function outputParts(value: unknown): ToolOutputPart[] {
     if (item?.type === "image" && typeof item.data === "string" && typeof item.mimeType === "string") {
       return [{ type: "image", data: item.data, mimeType: item.mimeType }];
     }
-    return [{ type: "text", text: `[Unsupported Pi tool output: ${String(item?.type ?? "unknown")}]` }];
+    return [{ type: "text", text: `[Unsupported Pi tool output: ${printable(item?.type)}]` }];
   });
+}
+
+function streamedToolCall(update: Record<string, unknown>): Record<string, unknown> | undefined {
+  const completed = record(update.toolCall);
+  if (completed) return completed;
+  const partial = record(update.partial);
+  const content = Array.isArray(partial?.content) ? partial.content : [];
+  return typeof update.contentIndex === "number" ? record(content[update.contentIndex]) : undefined;
 }
 
 function contentParts(value: unknown, role: "user" | "assistant"): ApplePiContentPart[] {
@@ -105,14 +113,27 @@ export function mapPiEvent(value: unknown): ApplePiSessionEvent {
       const update = record(event.assistantMessageEvent);
       if (update?.type === "text_delta" && typeof update.delta === "string") mapped = { type: "text_delta", text: update.delta };
       else if (update?.type === "thinking_delta" && typeof update.delta === "string") mapped = { type: "thinking_delta", text: update.delta };
-      else mapped = { type: "resync_required", reason: `Unsupported Pi message update: ${String(update?.type ?? "unknown")}` };
+      else if (update?.type === "toolcall_start" || update?.type === "toolcall_delta" || update?.type === "toolcall_end") {
+        const toolCall = streamedToolCall(update);
+        mapped = typeof toolCall?.id === "string" && typeof toolCall.name === "string"
+          ? {
+              type: "tool_call",
+              phase: update.type === "toolcall_start" ? "started" : update.type === "toolcall_delta" ? "updated" : "completed",
+              id: toolCall.id,
+              name: toolCall.name,
+              arguments: jsonObject(toolCall.arguments),
+            }
+          : { type: "resync_required", reason: `Malformed Pi message update: ${update.type}` };
+      } else mapped = { type: "resync_required", reason: `Unsupported Pi message update: ${printable(update?.type)}` };
       break;
     }
     case "tool_execution_start":
-    case "tool_execution_update":
       mapped = typeof event.toolCallId === "string" && typeof event.toolName === "string"
-        ? { type: "tool_call", phase: event.type === "tool_execution_start" ? "started" : "updated", id: event.toolCallId, name: event.toolName, arguments: jsonObject(event.args) }
+        ? { type: "tool_call", phase: "started", id: event.toolCallId, name: event.toolName, arguments: jsonObject(event.args) }
         : { type: "resync_required", reason: `Malformed Pi event: ${event.type}` };
+      break;
+    case "tool_execution_update":
+      mapped = { type: "resync_required", reason: `Pi tool execution updated: ${printable(event.toolName)}` };
       break;
     case "tool_execution_end": {
       const result = record(event.result);
@@ -125,10 +146,10 @@ export function mapPiEvent(value: unknown): ApplePiSessionEvent {
       mapped = { type: "resync_required", reason: "Pi queue changed" };
       break;
     case "compaction_start":
-      mapped = { type: "resync_required", reason: `Pi compaction started (${String(event.reason ?? "unknown")})` };
+      mapped = { type: "resync_required", reason: `Pi compaction started (${printable(event.reason)})` };
       break;
     case "compaction_end": {
-      const reason = String(event.reason ?? "unknown");
+      const reason = printable(event.reason);
       const detail = typeof event.errorMessage === "string" ? `: ${event.errorMessage}` : "";
       if (event.willRetry === true) mapped = { type: "resync_required", reason: `Pi compaction will retry (${reason})${detail}` };
       else if (event.aborted === true) mapped = { type: "resync_required", reason: `Pi compaction aborted (${reason})${detail}` };
@@ -138,13 +159,13 @@ export function mapPiEvent(value: unknown): ApplePiSessionEvent {
     case "auto_retry_start":
       mapped = {
         type: "resync_required",
-        reason: `Pi retry ${String(event.attempt ?? "unknown")}/${String(event.maxAttempts ?? "unknown")} scheduled in ${String(event.delayMs ?? "unknown")}ms${typeof event.errorMessage === "string" ? `: ${event.errorMessage}` : ""}`,
+        reason: `Pi retry ${printable(event.attempt)}/${printable(event.maxAttempts)} scheduled in ${printable(event.delayMs)}ms${typeof event.errorMessage === "string" ? `: ${event.errorMessage}` : ""}`,
       };
       break;
     case "auto_retry_end":
       mapped = {
         type: "resync_required",
-        reason: `Pi retry ${String(event.attempt ?? "unknown")} ${event.success === true ? "succeeded" : "failed"}${typeof event.finalError === "string" ? `: ${event.finalError}` : ""}`,
+        reason: `Pi retry ${printable(event.attempt)} ${event.success === true ? "succeeded" : "failed"}${typeof event.finalError === "string" ? `: ${event.finalError}` : ""}`,
       };
       break;
     default: mapped = { type: "resync_required", reason: `Unsupported Pi event: ${printable(event?.type)}` };
