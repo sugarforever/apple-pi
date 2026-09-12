@@ -133,4 +133,15 @@ describe("Pi boundary mappers", () => {
       reason: "Malformed Pi message update: toolcall_delta",
     });
   });
+
+  it("safely degrades incomplete tool identities in events and persisted messages", () => {
+    expect(mapPiEvent({ type: "tool_execution_end", toolCallId: "", toolName: "bash", result: { content: [] }, isError: false })).toEqual({
+      type: "resync_required",
+      reason: "Malformed Pi event: tool_execution_end",
+    });
+    expect(mapPiMessages([{ role: "assistant", content: [{ type: "toolCall", id: "call-1", name: "", arguments: {} }] }])).toEqual([
+      { role: "assistant", content: [{ type: "text", text: "[Unsupported Pi content part]" }] },
+    ]);
+    expect(mapPiMessages([{ role: "toolResult", toolCallId: "", toolName: "bash", content: [], isError: false }])).toEqual([]);
+  });
 });

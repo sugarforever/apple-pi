@@ -20,6 +20,8 @@ const printable = (value: unknown): string =>
     ? String(value)
     : "unknown";
 
+const nonEmptyString = (value: unknown): value is string => typeof value === "string" && value.length > 0;
+
 function jsonObject(value: unknown): Record<string, JsonValue> {
   const mapped = jsonValue(value);
   return mapped !== null && typeof mapped === "object" && !Array.isArray(mapped) ? mapped : { _applePiFallback: mapped };
@@ -71,7 +73,7 @@ function contentParts(value: unknown, role: "user" | "assistant"): ApplePiConten
     const item = record(part);
     if (item?.type === "text" && typeof item.text === "string") return [{ type: "text" as const, text: item.text }];
     if (role === "assistant" && item?.type === "thinking" && typeof item.thinking === "string") return [{ type: "thinking" as const, text: item.thinking }];
-    if (role === "assistant" && item?.type === "toolCall" && typeof item.id === "string" && typeof item.name === "string") {
+    if (role === "assistant" && item?.type === "toolCall" && nonEmptyString(item.id) && nonEmptyString(item.name)) {
       return [{ type: "tool_call" as const, id: item.id, name: item.name, arguments: jsonObject(item.arguments) }];
     }
     if (item?.type === "image" && typeof item.mimeType === "string") return [{ type: "text" as const, text: `[Image omitted: ${item.mimeType}]` }];
@@ -85,7 +87,7 @@ export function mapPiMessages(value: unknown): ApplePiMessage[] {
     const item = record(message);
     if (item?.role === "user") return [decodeApplePiMessage({ role: "user", content: contentParts(item.content, "user") })];
     if (item?.role === "assistant") return [decodeApplePiMessage({ role: "assistant", content: contentParts(item.content, "assistant") })];
-    if (item?.role === "toolResult" && typeof item.toolCallId === "string" && typeof item.toolName === "string") {
+    if (item?.role === "toolResult" && nonEmptyString(item.toolCallId) && nonEmptyString(item.toolName)) {
       return [decodeApplePiMessage({ role: "tool", content: [{ type: "tool_result", toolCallId: item.toolCallId, name: item.toolName, output: outputParts(item.content), isError: item.isError === true }] })];
     }
     return [];
@@ -115,7 +117,7 @@ export function mapPiEvent(value: unknown): ApplePiSessionEvent {
       else if (update?.type === "thinking_delta" && typeof update.delta === "string") mapped = { type: "thinking_delta", text: update.delta };
       else if (update?.type === "toolcall_start" || update?.type === "toolcall_delta" || update?.type === "toolcall_end") {
         const toolCall = streamedToolCall(update);
-        mapped = typeof toolCall?.id === "string" && toolCall.id.length > 0 && typeof toolCall.name === "string" && toolCall.name.length > 0
+        mapped = nonEmptyString(toolCall?.id) && nonEmptyString(toolCall.name)
           ? {
               type: "tool_call",
               phase: update.type === "toolcall_start" ? "started" : update.type === "toolcall_delta" ? "updated" : "completed",
@@ -135,7 +137,7 @@ export function mapPiEvent(value: unknown): ApplePiSessionEvent {
       break;
     case "tool_execution_end": {
       const result = record(event.result);
-      mapped = typeof event.toolCallId === "string" && typeof event.toolName === "string"
+      mapped = nonEmptyString(event.toolCallId) && nonEmptyString(event.toolName)
         ? { type: "tool_result", id: event.toolCallId, name: event.toolName, output: outputParts(result?.content), isError: event.isError === true }
         : { type: "resync_required", reason: "Malformed Pi event: tool_execution_end" };
       break;
