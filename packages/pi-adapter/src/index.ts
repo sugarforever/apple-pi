@@ -2,6 +2,8 @@ import { createAgentSession, ModelRuntime, SessionManager, type AgentSession, ty
 import { decodeSessionSnapshot, type ApplePiSessionEvent, type ModelItem, type SessionItem, type SessionSnapshot } from "@apple-pi/protocol";
 import { mapPiEvent, mapPiMessages, mapPiModel, mapPiSessionItem } from "./mappers.js";
 
+export { mapPiEvent, mapPiMessages, mapPiModel, mapPiSessionItem } from "./mappers.js";
+
 export type PiEventListener = (event: ApplePiSessionEvent) => void;
 
 export class PiSessionService {
