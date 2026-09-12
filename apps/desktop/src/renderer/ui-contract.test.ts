@@ -146,6 +146,23 @@ describe("renderer visual contract", () => {
 });
 
 describe("renderer feedback contract", () => {
+  it("resyncs only after the reducer marks a gap or explicit resync event", () => {
+    expect(source).toContain('if (state.sync.status !== "resyncing") return;');
+    expect(source).toContain("runSessionResync(");
+    expect(source).toContain("[state.sync.status, state.sync.generation]");
+    expect(source).not.toContain('dispatch({ type: "event", sequence: event.sequence, payload: event.payload });\n      void window.applePi.session.getSnapshot()');
+  });
+
+  it("offers explicit recovery after a resync failure", () => {
+    expect(source).toContain('state.sync.status === "failed"');
+    expect(source).toContain('dispatch({ type: "retry_resync" })');
+    expect(rule(".app-error button")).toContain("pointer-events: auto");
+  });
+
+  it("keeps a sent user message visible while agent events stream", () => {
+    expect(source).toContain('dispatch({ type: "user_message", text });');
+  });
+
   it("exposes a shared pending state", () => {
     expect(source).toContain('const [pendingLabel, setPendingLabel] = useState("")');
     expect(source).toContain('aria-busy={Boolean(pendingLabel)}');
