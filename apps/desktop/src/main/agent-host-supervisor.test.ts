@@ -221,7 +221,7 @@ describe("agent host supervisor handshake", () => {
   });
 
   it("ignores stale output and exit callbacks after starting a replacement host", async () => {
-    const first = controllableHost();
+    const first = controllableHost({ exitOnShutdown: true });
     const second = controllableHost();
     const hosts = [first.child, second.child];
     const supervisor = new AgentHostSupervisor({
@@ -232,8 +232,11 @@ describe("agent host supervisor handshake", () => {
     const event = vi.fn();
     supervisor.on("session.event", event);
     await supervisor.start();
-    first.write({ protocolVersion: 1, type: "session.event", sequence: 0, payload: { type: "lifecycle", phase: "started" } });
+    first.write({ protocolVersion: 1, type: "session.event", sequence: 1, payload: { type: "lifecycle", phase: "started" } });
+    expect(event).toHaveBeenCalledOnce();
+    event.mockClear();
     await supervisor.start();
+    expect(first.received.filter(({ type }) => type === "system.shutdown")).toHaveLength(1);
 
     first.write({ protocolVersion: 1, type: "session.event", sequence: 1, payload: { type: "lifecycle", phase: "started" } });
     first.exit();
@@ -278,7 +281,7 @@ describe("agent host supervisor handshake", () => {
   });
 
   it("rejects pending requests and disconnects once when stopped", async () => {
-    const host = controllableHost();
+    const host = controllableHost({ exitOnShutdown: true });
     const supervisor = new AgentHostSupervisor({
       hostPath: () => "/fake/agent-host.js",
       hostVersion: () => "0.1.0",
@@ -289,13 +292,141 @@ describe("agent host supervisor handshake", () => {
     await supervisor.start();
     const request = supervisor.request("session.snapshot", {});
 
-    supervisor.stop();
+    await supervisor.stop();
 
     await expect(request).rejects.toThrow("Agent host stopped");
     expect(disconnected).toHaveBeenCalledOnce();
-    expect(host.kill).toHaveBeenCalledOnce();
+    expect(host.received.map(({ type }) => type)).toEqual(["system.hello", "session.snapshot", "system.shutdown"]);
+    expect(host.kill).not.toHaveBeenCalled();
     host.exit();
     expect(disconnected).toHaveBeenCalledOnce();
+  });
+
+  it("shares repeated graceful stops and rejects each pending request once", async () => {
+    const host = controllableHost();
+    const supervisor = new AgentHostSupervisor({
+      hostPath: () => "/fake/agent-host.js",
+      hostVersion: () => "0.1.0",
+      shutdownTimeoutMs: 50,
+      spawnHost: () => host.child,
+    });
+    await supervisor.start();
+    const snapshotRequest = supervisor.request("session.snapshot", {});
+    const modelRequest = supervisor.request("model.list", {});
+
+    const firstStop = supervisor.stop();
+    const secondStop = supervisor.stop();
+    expect(secondStop).toBe(firstStop);
+    await expect(snapshotRequest).rejects.toThrow("Agent host stopped");
+    await expect(modelRequest).rejects.toThrow("Agent host stopped");
+    expect(host.received.filter(({ type }) => type === "system.shutdown")).toHaveLength(1);
+
+    host.exit();
+    await firstStop;
+    expect(host.kill).not.toHaveBeenCalled();
+  });
+
+  it("ignores a valid late response for a request rejected during graceful stop", async () => {
+    const host = controllableHost();
+    const supervisor = new AgentHostSupervisor({
+      hostPath: () => "/fake/agent-host.js",
+      hostVersion: () => "0.1.0",
+      shutdownTimeoutMs: 50,
+      spawnHost: () => host.child,
+    });
+    const fault = vi.fn();
+    supervisor.on("protocol.fault", fault);
+    await supervisor.start();
+    const request = supervisor.request("session.snapshot", {});
+    const requestId = host.received.at(-1)!.requestId;
+
+    const stopping = supervisor.stop();
+    await expect(request).rejects.toThrow("Agent host stopped");
+    host.write({ protocolVersion: 1, requestId, ok: true, result: { opened: false, messages: [], running: false } });
+
+    expect(fault).not.toHaveBeenCalled();
+    expect(host.kill).not.toHaveBeenCalled();
+    host.exit();
+    await stopping;
+  });
+
+  it("forces termination once when graceful shutdown exceeds its bound", async () => {
+    vi.useFakeTimers();
+    try {
+      const host = controllableHost();
+      const supervisor = new AgentHostSupervisor({
+        hostPath: () => "/fake/agent-host.js",
+        hostVersion: () => "0.1.0",
+        shutdownTimeoutMs: 25,
+        spawnHost: () => host.child,
+      });
+      await supervisor.start();
+
+      const stopping = supervisor.stop();
+      await vi.advanceTimersByTimeAsync(24);
+      expect(host.kill).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(host.kill).toHaveBeenCalledOnce();
+      expect(host.kill).toHaveBeenCalledWith("SIGKILL");
+      expect(host.received.filter(({ type }) => type === "system.shutdown")).toHaveLength(1);
+      let settled = false;
+      void stopping.then(() => { settled = true; });
+      await Promise.resolve();
+      expect(settled).toBe(false);
+
+      host.exit();
+      await stopping;
+      expect(host.kill).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps bounded shutdown ownership when stopped during the hello handshake", async () => {
+    vi.useFakeTimers();
+    try {
+      const host = controllableHost({ helloRecords: () => [] });
+      const supervisor = new AgentHostSupervisor({
+        hostPath: () => "/fake/agent-host.js",
+        hostVersion: () => "0.1.0",
+        shutdownTimeoutMs: 25,
+        spawnHost: () => host.child,
+      });
+      const starting = supervisor.start();
+      const startFailure = starting.catch((error: unknown) => error);
+      await vi.waitFor(() => expect(host.received.at(0)?.type).toBe("system.hello"));
+
+      const stopping = supervisor.stop();
+      await vi.advanceTimersByTimeAsync(24);
+      expect(host.kill).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(host.kill).toHaveBeenCalledOnce();
+      expect(host.kill).toHaveBeenCalledWith("SIGKILL");
+
+      host.exit();
+      await stopping;
+      await expect(startFailure).resolves.toMatchObject({ message: "Agent host stopped" });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not associate a reentrant replacement start with the previous child stop", async () => {
+    const first = controllableHost({ exitOnShutdown: true });
+    const second = controllableHost({ handshake: { ...compatibleHandshake, piVersion: "0.85.0" } });
+    const hosts = [first.child, second.child];
+    const supervisor = new AgentHostSupervisor({
+      hostPath: () => "/fake/agent-host.js",
+      hostVersion: () => "0.1.0",
+      spawnHost: () => hosts.shift()!,
+    });
+    await supervisor.start();
+    let replacement: Promise<void> | undefined;
+    supervisor.once("disconnected", () => { replacement = supervisor.start(); });
+
+    await supervisor.stop();
+    await expect(replacement).rejects.toThrow("Incompatible Pi version");
+    expect(second.kill).toHaveBeenCalledOnce();
   });
 });
 
@@ -303,6 +434,7 @@ function controllableHost(options: {
   handshake?: unknown;
   helloRecords?: (requestId: string) => unknown[];
   autoBusinessResult?: unknown;
+  exitOnShutdown?: boolean;
 } = {}): {
   child: ChildProcessWithoutNullStreams;
   kill: ReturnType<typeof vi.fn>;
@@ -326,6 +458,9 @@ function controllableHost(options: {
         const records = options.helloRecords?.(request.requestId)
           ?? [{ protocolVersion: 1, requestId: request.requestId, ok: true, result: options.handshake ?? compatibleHandshake }];
         stdout.write(`${records.map((record) => JSON.stringify(record)).join("\n")}\n`);
+      } else if (request.type === "system.shutdown") {
+        stdout.write(`${JSON.stringify({ protocolVersion: 1, requestId: request.requestId, ok: true, result: {} })}\n`);
+        if (options.exitOnShutdown) queueMicrotask(() => processEvents.emit("exit", 0, null));
       } else if ("autoBusinessResult" in options) {
         stdout.write(`${JSON.stringify({ protocolVersion: 1, requestId: request.requestId, ok: true, result: options.autoBusinessResult })}\n`);
       }

@@ -17,6 +17,7 @@ export const SUPPORTED_PI_VERSION = "0.84.2" as const;
 
 export const Payloads = {
   "system.hello": Type.Object({}, { additionalProperties: false }),
+  "system.shutdown": Type.Object({}, { additionalProperties: false }),
   "session.open": Type.Object({ cwd: Type.String({ minLength: 1 }) }, { additionalProperties: false }),
   "session.openPath": Type.Object({ cwd: Type.String({ minLength: 1 }), path: Type.String({ minLength: 1 }) }, { additionalProperties: false }),
   "session.create": Type.Object({ cwd: Type.String({ minLength: 1 }), provider: Type.Optional(Type.String()), modelId: Type.Optional(Type.String()) }, { additionalProperties: false }),
@@ -36,6 +37,7 @@ export const ResultSchemas = {
     capabilities: HostCapabilitiesSchema,
     pid: Type.Integer({ minimum: 1 }),
   }, { additionalProperties: false }),
+  "system.shutdown": Type.Object({}, { additionalProperties: false }),
   "session.open": SessionSnapshotSchema,
   "session.openPath": SessionSnapshotSchema,
   "session.create": SessionSnapshotSchema,

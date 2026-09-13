@@ -5,6 +5,7 @@ export const HOST_VERSION = "0.1.0" as const;
 
 export class HostServer {
   private readonly pi: PiSessionService;
+  private closing?: Promise<void>;
   constructor(onEvent: (event: HostEvent) => void = () => {}) {
     this.pi = new PiSessionService();
     let sequence = 0;
@@ -26,6 +27,9 @@ export class HostServer {
     try { message = decodeHostMessage(input); } catch (error) {
       return failure(typeof (input as { requestId?: unknown })?.requestId === "string" ? (input as { requestId: string }).requestId : "unknown", error);
     }
+    if (this.closing && message.type !== "system.shutdown") {
+      return failure(message.requestId, new Error("Agent host is shutting down"));
+    }
     try {
       switch (message.type) {
         case "system.hello": return success("system.hello", message.requestId, {
@@ -35,6 +39,7 @@ export class HostServer {
           capabilities: { sessionEvents: true, modelSelection: true },
           pid: process.pid,
         });
+        case "system.shutdown": await this.close(); return success("system.shutdown", message.requestId, {});
         case "session.open": return success("session.open", message.requestId, await this.pi.open(message.payload.cwd));
         case "session.openPath": return success("session.openPath", message.requestId, await this.pi.open(message.payload.cwd, message.payload.path));
         case "session.create": return success("session.create", message.requestId, await this.pi.open(message.payload.cwd, undefined, message.payload, true));
@@ -48,6 +53,10 @@ export class HostServer {
     } catch (error) {
       return failure(message.requestId, error);
     }
+  }
+
+  close(): Promise<void> {
+    return this.closing ??= this.pi.close();
   }
 }
 

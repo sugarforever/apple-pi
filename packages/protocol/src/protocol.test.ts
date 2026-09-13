@@ -26,6 +26,15 @@ describe("host protocol", () => {
     expect(decodeHostMessage({ protocolVersion: 1, requestId: "r3", type: "model.set", payload: { provider: "openai", modelId: "gpt-5" } }).type).toBe("model.set");
   });
 
+  it("accepts only an empty payload and result for system shutdown", () => {
+    expect(decodeHostMessage({ protocolVersion: 1, requestId: "shutdown", type: "system.shutdown", payload: {} }))
+      .toEqual({ protocolVersion: 1, requestId: "shutdown", type: "system.shutdown", payload: {} });
+    expect(() => decodeHostMessage({ protocolVersion: 1, requestId: "shutdown", type: "system.shutdown", payload: { force: true } }))
+      .toThrow("Invalid host message payload");
+    expect(decodeCommandResult("system.shutdown", {})).toEqual({});
+    expect(() => decodeCommandResult("system.shutdown", { closed: true })).toThrow("Invalid result for system.shutdown");
+  });
+
   it("validates command-specific success results", () => {
     const models = [{ provider: "openai", modelId: "gpt-5", name: "GPT-5" }];
     expect(decodeCommandResult("model.list", models)).toEqual(models);

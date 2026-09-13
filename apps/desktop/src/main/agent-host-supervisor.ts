@@ -15,6 +15,7 @@ import { validateHostHandshake } from "./host-compatibility.js";
 export interface AgentHostSupervisorOptions {
   hostPath: () => string;
   hostVersion: () => string;
+  shutdownTimeoutMs?: number;
   spawnHost?: (hostPath: string) => ChildProcessWithoutNullStreams;
 }
 
@@ -27,6 +28,9 @@ export interface AgentHostProtocolFault {
 export class AgentHostSupervisor extends EventEmitter {
   private child?: ChildProcessWithoutNullStreams;
   private ready = false;
+  private stopping?: { child: ChildProcessWithoutNullStreams; promise: Promise<void> };
+  private readonly exitWaiters = new WeakMap<ChildProcessWithoutNullStreams, () => void>();
+  private readonly ignoredResponses = new Map<string, HostCommandType>();
   private readonly pending = new Map<string, {
     type: HostCommandType;
     resolve: (value: unknown) => void;
@@ -36,6 +40,8 @@ export class AgentHostSupervisor extends EventEmitter {
   constructor(private readonly options: AgentHostSupervisorOptions) { super(); }
 
   async start(): Promise<void> {
+    if (this.stopping) await this.stopping.promise;
+    if (this.child) await this.stop();
     this.ready = false;
     const hostPath = this.options.hostPath();
     const child = this.options.spawnHost?.(hostPath)
@@ -62,18 +68,16 @@ export class AgentHostSupervisor extends EventEmitter {
       if (this.child === child) console.error(`[agent-host] ${chunk.trimEnd()}`);
     });
     child.once("exit", () => {
-      if (this.child !== child) return;
-      this.ready = false;
-      this.child = undefined;
-      this.rejectPending(() => "Agent host stopped");
-      this.emit("disconnected");
+      this.resolveExitWaiter(child);
+      this.disconnect(child, "Agent host stopped");
     });
     try {
       validateHostHandshake(await this.sendRequest("system.hello", {}), this.options.hostVersion());
       if (this.child !== child) throw new Error("Agent host stopped during handshake");
       this.ready = true;
     } catch (error) {
-      this.stop();
+      if (this.stopping?.child === child) await this.stopping.promise;
+      else this.forceStop(child, "Agent host stopped");
       throw error;
     }
   }
@@ -92,14 +96,37 @@ export class AgentHostSupervisor extends EventEmitter {
     });
   }
 
-  stop(): void {
+  stop(): Promise<void> {
+    if (this.stopping) return this.stopping.promise;
     this.ready = false;
     const child = this.child;
-    if (!child) return;
-    this.child = undefined;
-    this.rejectPending(() => "Agent host stopped");
-    child.kill();
-    this.emit("disconnected");
+    if (!child) return Promise.resolve();
+    this.rejectPending(() => "Agent host stopped", true);
+    const operation = this.stopChild(child);
+    let shared: Promise<void>;
+    shared = operation.finally(() => {
+      if (this.stopping?.promise === shared) this.stopping = undefined;
+    });
+    this.stopping = { child, promise: shared };
+    return shared;
+  }
+
+  private async stopChild(child: ChildProcessWithoutNullStreams): Promise<void> {
+    const exited = new Promise<void>((resolve) => this.exitWaiters.set(child, resolve));
+    void this.sendRequest("system.shutdown", {}).catch(() => undefined);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timedOut = new Promise<void>((resolve) => {
+      timer = setTimeout(resolve, this.options.shutdownTimeoutMs ?? 1_000);
+    });
+    const exitedGracefully = await Promise.race([
+      exited.then(() => true),
+      timedOut.then(() => false),
+    ]);
+    if (timer) clearTimeout(timer);
+    if (!exitedGracefully) {
+      child.kill("SIGKILL");
+      await exited;
+    }
   }
 
   private onRecord(child: ChildProcessWithoutNullStreams, record: unknown): void {
@@ -107,14 +134,20 @@ export class AgentHostSupervisor extends EventEmitter {
       ? (record as { requestId: string }).requestId
       : undefined;
     const pending = requestId ? this.pending.get(requestId) : undefined;
+    const ignoredType = requestId ? this.ignoredResponses.get(requestId) : undefined;
     let decoded;
     try {
-      decoded = pending ? decodeHostRecord(record, pending.type) : decodeHostRecord(record);
+      const expectedType = pending?.type ?? ignoredType;
+      decoded = expectedType ? decodeHostRecord(record, expectedType) : decodeHostRecord(record);
     } catch {
       this.failProtocol(child, pending ? requestId : undefined);
       return;
     }
     if ("type" in decoded) { this.emit("session.event", decoded); return; }
+    if (requestId && ignoredType) {
+      this.ignoredResponses.delete(requestId);
+      return;
+    }
     const response = decoded as HostResponse;
     const responsePending = this.pending.get(response.requestId);
     if (!responsePending) {
@@ -138,13 +171,38 @@ export class AgentHostSupervisor extends EventEmitter {
     this.ready = false;
     this.child = undefined;
     this.rejectPending((pendingId) => `Agent host protocol fault for request ${pendingId}`);
+    this.ignoredResponses.clear();
     child.kill();
     this.emit("protocol.fault", fault);
   }
 
-  private rejectPending(message: (requestId: string) => string): void {
+  private forceStop(child: ChildProcessWithoutNullStreams, pendingMessage: string): void {
+    if (this.child !== child) return;
+    child.kill();
+    this.disconnect(child, pendingMessage);
+  }
+
+  private disconnect(child: ChildProcessWithoutNullStreams, pendingMessage: string): void {
+    if (this.child !== child) return;
+    this.ready = false;
+    this.child = undefined;
+    this.rejectPending(() => pendingMessage);
+    this.ignoredResponses.clear();
+    this.emit("disconnected");
+  }
+
+  private resolveExitWaiter(child: ChildProcessWithoutNullStreams): void {
+    const resolve = this.exitWaiters.get(child);
+    this.exitWaiters.delete(child);
+    resolve?.();
+  }
+
+  private rejectPending(message: (requestId: string) => string, ignoreResponses = false): void {
     const pendingRequests = [...this.pending.entries()];
     this.pending.clear();
-    for (const [requestId, pending] of pendingRequests) pending.reject(new Error(message(requestId)));
+    for (const [requestId, pending] of pendingRequests) {
+      if (ignoreResponses) this.ignoredResponses.set(requestId, pending.type);
+      pending.reject(new Error(message(requestId)));
+    }
   }
 }

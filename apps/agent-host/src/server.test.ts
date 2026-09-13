@@ -1,8 +1,38 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import hostPackage from "../package.json" with { type: "json" };
 import { HOST_VERSION, HostServer } from "./server.js";
 
 describe("HostServer", () => {
+  it("waits for Pi ownership release before acknowledging shutdown", async () => {
+    const server = new HostServer();
+    const service = (server as unknown as { pi: { close: () => Promise<void> } }).pi;
+    let release!: () => void;
+    const closing = new Promise<void>((resolve) => { release = resolve; });
+    service.close = vi.fn(() => closing);
+
+    const response = server.handle({ protocolVersion: 1, requestId: "shutdown", type: "system.shutdown", payload: {} });
+    let settled = false;
+    void response.then(() => { settled = true; });
+    await Promise.resolve();
+    expect(settled).toBe(false);
+
+    release();
+    await expect(response).resolves.toEqual({ protocolVersion: 1, requestId: "shutdown", ok: true, result: {} });
+    expect(service.close).toHaveBeenCalledOnce();
+  });
+
+  it("rejects session creation after shutdown becomes terminal", async () => {
+    const server = new HostServer();
+    const service = (server as unknown as { pi: { close: () => Promise<void>; open: ReturnType<typeof vi.fn> } }).pi;
+    service.close = vi.fn(async () => {});
+    service.open = vi.fn(async () => ({ opened: false, messages: [], running: false }));
+
+    await server.handle({ protocolVersion: 1, requestId: "shutdown", type: "system.shutdown", payload: {} });
+    await expect(server.handle({ protocolVersion: 1, requestId: "open", type: "session.open", payload: { cwd: "/workspace" } }))
+      .resolves.toEqual({ protocolVersion: 1, requestId: "open", ok: false, error: "Agent host is shutting down" });
+    expect(service.open).not.toHaveBeenCalled();
+  });
+
   it("reports exact versions and named capabilities", async () => {
     expect(HOST_VERSION).toBe(hostPackage.version);
     const server = new HostServer();
