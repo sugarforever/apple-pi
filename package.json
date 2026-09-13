@@ -9,6 +9,8 @@
     "build": "pnpm -r build",
     "typecheck": "pnpm --filter @apple-pi/protocol build && pnpm --filter @apple-pi/pi-adapter build && pnpm -r typecheck",
     "test": "pnpm -r test",
+    "test:pi-compatibility": "pnpm --filter @apple-pi/protocol build && pnpm --filter @apple-pi/pi-adapter exec vitest run src/compatibility.test.ts",
+    "test:host-smoke": "pnpm --filter @apple-pi/protocol build && pnpm --filter @apple-pi/pi-adapter build && pnpm --filter @apple-pi/desktop test:package",
     "package:mac": "pnpm --filter @apple-pi/desktop package:mac"
   },
   "devDependencies": {
