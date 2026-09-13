@@ -1,5 +1,8 @@
 # Pi Desktop Architecture Study
 
+> This is the original target-architecture study. For the implemented Pi boundary
+> and its current status, see [Apple Pi and Pi Agent integration](./apple-pi-pi-agent-integration.md).
+
 **Status:** Proposed
 **Date:** 2026-08-23
 **Scope:** Greenfield Electron desktop client for `@earendil-works/pi-coding-agent`

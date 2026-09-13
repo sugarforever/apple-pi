@@ -4,7 +4,7 @@ An experimental Electron desktop client for the [pi coding agent](https://github
 
 ## Try it
 
-Requirements: Node.js 22.19 or newer and Corepack.
+Requirements: Node.js 22.20 or newer and Corepack.
 
 ```bash
 corepack pnpm install
@@ -26,8 +26,17 @@ corepack pnpm package:mac
 
 The unpacked application is written below `apps/desktop/release/`.
 
+## Pi compatibility
+
+Apple Pi currently supports the exact Pi SDK version negotiated during agent-host
+startup. See the [compatibility matrix](docs/operations/pi-compatibility-matrix.md)
+for the supported Apple Pi/Pi/Protocol/Node combination. Dependency upgrades must
+follow the [Pi upgrade runbook](docs/operations/pi-upgrade-runbook.md).
+
 ## Current scope
 
-This walking skeleton includes a sandboxed renderer, isolated pi agent-host process, workspace selection, streaming session updates, cancellation, and transcript recovery. Integrated terminal, Git diff/worktrees, model settings, attachments, orchestration, signing, and automatic updates are planned next.
+This walking skeleton includes a sandboxed renderer, isolated pi agent-host process, workspace selection, streaming session updates, cancellation, transcript recovery, and model selection/defaults. Integrated terminal, Git diff/worktrees, attachments, orchestration, signing, and automatic updates are planned next.
 
-See [the architecture study](docs/architecture/pi-desktop-architecture.md) for the full design.
+See [how Apple Pi integrates Pi Agent](docs/architecture/apple-pi-pi-agent-integration.md)
+for the current boundary and [the architecture study](docs/architecture/pi-desktop-architecture.md)
+for the broader design.
