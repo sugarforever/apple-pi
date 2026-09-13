@@ -1,0 +1,93 @@
+{
+  "messages": {
+    "input": [
+      { "role": "user", "content": "Synthetic request", "timestamp": 1000 },
+      {
+        "role": "assistant",
+        "content": [
+          { "type": "thinking", "thinking": "Synthetic reasoning" },
+          { "type": "toolCall", "id": "call-fixture-1", "name": "fixture_tool", "arguments": { "target": "sample.txt" } },
+          { "type": "text", "text": "Synthetic response" }
+        ],
+        "api": "openai-completions",
+        "provider": "fixture-provider",
+        "model": "fixture-model-a",
+        "usage": { "input": 1, "output": 1, "cacheRead": 0, "cacheWrite": 0, "totalTokens": 2, "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0, "total": 0 } },
+        "stopReason": "toolUse",
+        "timestamp": 2000
+      },
+      {
+        "role": "toolResult",
+        "toolCallId": "call-fixture-1",
+        "toolName": "fixture_tool",
+        "content": [{ "type": "text", "text": "Synthetic tool output" }],
+        "isError": false,
+        "timestamp": 3000
+      }
+    ],
+    "expected": [
+      { "role": "user", "content": [{ "type": "text", "text": "Synthetic request" }] },
+      {
+        "role": "assistant",
+        "content": [
+          { "type": "thinking", "text": "Synthetic reasoning" },
+          { "type": "tool_call", "id": "call-fixture-1", "name": "fixture_tool", "arguments": { "target": "sample.txt" } },
+          { "type": "text", "text": "Synthetic response" }
+        ]
+      },
+      {
+        "role": "tool",
+        "content": [{ "type": "tool_result", "toolCallId": "call-fixture-1", "name": "fixture_tool", "output": [{ "type": "text", "text": "Synthetic tool output" }], "isError": false }]
+      }
+    ]
+  },
+  "events": [
+    {
+      "name": "text delta",
+      "input": { "type": "message_update", "message": {}, "assistantMessageEvent": { "type": "text_delta", "contentIndex": 0, "delta": "Synthetic text", "partial": {} } },
+      "expected": { "type": "text_delta", "text": "Synthetic text" }
+    },
+    {
+      "name": "thinking delta",
+      "input": { "type": "message_update", "message": {}, "assistantMessageEvent": { "type": "thinking_delta", "contentIndex": 0, "delta": "Synthetic thought", "partial": {} } },
+      "expected": { "type": "thinking_delta", "text": "Synthetic thought" }
+    },
+    {
+      "name": "tool call start",
+      "input": { "type": "message_update", "message": {}, "assistantMessageEvent": { "type": "toolcall_start", "contentIndex": 0, "partial": { "content": [{ "type": "toolCall", "id": "call-fixture-1", "name": "fixture_tool", "arguments": {} }] } } },
+      "expected": { "type": "tool_call", "phase": "started", "id": "call-fixture-1", "name": "fixture_tool", "arguments": {} }
+    },
+    {
+      "name": "tool call update",
+      "input": { "type": "message_update", "message": {}, "assistantMessageEvent": { "type": "toolcall_delta", "contentIndex": 0, "delta": "{\"target\":\"sample.txt\"}", "partial": { "content": [{ "type": "toolCall", "id": "call-fixture-1", "name": "fixture_tool", "arguments": { "target": "sample.txt" } }] } } },
+      "expected": { "type": "tool_call", "phase": "updated", "id": "call-fixture-1", "name": "fixture_tool", "arguments": { "target": "sample.txt" } }
+    },
+    {
+      "name": "tool call completion",
+      "input": { "type": "message_update", "message": {}, "assistantMessageEvent": { "type": "toolcall_end", "contentIndex": 0, "toolCall": { "type": "toolCall", "id": "call-fixture-1", "name": "fixture_tool", "arguments": { "target": "sample.txt" } }, "partial": {} } },
+      "expected": { "type": "tool_call", "phase": "completed", "id": "call-fixture-1", "name": "fixture_tool", "arguments": { "target": "sample.txt" } }
+    },
+    {
+      "name": "tool call result",
+      "input": { "type": "tool_execution_end", "toolCallId": "call-fixture-1", "toolName": "fixture_tool", "result": { "content": [{ "type": "text", "text": "Synthetic tool output" }] }, "isError": false },
+      "expected": { "type": "tool_result", "id": "call-fixture-1", "name": "fixture_tool", "output": [{ "type": "text", "text": "Synthetic tool output" }], "isError": false }
+    },
+    {
+      "name": "cancelled run",
+      "input": { "type": "agent_end", "messages": [{ "role": "assistant", "content": [], "stopReason": "aborted" }], "willRetry": false },
+      "expected": { "type": "lifecycle", "phase": "cancelled" }
+    }
+  ],
+  "models": [
+    {
+      "input": { "provider": "fixture-provider", "id": "fixture-model-b", "name": "Fixture Model B", "api": "openai-completions", "baseUrl": "https://invalid.example" },
+      "expected": { "provider": "fixture-provider", "modelId": "fixture-model-b", "name": "Fixture Model B" }
+    }
+  ],
+  "sessions": [
+    {
+      "input": { "id": "fixture-session", "path": "/workspace/project/session.jsonl", "name": "Synthetic session", "created": "2026-01-01T00:00:00.000Z", "modified": "2026-01-01T00:05:00.000Z", "messageCount": 3, "firstMessage": "Synthetic request", "allMessagesText": "Synthetic request Synthetic response" },
+      "expected": { "id": "fixture-session", "path": "/workspace/project/session.jsonl", "name": "Synthetic session", "created": "2026-01-01T00:00:00.000Z", "modified": "2026-01-01T00:05:00.000Z", "messageCount": 3 }
+    }
+  ]
+}

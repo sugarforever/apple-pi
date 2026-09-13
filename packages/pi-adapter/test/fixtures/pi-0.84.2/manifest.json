@@ -1,0 +1,18 @@
+{
+  "piVersion": "0.84.2",
+  "sessionFormatVersion": 3,
+  "sanitized": true,
+  "source": "synthetic contract corpus",
+  "covers": [
+    "create",
+    "open",
+    "list",
+    "text",
+    "thinking",
+    "tool-call",
+    "tool-result",
+    "cancellation",
+    "model-switch",
+    "legacy-jsonl-restore"
+  ]
+}
