@@ -6,7 +6,7 @@ the agent-host handshake; an unlisted Pi version is not supported.
 
 | Apple Pi version | Pi version | Protocol version | Node floor | Electron | Status | Evidence |
 | --- | --- | --- | --- | --- | --- | --- |
-| `0.1.0` | `0.84.2` | `1` | `>=22.20.0` | `39.8.2` | Supported | [Schemas](https://github.com/sugarforever/apple-pi/pull/10), [adapter](https://github.com/sugarforever/apple-pi/pull/11), [handshake](https://github.com/sugarforever/apple-pi/pull/12), [validation](https://github.com/sugarforever/apple-pi/pull/13), [renderer](https://github.com/sugarforever/apple-pi/pull/14), [lifecycle](https://github.com/sugarforever/apple-pi/pull/15), [fixtures/CI](https://github.com/sugarforever/apple-pi/pull/16), [successful run](https://github.com/sugarforever/apple-pi/actions/runs/34780224402) |
+| `0.1.0` | `0.84.2` | `1` | `>=22.20.0` | `39.8.2` | Supported | [Schemas](https://github.com/sugarforever/apple-pi/pull/10), [adapter](https://github.com/sugarforever/apple-pi/pull/11), [handshake](https://github.com/sugarforever/apple-pi/pull/12), [validation](https://github.com/sugarforever/apple-pi/pull/13), [renderer](https://github.com/sugarforever/apple-pi/pull/14), [lifecycle](https://github.com/sugarforever/apple-pi/pull/15), [fixtures/CI](https://github.com/sugarforever/apple-pi/pull/16), [runbook/Node floor](https://github.com/sugarforever/apple-pi/pull/17), [successful Node 22.20 run](https://github.com/sugarforever/apple-pi/actions/runs/34780725897) |
 
 `Supported` means the committed protocol, adapter corpus, legacy JSONL recovery,
 typecheck, build, and packaged-host smoke passed for the exact versions in the
