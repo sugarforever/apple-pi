@@ -43,4 +43,4 @@
 - [x] Update the README with the required secret names and signed-release behavior.
 - [x] Run desktop tests, typecheck, workflow linting where available, and an unsigned macOS package smoke test.
 - [x] Review the diff for secret leakage and request independent code review.
-- [ ] Commit, push, open a pull request, and monitor its checks.
+- [x] Commit, push, open a pull request, and monitor its checks.
