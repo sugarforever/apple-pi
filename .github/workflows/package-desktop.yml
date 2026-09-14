@@ -38,25 +38,25 @@ jobs:
             arch: arm64
             runner: macos-15
             package-command: package:mac
-            extensions: dmg,zip
+            required_suffixes: .dmg,.zip
           - os-name: macos
             builder-os: mac
             arch: x64
             runner: macos-15-intel
             package-command: package:mac
-            extensions: dmg,zip
+            required_suffixes: .dmg,.zip
           - os-name: windows
             builder-os: win
             arch: x64
             runner: windows-latest
             package-command: package:win
-            extensions: exe
+            required_suffixes: -setup.exe,-portable.exe
           - os-name: linux
             builder-os: linux
             arch: x64
             runner: ubuntu-latest
             package-command: package:linux
-            extensions: AppImage,deb
+            required_suffixes: .AppImage,.deb
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
@@ -106,7 +106,7 @@ jobs:
           APPLE_PI_OS: ${{ matrix.os-name }}
           APPLE_PI_BUILDER_OS: ${{ matrix.builder-os }}
           APPLE_PI_ARCH: ${{ matrix.arch }}
-          APPLE_PI_EXTENSIONS: ${{ matrix.extensions }}
+          APPLE_PI_REQUIRED_SUFFIXES: ${{ matrix.required_suffixes }}
         run: node apps/desktop/scripts/collect-package-artifacts.mjs
 
       - name: Upload native packages

@@ -10,17 +10,15 @@ export async function collectPackageArtifacts({
   osName,
   artifactOs,
   arch,
-  extensions,
+  requiredSuffixes,
 }) {
   const prefix = `apple-pi-${version}-${artifactOs}-${arch}`;
-  const allowedSuffixes = new Set(extensions.map((extension) => `.${extension.toLowerCase()}`));
-  const files = (await readdir(releaseDir, { withFileTypes: true }))
-    .filter((entry) => entry.isFile()
-      && entry.name.startsWith(prefix)
-      && allowedSuffixes.has(path.extname(entry.name).toLowerCase()))
-    .map((entry) => entry.name)
-    .sort();
-  if (files.length === 0) throw new Error(`No packaged artifacts matched ${prefix}`);
+  const available = new Set((await readdir(releaseDir, { withFileTypes: true }))
+    .filter((entry) => entry.isFile())
+    .map((entry) => entry.name));
+  const files = requiredSuffixes.map((suffix) => `${prefix}${suffix}`).sort();
+  const missing = files.filter((file) => !available.has(file));
+  if (missing.length > 0) throw new Error(`Missing packaged artifacts: ${missing.join(", ")}`);
 
   const outputDir = path.join(outputRoot, `apple-pi-${version}-${osName}-${arch}`);
   await rm(outputDir, { recursive: true, force: true });
@@ -47,7 +45,7 @@ if (process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === imp
     osName: requiredEnvironment("APPLE_PI_OS"),
     artifactOs: requiredEnvironment("APPLE_PI_BUILDER_OS"),
     arch: requiredEnvironment("APPLE_PI_ARCH"),
-    extensions: requiredEnvironment("APPLE_PI_EXTENSIONS").split(","),
+    requiredSuffixes: requiredEnvironment("APPLE_PI_REQUIRED_SUFFIXES").split(","),
   }).then((outputDir) => console.log(outputDir)).catch((error) => {
     console.error(error instanceof Error ? error.message : String(error));
     process.exitCode = 1;

@@ -23,7 +23,7 @@ test("collects only expected packages and writes portable SHA-256 sidecars", asy
     osName: "macos",
     artifactOs: "mac",
     arch: "arm64",
-    extensions: ["dmg", "zip"],
+    requiredSuffixes: [".dmg", ".zip"],
   });
 
   assert.equal(outputDir, path.join(outputRoot, "apple-pi-0.1.0-macos-arm64"));
@@ -52,8 +52,8 @@ test("rejects a release directory with no matching package", async (t) => {
     osName: "windows",
     artifactOs: "win",
     arch: "x64",
-    extensions: ["exe"],
-  }), /No packaged artifacts matched apple-pi-0\.1\.0-win-x64/);
+    requiredSuffixes: ["-setup.exe", "-portable.exe"],
+  }), /Missing packaged artifacts: apple-pi-0\.1\.0-win-x64-portable\.exe, apple-pi-0\.1\.0-win-x64-setup\.exe/);
 });
 
 test("collects distinct installer targets that share an extension", async (t) => {
@@ -72,11 +72,29 @@ test("collects distinct installer targets that share an extension", async (t) =>
     osName: "windows",
     artifactOs: "win",
     arch: "x64",
-    extensions: ["exe"],
+    requiredSuffixes: ["-setup.exe", "-portable.exe"],
   });
 
   assert.deepEqual((await readdir(outputDir)).filter((file) => !file.endsWith(".sha256")), [
     "apple-pi-0.1.0-win-x64-portable.exe",
     "apple-pi-0.1.0-win-x64-setup.exe",
   ]);
+});
+
+test("rejects a partial multi-target package set", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "apple-pi-artifacts-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const releaseDir = path.join(root, "release");
+  await mkdir(releaseDir);
+  await writeFile(path.join(releaseDir, "apple-pi-0.1.0-linux-x64.AppImage"), "appimage");
+
+  await assert.rejects(collectPackageArtifacts({
+    releaseDir,
+    outputRoot: path.join(root, "artifacts"),
+    version: "0.1.0",
+    osName: "linux",
+    artifactOs: "linux",
+    arch: "x64",
+    requiredSuffixes: [".AppImage", ".deb"],
+  }), /Missing packaged artifacts: apple-pi-0\.1\.0-linux-x64\.deb/);
 });

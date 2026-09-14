@@ -7,19 +7,19 @@ import asar from "@electron/asar";
 
 const REQUIRED_AGENT_HOST_FILES = ["host-process.js", "index.js", "server.js"];
 
-export async function verifyPackageArchive({ archivePath, expectedVersion }) {
+export async function verifyPackageArchive({ archivePath, expectedVersion, shutdownTimeoutMs = 5_000 }) {
   const extractedDir = await mkdtemp(path.join(os.tmpdir(), "apple-pi-packaged-app-"));
   try {
     asar.extractAll(archivePath, extractedDir);
     const hostDir = path.join(extractedDir, "out/agent-host");
     await Promise.all(REQUIRED_AGENT_HOST_FILES.map((file) => readFile(path.join(hostDir, file))));
-    return await exerciseHost(path.join(hostDir, "index.js"), expectedVersion);
+    return await exerciseHost(path.join(hostDir, "index.js"), expectedVersion, shutdownTimeoutMs);
   } finally {
     await rm(extractedDir, { recursive: true, force: true });
   }
 }
 
-async function exerciseHost(hostPath, expectedVersion) {
+async function exerciseHost(hostPath, expectedVersion, shutdownTimeoutMs) {
   const child = spawn(process.execPath, [hostPath], { stdio: ["pipe", "pipe", "pipe"] });
   let stdout = "";
   let stderr = "";
@@ -41,7 +41,7 @@ async function exerciseHost(hostPath, expectedVersion) {
     child.stdin.write(`${JSON.stringify({ protocolVersion: 1, requestId: "shutdown", type: "system.shutdown", payload: {} })}\n`);
     const shutdown = await waitForResponse(() => stdout, "shutdown");
     if (!shutdown.ok) throw new Error(`Packaged agent-host shutdown failed: ${shutdown.error}`);
-    const exitCode = await waitForExit(child);
+    const exitCode = await waitForExit(child, shutdownTimeoutMs, stderr);
     if (exitCode !== 0) throw new Error(`Packaged agent-host exited with ${String(exitCode)}: ${stderr}`);
     return result;
   } finally {
@@ -59,9 +59,17 @@ async function waitForResponse(read, requestId) {
   throw new Error(`Timed out waiting for packaged agent-host response: ${requestId}`);
 }
 
-function waitForExit(child) {
+function waitForExit(child, timeoutMs, stderr) {
   if (child.exitCode !== null) return Promise.resolve(child.exitCode);
-  return new Promise((resolve) => child.once("exit", resolve));
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(
+      `Packaged agent-host did not exit within ${timeoutMs}ms${stderr ? `: ${stderr}` : ""}`,
+    )), timeoutMs);
+    child.once("exit", (exitCode) => {
+      clearTimeout(timer);
+      resolve(exitCode);
+    });
+  });
 }
 
 async function findAppArchives(directory) {

@@ -8,7 +8,7 @@
     "dev": "pnpm --filter @apple-pi/protocol build && pnpm --filter @apple-pi/pi-adapter build && pnpm --filter @apple-pi/agent-host build && electron-vite dev",
     "build": "pnpm --filter @apple-pi/agent-host build && electron-vite build && node scripts/stage-agent-host.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.node.json --noEmit",
-    "test": "node --test scripts/*.test.mjs && vitest run --exclude 'scripts/*.test.mjs'",
+    "test": "node --test scripts/*.test.mjs && vitest run --exclude=scripts/*.test.mjs",
     "test:package": "pnpm build && vitest run src/main/agent-host-package.test.ts",
     "package:mac": "pnpm build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac --publish never",
     "package:win": "pnpm build && electron-builder --win --x64 --publish never",
