@@ -26,6 +26,21 @@ describe("host protocol", () => {
     expect(decodeHostMessage({ protocolVersion: 1, requestId: "r3", type: "model.set", payload: { provider: "openai", modelId: "gpt-5" } }).type).toBe("model.set");
   });
 
+  it("validates bounded cancellable provider commands", () => {
+    const request = { protocolVersion: 1, requestId: "provider", type: "provider.connectApiKey", payload: { providerId: "openai", apiKey: "secret", operationId: "op-1", timeoutMs: 5_000 } } as const;
+    expect(decodeHostMessage(request)).toEqual(request);
+    expect(() => decodeHostMessage({ ...request, payload: { ...request.payload, timeoutMs: 30_001 } })).toThrow("Invalid host message payload");
+    expect(decodeHostMessage({ protocolVersion: 1, requestId: "cancel", type: "operation.cancel", payload: { operationId: "op-1" } }).type).toBe("operation.cancel");
+  });
+
+  it("rejects secret-bearing and Pi-shaped provider results", () => {
+    const provider = { id: "openai", name: "OpenAI", authMethods: ["api_key"], status: "connected", credentialSource: "apple_pi", availableModelCount: 2, diagnostics: [] };
+    expect(decodeCommandResult("provider.list", [provider])).toEqual([provider]);
+    expect(() => decodeCommandResult("provider.list", [{ ...provider, apiKey: "sk-secret" }])).toThrow("Invalid result for provider.list");
+    expect(() => decodeCommandResult("provider.list", [{ ...provider, auth: { apiKey: {} } }])).toThrow("Invalid result for provider.list");
+    expect(() => decodeCommandResult("provider.list", [{ ...provider, credentialSource: "runtime" }])).toThrow("Invalid result for provider.list");
+  });
+
   it("accepts only an empty payload and result for system shutdown", () => {
     expect(decodeHostMessage({ protocolVersion: 1, requestId: "shutdown", type: "system.shutdown", payload: {} }))
       .toEqual({ protocolVersion: 1, requestId: "shutdown", type: "system.shutdown", payload: {} });
@@ -48,7 +63,7 @@ describe("host protocol", () => {
       protocolVersion: 1,
       hostVersion: "0.1.0",
       piVersion: "0.84.2",
-      capabilities: { sessionEvents: true, modelSelection: true },
+      capabilities: { sessionEvents: true, modelSelection: true, providerManagement: true, cancellableProviderOperations: true },
       pid: 42,
     } as const;
 

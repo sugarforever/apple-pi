@@ -1,6 +1,6 @@
 import { PROTOCOL_VERSION, SUPPORTED_PI_VERSION, decodeCommandResult, type HostCommandResults } from "@apple-pi/protocol";
 
-const requiredCapabilities = ["sessionEvents", "modelSelection"] as const;
+const requiredCapabilities = ["sessionEvents", "modelSelection", "providerManagement", "cancellableProviderOperations"] as const;
 
 function field(value: unknown, name: string): unknown {
   return value && typeof value === "object" ? (value as Record<string, unknown>)[name] : undefined;

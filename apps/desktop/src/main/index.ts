@@ -83,9 +83,41 @@ ipcMain.handle("session:cancel", () => host.request("session.cancel", {}));
 ipcMain.handle("session:snapshot", () => host.request("session.snapshot", {}));
 ipcMain.handle("system:version", () => app.getVersion());
 ipcMain.handle("model:list", () => host.request("model.list", {}));
+ipcMain.handle("provider:list", () => host.request("provider.list", {}));
+ipcMain.handle("provider:connectApiKey", (_event, value: unknown) => {
+  const input = providerOperation(value, true);
+  return host.request("provider.connectApiKey", { ...input, apiKey: input.apiKey! });
+});
+ipcMain.handle("provider:disconnect", (_event, value: unknown) => host.request("provider.disconnect", providerOperation(value)));
+ipcMain.handle("provider:verify", (_event, value: unknown) => host.request("provider.verify", providerOperation(value)));
+ipcMain.handle("model:refresh", (_event, value: unknown) => {
+  const input = operation(value);
+  const providerIds = (value as { providerIds?: unknown }).providerIds;
+  if (providerIds !== undefined && (!Array.isArray(providerIds) || providerIds.length === 0 || providerIds.some((id) => typeof id !== "string" || !id))) throw new Error("Invalid provider selection");
+  return host.request("model.refresh", { ...input, ...(providerIds ? { providerIds } : {}) });
+});
+ipcMain.handle("operation:cancel", (_event, operationId: unknown) => {
+  if (typeof operationId !== "string" || !operationId) throw new Error("Invalid operation");
+  return host.request("operation.cancel", { operationId });
+});
 function validModel(value: unknown): ModelRef {
   if (!value || typeof value !== "object" || typeof (value as ModelRef).provider !== "string" || typeof (value as ModelRef).modelId !== "string") throw new Error("Invalid model");
   return value as ModelRef;
 }
 ipcMain.handle("model:setSession", (_event, value: unknown) => { const model = validModel(value); return host.request("model.set", { provider: model.provider, modelId: model.modelId }); });
 ipcMain.handle("model:setDefault", async (_event, value: unknown) => { const model = validModel(value); await catalog.setDefaultModel(model); return catalog.snapshot(); });
+
+function operation(value: unknown): { operationId: string; timeoutMs: number } {
+  if (!value || typeof value !== "object") throw new Error("Invalid operation");
+  const { operationId, timeoutMs } = value as { operationId?: unknown; timeoutMs?: unknown };
+  if (typeof operationId !== "string" || !operationId || !Number.isInteger(timeoutMs) || (timeoutMs as number) < 100 || (timeoutMs as number) > 30_000) throw new Error("Invalid operation");
+  return { operationId, timeoutMs: timeoutMs as number };
+}
+
+function providerOperation(value: unknown, withApiKey = false): { providerId: string; operationId: string; timeoutMs: number; apiKey?: string } {
+  const base = operation(value);
+  const { providerId, apiKey } = value as { providerId?: unknown; apiKey?: unknown };
+  if (typeof providerId !== "string" || !providerId) throw new Error("Invalid provider");
+  if (withApiKey && (typeof apiKey !== "string" || !apiKey)) throw new Error("Invalid API key");
+  return { providerId, ...base, ...(withApiKey ? { apiKey: apiKey as string } : {}) };
+}

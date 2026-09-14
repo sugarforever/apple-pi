@@ -9,7 +9,7 @@ const compatibleHandshake = {
   protocolVersion: 1,
   hostVersion: "0.1.0",
   piVersion: "0.84.2",
-  capabilities: { sessionEvents: true, modelSelection: true },
+  capabilities: { sessionEvents: true, modelSelection: true, providerManagement: true, cancellableProviderOperations: true },
   pid: 42,
 } as const;
 
@@ -76,7 +76,7 @@ describe("agent host supervisor handshake", () => {
       .toThrow("Incompatible Pi version: expected 0.84.2, received 0.85.0");
   });
 
-  it.each(["sessionEvents", "modelSelection"] as const)("rejects missing required capability %s before readiness", (capability) => {
+  it.each(["sessionEvents", "modelSelection", "providerManagement", "cancellableProviderOperations"] as const)("rejects missing required capability %s before readiness", (capability) => {
     expect(() => validateHostHandshake({
       ...compatibleHandshake,
       capabilities: { ...compatibleHandshake.capabilities, [capability]: false },

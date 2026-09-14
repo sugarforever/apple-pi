@@ -3,7 +3,10 @@ import { Value } from "typebox/value";
 import {
   ApplePiSessionEventSchema,
   HostCapabilitiesSchema,
+  ModelCatalogRefreshResultSchema,
   ModelItemSchema,
+  ProviderItemSchema,
+  ProviderOperationResultSchema,
   SessionItemSchema,
   SessionSnapshotSchema,
   type ApplePiSessionEvent,
@@ -27,6 +30,12 @@ export const Payloads = {
   "session.snapshot": Type.Object({}, { additionalProperties: false }),
   "model.list": Type.Object({}, { additionalProperties: false }),
   "model.set": Type.Object({ provider: Type.String({ minLength: 1 }), modelId: Type.String({ minLength: 1 }) }, { additionalProperties: false }),
+  "provider.list": Type.Object({}, { additionalProperties: false }),
+  "provider.connectApiKey": Type.Object({ providerId: Type.String({ minLength: 1 }), apiKey: Type.String({ minLength: 1 }), operationId: Type.String({ minLength: 1 }), timeoutMs: Type.Integer({ minimum: 100, maximum: 30_000 }) }, { additionalProperties: false }),
+  "provider.disconnect": Type.Object({ providerId: Type.String({ minLength: 1 }), operationId: Type.String({ minLength: 1 }), timeoutMs: Type.Integer({ minimum: 100, maximum: 30_000 }) }, { additionalProperties: false }),
+  "provider.verify": Type.Object({ providerId: Type.String({ minLength: 1 }), operationId: Type.String({ minLength: 1 }), timeoutMs: Type.Integer({ minimum: 100, maximum: 30_000 }) }, { additionalProperties: false }),
+  "model.refresh": Type.Object({ providerIds: Type.Optional(Type.Array(Type.String({ minLength: 1 }), { minItems: 1 })), operationId: Type.String({ minLength: 1 }), timeoutMs: Type.Integer({ minimum: 100, maximum: 30_000 }) }, { additionalProperties: false }),
+  "operation.cancel": Type.Object({ operationId: Type.String({ minLength: 1 }) }, { additionalProperties: false }),
 } as const;
 
 export const ResultSchemas = {
@@ -47,6 +56,12 @@ export const ResultSchemas = {
   "session.snapshot": SessionSnapshotSchema,
   "model.list": Type.Array(ModelItemSchema),
   "model.set": SessionSnapshotSchema,
+  "provider.list": Type.Array(ProviderItemSchema),
+  "provider.connectApiKey": ProviderOperationResultSchema,
+  "provider.disconnect": ProviderOperationResultSchema,
+  "provider.verify": ProviderOperationResultSchema,
+  "model.refresh": ModelCatalogRefreshResultSchema,
+  "operation.cancel": Type.Object({ cancelled: Type.Boolean() }, { additionalProperties: false }),
 } as const;
 
 export const HostEventSchema = Type.Object({

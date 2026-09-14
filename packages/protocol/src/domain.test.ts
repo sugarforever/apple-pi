@@ -40,7 +40,7 @@ describe("Apple Pi domain decoders", () => {
   it("decodes session, model, and capability fixtures", () => {
     const session = { id: "session-1", path: "/tmp/session.jsonl", name: "First", created: "2026-09-12T10:00:00.000Z", modified: "2026-09-12T10:01:00.000Z", messageCount: 3 };
     const model = { provider: "openai", modelId: "gpt-5", name: "GPT-5" };
-    const capabilities = { sessionEvents: true, modelSelection: true };
+    const capabilities = { sessionEvents: true, modelSelection: true, providerManagement: true, cancellableProviderOperations: true };
 
     expect(decodeSessionItem(session)).toEqual(session);
     expect(decodeModelItem(model)).toEqual(model);

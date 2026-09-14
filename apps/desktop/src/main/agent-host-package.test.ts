@@ -24,7 +24,7 @@ it("contains the agent-host layout and completes the compatibility handshake", a
   expect(validateHostHandshake(hello.result, hostPackage.version)).toEqual(expect.objectContaining({
     protocolVersion: 1,
     hostVersion: hostPackage.version,
-    capabilities: { sessionEvents: true, modelSelection: true },
+    capabilities: { sessionEvents: true, modelSelection: true, providerManagement: true, cancellableProviderOperations: true },
     pid: expect.any(Number),
   }));
   child.stdin.write(`${JSON.stringify({ protocolVersion: 1, requestId: "shutdown", type: "system.shutdown", payload: {} })}\n`);
