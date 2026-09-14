@@ -19,12 +19,38 @@ The most recent pi session for a selected workspace is reopened automatically. S
 
 ```bash
 corepack pnpm test
+corepack pnpm test:pi-compatibility
 corepack pnpm typecheck
 corepack pnpm build
+corepack pnpm test:host-smoke
 corepack pnpm package:mac
+corepack pnpm package:win
+corepack pnpm package:linux
 ```
 
-The unpacked application is written below `apps/desktop/release/`.
+Run only the package command native to the current operating system. macOS builds
+DMG and ZIP packages for the runner's architecture, Windows builds x64 NSIS and
+portable executables, and Linux builds x64 AppImage and DEB packages. Local
+outputs are written below `apps/desktop/release/` with names such as
+`apple-pi-0.1.0-mac-arm64.dmg`.
+
+The [Package desktop workflow](.github/workflows/package-desktop.yml) can be run
+manually from the Actions tab. Pull requests that change packaging inputs also
+build on native macOS arm64, macOS x64, Windows x64, and Linux x64 runners without
+publishing a release. Each Actions artifact has a deterministic
+`apple-pi-<version>-<os>-<arch>` name, contains the native installers or archives,
+and includes a `.sha256` sidecar for every file. Pushing a `v*` tag creates or
+updates the corresponding GitHub Release only after every native build succeeds.
+Verify a downloaded sidecar from the directory containing its package, for
+example with `shasum -a 256 -c <package>.sha256` on macOS/Linux or
+`Get-FileHash -Algorithm SHA256 <package>` on Windows.
+
+CI packages are intentionally unsigned and require no repository secrets. macOS
+Gatekeeper and Windows SmartScreen can therefore warn or block on first launch;
+these builds are intended for evaluation until release signing is added. Future
+release hardening requires Apple Developer ID signing plus notarization
+credentials and a trusted Windows code-signing certificate. Those credentials
+are not configured or represented by placeholder secrets in this workflow.
 
 ## Pi compatibility
 

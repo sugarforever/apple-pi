@@ -1,11 +1,16 @@
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { access } from "node:fs/promises";
 import path from "node:path";
 import { expect, it } from "vitest";
+import hostPackage from "../../../agent-host/package.json" with { type: "json" };
+import { validateHostHandshake } from "./host-compatibility.js";
 
-const hostPath = path.resolve(process.cwd(), "out/agent-host/index.js");
+const hostDirectory = path.resolve(process.cwd(), "out/agent-host");
+const requiredHostFiles = ["host-process.js", "index.js", "server.js"];
+const hostPath = path.join(hostDirectory, "index.js");
 
-it.runIf(existsSync(hostPath))("starts and gracefully shuts down the packaged agent host", async () => {
+it("contains the agent-host layout and completes the compatibility handshake", async () => {
+  await Promise.all(requiredHostFiles.map((file) => access(path.join(hostDirectory, file))));
   const child = spawn(process.execPath, [hostPath], { stdio: ["pipe", "pipe", "pipe"] });
   let stdout = "";
   let stderr = "";
@@ -14,14 +19,20 @@ it.runIf(existsSync(hostPath))("starts and gracefully shuts down the packaged ag
 
   child.stdin.write(`${JSON.stringify({ protocolVersion: 1, requestId: "hello", type: "system.hello", payload: {} })}\n`);
   await waitForLine(() => stdout, "hello");
+  const hello = JSON.parse(stdout.split("\n").find((line) => line.includes('"requestId":"hello"'))!);
+  expect(hello.ok, hello.error).toBe(true);
+  expect(validateHostHandshake(hello.result, hostPackage.version)).toEqual(expect.objectContaining({
+    protocolVersion: 1,
+    hostVersion: hostPackage.version,
+    capabilities: { sessionEvents: true, modelSelection: true },
+    pid: expect.any(Number),
+  }));
   child.stdin.write(`${JSON.stringify({ protocolVersion: 1, requestId: "shutdown", type: "system.shutdown", payload: {} })}\n`);
   const exitCode = await new Promise<number | null>((resolve) => child.once("exit", resolve));
 
   expect(exitCode, stderr).toBe(0);
-  expect(stdout.split("\n").filter(Boolean).map((line) => JSON.parse(line))).toEqual([
-    expect.objectContaining({ requestId: "hello", ok: true }),
-    { protocolVersion: 1, requestId: "shutdown", ok: true, result: {} },
-  ]);
+  expect(stdout.split("\n").filter(Boolean).map((line) => JSON.parse(line)))
+    .toContainEqual({ protocolVersion: 1, requestId: "shutdown", ok: true, result: {} });
 }, 10_000);
 
 async function waitForLine(read: () => string, requestId: string): Promise<void> {

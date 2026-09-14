@@ -1,0 +1,146 @@
+name: Package desktop
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+  pull_request:
+    paths:
+      - ".github/workflows/package-desktop.yml"
+      - "apps/desktop/**"
+      - "apps/agent-host/**"
+      - "packages/pi-adapter/**"
+      - "packages/protocol/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "README.md"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: package-desktop-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+jobs:
+  package:
+    name: Package ${{ matrix.os-name }} ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os-name: macos
+            builder-os: mac
+            arch: arm64
+            runner: macos-15
+            package-command: package:mac
+            extensions: dmg,zip
+          - os-name: macos
+            builder-os: mac
+            arch: x64
+            runner: macos-15-intel
+            package-command: package:mac
+            extensions: dmg,zip
+          - os-name: windows
+            builder-os: win
+            arch: x64
+            runner: windows-latest
+            package-command: package:win
+            extensions: exe
+          - os-name: linux
+            builder-os: linux
+            arch: x64
+            runner: ubuntu-latest
+            package-command: package:linux
+            extensions: AppImage,deb
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22.20.0
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v5
+        with:
+          version: 10.25.0
+          run_install: false
+
+      - name: Install frozen dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Test protocol schemas
+        run: pnpm --filter @apple-pi/protocol test
+
+      - name: Test Pi compatibility
+        run: pnpm test:pi-compatibility
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Build
+        run: pnpm build
+
+      - name: Smoke-test packaged host
+        run: pnpm test:host-smoke
+
+      - name: Build native packages
+        run: pnpm ${{ matrix.package-command }}
+
+      - name: Verify packaged agent-host layout and handshake
+        run: node apps/desktop/scripts/verify-packaged-app.mjs
+
+      - name: Read application version
+        id: version
+        shell: bash
+        run: echo "version=$(node -p \"require('./apps/desktop/package.json').version\")" >> "$GITHUB_OUTPUT"
+
+      - name: Collect packages and checksums
+        env:
+          APPLE_PI_OS: ${{ matrix.os-name }}
+          APPLE_PI_BUILDER_OS: ${{ matrix.builder-os }}
+          APPLE_PI_ARCH: ${{ matrix.arch }}
+          APPLE_PI_EXTENSIONS: ${{ matrix.extensions }}
+        run: node apps/desktop/scripts/collect-package-artifacts.mjs
+
+      - name: Upload native packages
+        uses: actions/upload-artifact@v6
+        with:
+          name: apple-pi-${{ steps.version.outputs.version }}-${{ matrix.os-name }}-${{ matrix.arch }}
+          path: artifacts/apple-pi-${{ steps.version.outputs.version }}-${{ matrix.os-name }}-${{ matrix.arch }}
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: Attach packages to GitHub Release
+    if: github.event_name == 'push' && github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/v')
+    needs: package
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Download native packages
+        uses: actions/download-artifact@v7
+        with:
+          path: release-assets
+          pattern: apple-pi-*
+          merge-multiple: true
+
+      - name: Create or update the tag release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG_NAME: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          if ! gh release view "$TAG_NAME" >/dev/null 2>&1; then
+            gh release create "$TAG_NAME" --verify-tag --generate-notes --title "$TAG_NAME"
+          fi
+          gh release upload "$TAG_NAME" release-assets/* --clobber
