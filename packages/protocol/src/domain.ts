@@ -150,6 +150,7 @@ export const ProviderDiagnosticSchema = closedObject({
     Type.Literal("operation_cancelled"),
     Type.Literal("operation_timed_out"),
     Type.Literal("model_refresh_failed"),
+    Type.Literal("secure_storage_unavailable"),
   ]),
   severity: Type.Union([Type.Literal("info"), Type.Literal("warning"), Type.Literal("error")]),
   message: Type.String({ minLength: 1, maxLength: 240 }),

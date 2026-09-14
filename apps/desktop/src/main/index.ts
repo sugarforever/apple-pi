@@ -1,10 +1,13 @@
-import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, safeStorage, shell } from "electron";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { AgentHostSupervisor } from "./agent-host-supervisor.js";
 import { AppCatalog, type ModelRef } from "./app-catalog.js";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { installGracefulShutdown } from "./graceful-shutdown.js";
+import { CredentialBroker, CredentialFile } from "./credential-broker.js";
+import { ProviderCredentialController } from "./provider-credential-controller.js";
+import type { SessionSnapshot } from "@apple-pi/protocol";
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 const host = new AgentHostSupervisor({
@@ -16,6 +19,8 @@ const host = new AgentHostSupervisor({
 let mainWindow: BrowserWindow | undefined;
 let workspacePath: string | undefined;
 let catalog: AppCatalog;
+let credentials: CredentialBroker;
+let providerCredentials: ProviderCredentialController;
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -38,7 +43,15 @@ app.whenReady().then(async () => {
     write: async (value) => { await mkdir(path.dirname(catalogPath), { recursive: true }); await writeFile(catalogPath, value, "utf8"); },
   });
   await catalog.load();
+  credentials = new CredentialBroker(process.platform, {
+    isEncryptionAvailable: () => safeStorage.isEncryptionAvailable(),
+    encryptString: (value) => safeStorage.encryptString(value),
+    decryptString: (value) => safeStorage.decryptString(value),
+    selectedBackend: () => process.platform === "linux" ? safeStorage.getSelectedStorageBackend() : process.platform === "darwin" ? "keychain" : "dpapi",
+  }, new CredentialFile(path.join(app.getPath("userData"), "credentials.json")));
+  await credentials.initialize();
   await host.start();
+  providerCredentials = new ProviderCredentialController(credentials, host);
   host.on("session.event", (event) => mainWindow?.webContents.send("session:event", event));
   createWindow();
 });
@@ -54,6 +67,7 @@ ipcMain.handle("workspace:pick", async () => {
   await catalog.addWorkspace(chosenPath);
   const defaultModel = catalog.snapshot().defaultModel;
   const sessions = await host.request("session.list", { cwd: workspacePath });
+  if (defaultModel?.provider) await providerCredentials.provide(defaultModel.provider);
   const session = await host.request("session.create", { cwd: workspacePath, ...defaultModel });
   return { catalog: catalog.snapshot(), workspacePath, sessions, session };
 });
@@ -63,7 +77,7 @@ ipcMain.handle("workspace:select", async (_event, requestedPath: unknown) => {
   workspacePath = requestedPath;
   const sessions = await host.request("session.list", { cwd: workspacePath });
   const list = sessions as Array<{ path: string }>;
-  const session = list[0] ? await host.request("session.openPath", { cwd: workspacePath, path: list[0].path }) : await host.request("session.create", { cwd: workspacePath, ...catalog.snapshot().defaultModel });
+  const session = list[0] ? await host.request("session.openPath", { cwd: workspacePath, path: list[0].path }) : await createSession();
   return { workspacePath, sessions, session };
 });
 ipcMain.handle("session:list", () => workspacePath ? host.request("session.list", { cwd: workspacePath }) : []);
@@ -73,28 +87,36 @@ ipcMain.handle("session:select", (_event, sessionPath: unknown) => {
 });
 ipcMain.handle("session:create", () => {
   if (!workspacePath) throw new Error("Select a workspace first");
-  return host.request("session.create", { cwd: workspacePath, ...catalog.snapshot().defaultModel });
+  return createSession();
 });
-ipcMain.handle("session:send", (_event, text: unknown) => {
+ipcMain.handle("session:send", async (_event, text: unknown) => {
   if (!workspacePath || typeof text !== "string" || !text.trim()) throw new Error("Select a workspace and enter a message");
+  const snapshot = await host.request("session.snapshot", {});
+  if (snapshot.opened && snapshot.model?.provider) await providerCredentials.provide(snapshot.model.provider);
   return host.request("session.send", { text: text.trim() });
 });
 ipcMain.handle("session:cancel", () => host.request("session.cancel", {}));
 ipcMain.handle("session:snapshot", () => host.request("session.snapshot", {}));
 ipcMain.handle("system:version", () => app.getVersion());
 ipcMain.handle("model:list", () => host.request("model.list", {}));
-ipcMain.handle("provider:list", () => host.request("provider.list", {}));
-ipcMain.handle("provider:connectApiKey", (_event, value: unknown) => {
+ipcMain.handle("provider:list", () => providerCredentials.list());
+ipcMain.handle("provider:connectApiKey", async (_event, value: unknown) => {
   const input = providerOperation(value, true);
-  return host.request("provider.connectApiKey", { ...input, apiKey: input.apiKey! });
+  return providerCredentials.connect({ ...input, apiKey: input.apiKey! });
 });
-ipcMain.handle("provider:disconnect", (_event, value: unknown) => host.request("provider.disconnect", providerOperation(value)));
-ipcMain.handle("provider:verify", (_event, value: unknown) => host.request("provider.verify", providerOperation(value)));
+ipcMain.handle("provider:disconnect", async (_event, value: unknown) => {
+  const input = providerOperation(value);
+  return providerCredentials.disconnect(input);
+});
+ipcMain.handle("provider:verify", async (_event, value: unknown) => {
+  const input = providerOperation(value);
+  return providerCredentials.verify(input);
+});
 ipcMain.handle("model:refresh", (_event, value: unknown) => {
   const input = operation(value);
   const providerIds = (value as { providerIds?: unknown }).providerIds;
   if (providerIds !== undefined && (!Array.isArray(providerIds) || providerIds.length === 0 || providerIds.some((id) => typeof id !== "string" || !id))) throw new Error("Invalid provider selection");
-  return host.request("model.refresh", { ...input, ...(providerIds ? { providerIds } : {}) });
+  return providerCredentials.refresh(providerIds as string[] | undefined, input);
 });
 ipcMain.handle("operation:cancel", (_event, operationId: unknown) => {
   if (typeof operationId !== "string" || !operationId) throw new Error("Invalid operation");
@@ -104,7 +126,7 @@ function validModel(value: unknown): ModelRef {
   if (!value || typeof value !== "object" || typeof (value as ModelRef).provider !== "string" || typeof (value as ModelRef).modelId !== "string") throw new Error("Invalid model");
   return value as ModelRef;
 }
-ipcMain.handle("model:setSession", (_event, value: unknown) => { const model = validModel(value); return host.request("model.set", { provider: model.provider, modelId: model.modelId }); });
+ipcMain.handle("model:setSession", async (_event, value: unknown) => { const model = validModel(value); await providerCredentials.provide(model.provider); return host.request("model.set", { provider: model.provider, modelId: model.modelId }); });
 ipcMain.handle("model:setDefault", async (_event, value: unknown) => { const model = validModel(value); await catalog.setDefaultModel(model); return catalog.snapshot(); });
 
 function operation(value: unknown): { operationId: string; timeoutMs: number } {
@@ -120,4 +142,11 @@ function providerOperation(value: unknown, withApiKey = false): { providerId: st
   if (typeof providerId !== "string" || !providerId) throw new Error("Invalid provider");
   if (withApiKey && (typeof apiKey !== "string" || !apiKey)) throw new Error("Invalid API key");
   return { providerId, ...base, ...(withApiKey ? { apiKey: apiKey as string } : {}) };
+}
+
+async function createSession(): Promise<SessionSnapshot> {
+  if (!workspacePath) throw new Error("Select a workspace first");
+  const defaultModel = catalog.snapshot().defaultModel;
+  if (defaultModel?.provider) await providerCredentials.provide(defaultModel.provider);
+  return host.request("session.create", { cwd: workspacePath, ...defaultModel });
 }
