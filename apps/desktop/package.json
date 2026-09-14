@@ -12,6 +12,7 @@
     "test": "node --test scripts/*.test.mjs && vitest run --exclude=scripts/*.test.mjs",
     "test:package": "pnpm build && vitest run src/main/agent-host-package.test.ts",
     "package:mac": "pnpm build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac --publish never",
+    "package:mac:signed": "pnpm build && electron-builder --mac --config.mac.notarize=true --publish never",
     "package:win": "pnpm build && electron-builder --win --x64 --publish never",
     "package:linux": "pnpm build && electron-builder --linux --x64 --publish never"
   },
@@ -48,7 +49,10 @@
       "package.json"
     ],
     "mac": {
-      "identity": null,
+      "hardenedRuntime": true,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.inherit.plist",
+      "notarize": false,
       "target": [
         "dmg",
         "zip"

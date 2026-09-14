@@ -77,10 +77,25 @@ Verify a downloaded sidecar from the directory containing its package, for
 example with `shasum -a 256 -c <package>.sha256` on macOS/Linux or
 `Get-FileHash -Algorithm SHA256 <package>` on Windows.
 
-CI packages are unsigned and require no repository secrets. macOS Gatekeeper and
-Windows SmartScreen may therefore warn or block on first launch. Production
-distribution will require Apple signing/notarization and a trusted Windows
-code-signing certificate.
+Pull requests run unit tests, typechecking, an Electron build, and a packaged-host
+smoke test on Linux; they do not create native installers. Manual and local
+packages are unsigned and require no repository secrets. macOS Gatekeeper and
+Windows SmartScreen may therefore warn or block those builds on first launch.
+
+macOS packages produced from a `v*` tag are signed with Developer ID, submitted
+to Apple's notarization service, stapled, and verified before the GitHub Release
+is created. Configure these Actions repository secrets before publishing a tag:
+
+- `MAC_CSC_LINK`: base64-encoded Developer ID Application `.p12`
+- `MAC_CSC_KEY_PASSWORD`: password used when exporting the `.p12`
+- `APPLE_API_KEY_P8`: base64-encoded App Store Connect team API `.p8`
+- `APPLE_API_KEY_ID`: App Store Connect API key ID
+- `APPLE_API_ISSUER`: App Store Connect issuer ID
+- `APPLE_TEAM_ID`: Apple Developer team ID
+
+The workflow exposes these secrets only to macOS jobs triggered by a tag. The
+temporary `.p8` is removed after packaging. Windows release artifacts remain
+unsigned until a trusted Windows code-signing certificate is configured.
 
 ## Architecture and compatibility
 
