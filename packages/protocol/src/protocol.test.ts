@@ -41,6 +41,12 @@ describe("host protocol", () => {
     expect(() => decodeCommandResult("provider.list", [{ ...provider, credentialSource: "runtime" }])).toThrow("Invalid result for provider.list");
   });
 
+  it("allows a sanitized secure-storage warning without secret fields", () => {
+    const result = { diagnostics: [{ code: "secure_storage_unavailable", severity: "warning", message: "Credential is session-only." }] };
+    expect(decodeCommandResult("provider.connectApiKey", result)).toEqual(result);
+    expect(() => decodeCommandResult("provider.connectApiKey", { ...result, apiKey: "secret" })).toThrow("Invalid result");
+  });
+
   it("accepts only an empty payload and result for system shutdown", () => {
     expect(decodeHostMessage({ protocolVersion: 1, requestId: "shutdown", type: "system.shutdown", payload: {} }))
       .toEqual({ protocolVersion: 1, requestId: "shutdown", type: "system.shutdown", payload: {} });
