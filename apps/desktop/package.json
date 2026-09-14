@@ -2,15 +2,18 @@
   "name": "@apple-pi/desktop",
   "version": "0.1.0",
   "private": true,
+  "homepage": "https://github.com/sugarforever/apple-pi",
   "type": "module",
   "main": "out/main/index.js",
   "scripts": {
     "dev": "pnpm --filter @apple-pi/protocol build && pnpm --filter @apple-pi/pi-adapter build && pnpm --filter @apple-pi/agent-host build && electron-vite dev",
-    "build": "pnpm --filter @apple-pi/agent-host build && electron-vite build && mkdir -p out/agent-host && cp ../agent-host/dist/index.js ../agent-host/dist/server.js ../agent-host/dist/host-process.js out/agent-host/",
+    "build": "pnpm --filter @apple-pi/agent-host build && electron-vite build && node scripts/stage-agent-host.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.node.json --noEmit",
-    "test": "vitest run",
+    "test": "node --test scripts/*.test.mjs && vitest run --exclude=scripts/*.test.mjs",
     "test:package": "pnpm build && vitest run src/main/agent-host-package.test.ts",
-    "package:mac": "pnpm build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac --dir --publish never"
+    "package:mac": "pnpm build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac --publish never",
+    "package:win": "pnpm build && electron-builder --win --x64 --publish never",
+    "package:linux": "pnpm build && electron-builder --linux --x64 --publish never"
   },
   "dependencies": {
     "@apple-pi/agent-host": "workspace:*",
@@ -21,6 +24,7 @@
     "react-dom": "19.2.4"
   },
   "devDependencies": {
+    "@electron/asar": "3.4.1",
     "@types/node": "22.19.19",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
@@ -35,8 +39,47 @@
   "build": {
     "appId": "works.earendil.applepi",
     "productName": "Apple Pi",
-    "directories": { "output": "release" },
-    "files": ["out/**/*", "package.json"],
-    "mac": { "identity": null, "target": [{ "target": "dir", "arch": ["arm64"] }], "category": "public.app-category.developer-tools" }
+    "directories": {
+      "output": "release"
+    },
+    "artifactName": "apple-pi-${version}-${os}-${arch}.${ext}",
+    "files": [
+      "out/**/*",
+      "package.json"
+    ],
+    "mac": {
+      "identity": null,
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.developer-tools"
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "nsis": {
+      "artifactName": "apple-pi-${version}-win-${arch}-setup.${ext}"
+    },
+    "portable": {
+      "artifactName": "apple-pi-${version}-win-${arch}-portable.${ext}"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Development",
+      "maintainer": "sugarforever"
+    },
+    "appImage": {
+      "artifactName": "apple-pi-${version}-linux-x64.${ext}"
+    },
+    "deb": {
+      "artifactName": "apple-pi-${version}-linux-x64.${ext}"
+    }
   }
 }
