@@ -48,14 +48,14 @@ jobs:
       - name: Install frozen dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Build Electron app
+        run: pnpm build
+
       - name: Run unit tests
         run: pnpm test
 
       - name: Typecheck
         run: pnpm typecheck
-
-      - name: Build Electron app
-        run: pnpm build
 
       - name: Smoke-test built agent host
         run: pnpm --filter @apple-pi/desktop exec vitest run src/main/agent-host-package.test.ts
