@@ -1,7 +1,6 @@
 name: Package desktop
 
 on:
-  workflow_dispatch:
   push:
     tags:
       - "v*"
@@ -25,6 +24,30 @@ concurrency:
   cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
 jobs:
+  prepare-release:
+    name: Prepare GitHub Release
+    if: github.event_name == 'push' && github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Create the tag release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG_NAME: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          if gh release view "$TAG_NAME" >/dev/null 2>&1; then
+            [[ "$(gh release view "$TAG_NAME" --json isDraft --jq .isDraft)" == "true" ]] || {
+              echo "Release $TAG_NAME is already published; refusing to replace public assets" >&2
+              exit 1
+            }
+          else
+            gh release create "$TAG_NAME" --draft --verify-tag --generate-notes --title "$TAG_NAME"
+          fi
+
   pr-check:
     name: Test and build Electron app
     if: github.event_name == 'pull_request'
@@ -62,9 +85,12 @@ jobs:
 
   package:
     name: Package ${{ matrix.os-name }} ${{ matrix.arch }}
-    if: github.event_name != 'pull_request'
+    if: github.event_name == 'push' && github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/v')
+    needs: prepare-release
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
+    permissions:
+      contents: write
     strategy:
       fail-fast: false
       matrix:
@@ -203,38 +229,27 @@ jobs:
           APPLE_PI_REQUIRED_SUFFIXES: ${{ matrix.required_suffixes }}
         run: node apps/desktop/scripts/collect-package-artifacts.mjs
 
-      - name: Upload native packages
-        uses: actions/upload-artifact@v6
-        with:
-          name: apple-pi-${{ steps.artifacts.outputs.version }}-${{ matrix.os-name }}-${{ matrix.arch }}
-          path: ${{ steps.artifacts.outputs.artifact_path }}
-          if-no-files-found: error
-          retention-days: 14
-
-  release:
-    name: Attach packages to GitHub Release
-    if: github.event_name == 'push' && github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/v')
-    needs: package
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      contents: write
-    steps:
-      - name: Download native packages
-        uses: actions/download-artifact@v7
-        with:
-          path: release-assets
-          pattern: apple-pi-*
-          merge-multiple: true
-
-      - name: Create or update the tag release
+      - name: Upload native packages to the GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           TAG_NAME: ${{ github.ref_name }}
+          ARTIFACT_PATH: ${{ steps.artifacts.outputs.artifact_path }}
         shell: bash
         run: |
-          if ! gh release view "$TAG_NAME" >/dev/null 2>&1; then
-            gh release create "$TAG_NAME" --verify-tag --generate-notes --title "$TAG_NAME"
-          fi
-          gh release upload "$TAG_NAME" release-assets/* --clobber
+          gh release upload "$TAG_NAME" "$ARTIFACT_PATH"/* --clobber
+
+  publish-release:
+    name: Publish GitHub Release
+    needs: package
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Publish the completed release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG_NAME: ${{ github.ref_name }}
+        run: gh release edit "$TAG_NAME" --draft=false
