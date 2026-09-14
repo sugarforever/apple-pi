@@ -2,6 +2,7 @@
   "name": "@apple-pi/desktop",
   "version": "0.1.0",
   "private": true,
+  "homepage": "https://github.com/sugarforever/apple-pi",
   "type": "module",
   "main": "out/main/index.js",
   "scripts": {
@@ -71,7 +72,14 @@
         "AppImage",
         "deb"
       ],
-      "category": "Development"
+      "category": "Development",
+      "maintainer": "sugarforever"
+    },
+    "appImage": {
+      "artifactName": "apple-pi-${version}-linux-x64.${ext}"
+    },
+    "deb": {
+      "artifactName": "apple-pi-${version}-linux-x64.${ext}"
     }
   }
 }
