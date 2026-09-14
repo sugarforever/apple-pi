@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { copyFile, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { appendFile, copyFile, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -33,6 +33,11 @@ export async function collectPackageArtifacts({
   return outputDir;
 }
 
+export async function writeGitHubOutputs(outputFile, outputs) {
+  const records = Object.entries(outputs).map(([name, value]) => `${name}=${value}`).join("\n");
+  await appendFile(outputFile, `${records}\n`);
+}
+
 const scriptPath = fileURLToPath(import.meta.url);
 
 if (process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url) {
@@ -46,7 +51,15 @@ if (process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === imp
     artifactOs: requiredEnvironment("APPLE_PI_BUILDER_OS"),
     arch: requiredEnvironment("APPLE_PI_ARCH"),
     requiredSuffixes: requiredEnvironment("APPLE_PI_REQUIRED_SUFFIXES").split(","),
-  }).then((outputDir) => console.log(outputDir)).catch((error) => {
+  }).then(async (outputDir) => {
+    if (process.env.GITHUB_OUTPUT) {
+      await writeGitHubOutputs(process.env.GITHUB_OUTPUT, {
+        version: desktopPackage.version,
+        artifact_path: outputDir,
+      });
+    }
+    console.log(outputDir);
+  }).catch((error) => {
     console.error(error instanceof Error ? error.message : String(error));
     process.exitCode = 1;
   });

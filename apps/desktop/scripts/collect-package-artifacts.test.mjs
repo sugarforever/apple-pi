@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { collectPackageArtifacts } from "./collect-package-artifacts.mjs";
+import { collectPackageArtifacts, writeGitHubOutputs } from "./collect-package-artifacts.mjs";
 
 test("collects only expected packages and writes portable SHA-256 sidecars", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "apple-pi-artifacts-"));
@@ -97,4 +97,21 @@ test("rejects a partial multi-target package set", async (t) => {
     arch: "x64",
     requiredSuffixes: [".AppImage", ".deb"],
   }), /Missing packaged artifacts: apple-pi-0\.1\.0-linux-x64\.deb/);
+});
+
+test("writes version and artifact path as GitHub step outputs", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "apple-pi-actions-output-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const outputFile = path.join(root, "github-output");
+
+  await writeGitHubOutputs(outputFile, {
+    version: "0.1.0",
+    artifact_path: "/tmp/artifacts/apple-pi-0.1.0-macos-arm64",
+  });
+
+  assert.equal(await readFile(outputFile, "utf8"), [
+    "version=0.1.0",
+    "artifact_path=/tmp/artifacts/apple-pi-0.1.0-macos-arm64",
+    "",
+  ].join("\n"));
 });

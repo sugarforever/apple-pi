@@ -96,12 +96,8 @@ jobs:
       - name: Verify packaged agent-host layout and handshake
         run: node apps/desktop/scripts/verify-packaged-app.mjs
 
-      - name: Read application version
-        id: version
-        shell: bash
-        run: echo "version=$(node -p \"require('./apps/desktop/package.json').version\")" >> "$GITHUB_OUTPUT"
-
       - name: Collect packages and checksums
+        id: artifacts
         env:
           APPLE_PI_OS: ${{ matrix.os-name }}
           APPLE_PI_BUILDER_OS: ${{ matrix.builder-os }}
@@ -112,8 +108,8 @@ jobs:
       - name: Upload native packages
         uses: actions/upload-artifact@v6
         with:
-          name: apple-pi-${{ steps.version.outputs.version }}-${{ matrix.os-name }}-${{ matrix.arch }}
-          path: artifacts/apple-pi-${{ steps.version.outputs.version }}-${{ matrix.os-name }}-${{ matrix.arch }}
+          name: apple-pi-${{ steps.artifacts.outputs.version }}-${{ matrix.os-name }}-${{ matrix.arch }}
+          path: ${{ steps.artifacts.outputs.artifact_path }}
           if-no-files-found: error
           retention-days: 14
 
