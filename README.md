@@ -67,24 +67,25 @@ corepack pnpm package:linux
 | Windows | `x64` | NSIS installer, portable EXE |
 | Linux | `x64` | AppImage, DEB |
 
-Local packages are written to `apps/desktop/release/`. CI packages are available
-from the [Package desktop workflow](.github/workflows/package-desktop.yml) with
-deterministic version/OS/architecture names and a `.sha256` sidecar for every
-download. Run that workflow manually from the Actions tab, or push a `v*` tag to
-attach all successful native builds to the corresponding GitHub Release.
+Local packages are written to `apps/desktop/release/`. Push a `v*` tag to run the
+[Package desktop workflow](.github/workflows/package-desktop.yml), which uploads
+each successful native build directly to a draft GitHub Release with deterministic
+version/OS/architecture names and a `.sha256` sidecar for every download. The
+release is published only after every platform build succeeds.
 
 Verify a downloaded sidecar from the directory containing its package, for
 example with `shasum -a 256 -c <package>.sha256` on macOS/Linux or
 `Get-FileHash -Algorithm SHA256 <package>` on Windows.
 
 Pull requests run unit tests, typechecking, an Electron build, and a packaged-host
-smoke test on Linux; they do not create native installers. Manual and local
-packages are unsigned and require no repository secrets. macOS Gatekeeper and
-Windows SmartScreen may therefore warn or block those builds on first launch.
+smoke test on Linux; they do not create native installers. Local packages are
+unsigned and require no repository secrets. macOS Gatekeeper and Windows
+SmartScreen may therefore warn or block those builds on first launch.
 
 macOS packages produced from a `v*` tag are signed with Developer ID, submitted
-to Apple's notarization service, stapled, and verified before the GitHub Release
-is created. Configure these Actions repository secrets before publishing a tag:
+to Apple's notarization service, stapled, and verified before the draft GitHub
+Release is published. Configure these Actions repository secrets before
+publishing a tag:
 
 - `MAC_CSC_LINK`: base64-encoded Developer ID Application `.p12`
 - `MAC_CSC_KEY_PASSWORD`: password used when exporting the `.p12`
