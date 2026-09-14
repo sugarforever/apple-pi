@@ -3,10 +3,12 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "engines": { "node": ">=22.20.0" },
   "packageManager": "pnpm@10.25.0",
   "scripts": {
     "dev": "pnpm --filter @apple-pi/desktop dev",
     "build": "pnpm -r build",
+    "docs:check": "node scripts/check-doc-links.mjs",
     "typecheck": "pnpm --filter @apple-pi/protocol build && pnpm --filter @apple-pi/pi-adapter build && pnpm -r typecheck",
     "test": "pnpm -r test",
     "test:pi-compatibility": "pnpm --filter @apple-pi/protocol build && pnpm --filter @apple-pi/pi-adapter exec vitest run src/compatibility.test.ts",
