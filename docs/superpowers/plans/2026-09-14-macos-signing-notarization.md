@@ -14,7 +14,7 @@
 
 - Never print, persist, or upload signing credentials.
 - Only `v*` tag jobs may receive signing and notarization secrets.
-- Pull-request and `workflow_dispatch` package builds must remain unsigned and reproducible.
+- Pull requests must test and build without producing native installers; `workflow_dispatch` package builds remain unsigned.
 - Both Apple Silicon and Intel release artifacts must be signed, notarized, and validated before release publication.
 
 ---
@@ -33,7 +33,7 @@
 
 ### Task 3: Restrict signing to release tags
 
-- [x] Keep the existing unsigned package step for all non-release-tag jobs.
+- [x] Keep unsigned packaging for manual runs and use a build-only check for pull requests.
 - [x] Add tag-only credential preparation and signed macOS package steps.
 - [x] Verify the signed app with `codesign`, Gatekeeper, and `stapler` before artifact collection.
 - [x] Delete the temporary API key in an always-running cleanup step.

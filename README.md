@@ -77,9 +77,10 @@ Verify a downloaded sidecar from the directory containing its package, for
 example with `shasum -a 256 -c <package>.sha256` on macOS/Linux or
 `Get-FileHash -Algorithm SHA256 <package>` on Windows.
 
-Pull-request, manual, and local packages are unsigned and require no repository
-secrets. macOS Gatekeeper and Windows SmartScreen may therefore warn or block
-those builds on first launch.
+Pull requests run unit tests, typechecking, an Electron build, and a packaged-host
+smoke test on Linux; they do not create native installers. Manual and local
+packages are unsigned and require no repository secrets. macOS Gatekeeper and
+Windows SmartScreen may therefore warn or block those builds on first launch.
 
 macOS packages produced from a `v*` tag are signed with Developer ID, submitted
 to Apple's notarization service, stapled, and verified before the GitHub Release
