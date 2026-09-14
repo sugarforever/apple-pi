@@ -36,7 +36,7 @@ export class HostServer {
           protocolVersion: PROTOCOL_VERSION,
           hostVersion: HOST_VERSION,
           piVersion: PI_VERSION,
-          capabilities: { sessionEvents: true, modelSelection: true },
+          capabilities: { sessionEvents: true, modelSelection: true, providerManagement: true, cancellableProviderOperations: true },
           pid: process.pid,
         });
         case "system.shutdown": await this.close(); return success("system.shutdown", message.requestId, {});
@@ -49,9 +49,15 @@ export class HostServer {
         case "session.snapshot": return success("session.snapshot", message.requestId, this.pi.snapshot());
         case "model.list": return success("model.list", message.requestId, await this.pi.listModels());
         case "model.set": return success("model.set", message.requestId, await this.pi.setModel(message.payload.provider, message.payload.modelId));
+        case "provider.list": return success("provider.list", message.requestId, await this.pi.providers.list());
+        case "provider.connectApiKey": return success("provider.connectApiKey", message.requestId, await this.pi.providers.connectApiKey(message.payload.providerId, message.payload.apiKey, message.payload.operationId, message.payload.timeoutMs));
+        case "provider.disconnect": return success("provider.disconnect", message.requestId, await this.pi.providers.disconnect(message.payload.providerId, message.payload.operationId, message.payload.timeoutMs));
+        case "provider.verify": return success("provider.verify", message.requestId, await this.pi.providers.verify(message.payload.providerId, message.payload.operationId, message.payload.timeoutMs));
+        case "model.refresh": return success("model.refresh", message.requestId, await this.pi.providers.refresh(message.payload.providerIds, message.payload.operationId, message.payload.timeoutMs));
+        case "operation.cancel": return success("operation.cancel", message.requestId, { cancelled: this.pi.providers.cancel(message.payload.operationId) });
       }
     } catch (error) {
-      return failure(message.requestId, error);
+      return failure(message.requestId, isProviderCommand(message.type) ? new Error("Provider operation failed") : error);
     }
   }
 
@@ -81,4 +87,8 @@ function failure(requestId: string, error: unknown): HostResponse {
 
 class HostProtocolFault extends Error {
   constructor() { super("Agent host protocol fault"); }
+}
+
+function isProviderCommand(type: HostCommandType): boolean {
+  return type.startsWith("provider.") || type === "model.refresh" || type === "operation.cancel";
 }

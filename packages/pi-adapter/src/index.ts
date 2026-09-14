@@ -1,9 +1,11 @@
 import { createAgentSession, ModelRuntime, SessionManager, type AgentSession, type AgentSessionEvent } from "@earendil-works/pi-coding-agent";
 import { decodeSessionSnapshot, type ApplePiSessionEvent, type ModelItem, type SessionItem, type SessionSnapshot } from "@apple-pi/protocol";
 import { mapPiEvent, mapPiMessages, mapPiModel, mapPiSessionItem } from "./mappers.js";
+import { PiProviderService } from "./provider-service.js";
 import adapterPackage from "../package.json" with { type: "json" };
 
 export { mapPiEvent, mapPiMessages, mapPiModel, mapPiSessionItem } from "./mappers.js";
+export { PiProviderService } from "./provider-service.js";
 
 export type PiEventListener = (event: ApplePiSessionEvent) => void;
 
@@ -19,6 +21,7 @@ export class PiSessionService {
   private listener?: PiEventListener;
   private runtime?: ModelRuntime;
   private lifecycle: Promise<void> = Promise.resolve();
+  readonly providers = new PiProviderService(() => this.getRuntime());
 
   onEvent(listener: PiEventListener): void { this.listener = listener; }
 

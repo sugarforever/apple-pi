@@ -125,8 +125,63 @@ export type SessionSnapshot = Static<typeof SessionSnapshotSchema>;
 export const HostCapabilitiesSchema = closedObject({
   sessionEvents: Type.Boolean(),
   modelSelection: Type.Boolean(),
+  providerManagement: Type.Boolean(),
+  cancellableProviderOperations: Type.Boolean(),
 });
 export type HostCapabilities = Static<typeof HostCapabilitiesSchema>;
+
+export const ProviderAuthMethodSchema = Type.Union([Type.Literal("api_key"), Type.Literal("oauth")]);
+export type ProviderAuthMethod = Static<typeof ProviderAuthMethodSchema>;
+
+export const CredentialSourceSchema = Type.Union([
+  Type.Literal("apple_pi"),
+  Type.Literal("shared_pi_profile"),
+  Type.Literal("environment"),
+  Type.Literal("oauth"),
+  Type.Literal("unavailable"),
+]);
+export type CredentialSource = Static<typeof CredentialSourceSchema>;
+
+export const ProviderDiagnosticSchema = closedObject({
+  code: Type.Union([
+    Type.Literal("authentication_required"),
+    Type.Literal("authentication_failed"),
+    Type.Literal("provider_not_found"),
+    Type.Literal("operation_cancelled"),
+    Type.Literal("operation_timed_out"),
+    Type.Literal("model_refresh_failed"),
+  ]),
+  severity: Type.Union([Type.Literal("info"), Type.Literal("warning"), Type.Literal("error")]),
+  message: Type.String({ minLength: 1, maxLength: 240 }),
+  action: Type.Optional(Type.Union([
+    Type.Literal("connect"), Type.Literal("reconnect"), Type.Literal("retry"), Type.Literal("check_environment"),
+  ])),
+});
+export type ProviderDiagnostic = Static<typeof ProviderDiagnosticSchema>;
+
+export const ProviderItemSchema = closedObject({
+  id: Type.String({ minLength: 1 }),
+  name: Type.String({ minLength: 1 }),
+  authMethods: Type.Array(ProviderAuthMethodSchema, { minItems: 1 }),
+  status: Type.Union([Type.Literal("connected"), Type.Literal("disconnected"), Type.Literal("error")]),
+  credentialSource: CredentialSourceSchema,
+  availableModelCount: Type.Integer({ minimum: 0 }),
+  diagnostics: Type.Array(ProviderDiagnosticSchema),
+});
+export type ProviderItem = Static<typeof ProviderItemSchema>;
+
+export const ProviderOperationResultSchema = closedObject({
+  provider: Type.Optional(ProviderItemSchema),
+  diagnostics: Type.Array(ProviderDiagnosticSchema),
+});
+export type ProviderOperationResult = Static<typeof ProviderOperationResultSchema>;
+
+export const ModelCatalogRefreshResultSchema = closedObject({
+  providers: Type.Array(ProviderItemSchema),
+  models: Type.Array(ModelItemSchema),
+  diagnostics: Type.Array(ProviderDiagnosticSchema),
+});
+export type ModelCatalogRefreshResult = Static<typeof ModelCatalogRefreshResultSchema>;
 
 export const ApplePiSessionEventSchema = Type.Union([
   closedObject({
@@ -172,6 +227,9 @@ export const decodeApplePiContentPart = (value: unknown): ApplePiContentPart => 
 export const decodeApplePiMessage = (value: unknown): ApplePiMessage => decode(ApplePiMessageSchema, value, "Apple Pi message");
 export const decodeApplePiSessionEvent = (value: unknown): ApplePiSessionEvent => decode(ApplePiSessionEventSchema, value, "Apple Pi session event");
 export const decodeHostCapabilities = (value: unknown): HostCapabilities => decode(HostCapabilitiesSchema, value, "host capabilities");
+export const decodeProviderItem = (value: unknown): ProviderItem => decode(ProviderItemSchema, value, "provider item");
+export const decodeProviderOperationResult = (value: unknown): ProviderOperationResult => decode(ProviderOperationResultSchema, value, "provider operation result");
+export const decodeModelCatalogRefreshResult = (value: unknown): ModelCatalogRefreshResult => decode(ModelCatalogRefreshResultSchema, value, "model catalog refresh result");
 export const decodeModelItem = (value: unknown): ModelItem => decode(ModelItemSchema, value, "model item");
 export const decodeSessionItem = (value: unknown): SessionItem => decode(SessionItemSchema, value, "session item");
 export const decodeSessionSnapshot = (value: unknown): SessionSnapshot => decode(SessionSnapshotSchema, value, "session snapshot");

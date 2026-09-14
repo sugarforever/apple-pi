@@ -21,7 +21,7 @@ test("starts the agent host from an extracted application archive and verifies i
     import readline from "node:readline";
     readline.createInterface({ input: process.stdin }).on("line", (line) => {
       const message = JSON.parse(line);
-      if (message.type === "system.hello") process.stdout.write(JSON.stringify({ protocolVersion: 1, requestId: message.requestId, ok: true, result: { protocolVersion: 1, hostVersion: "0.1.0", piVersion: "0.84.2", capabilities: { sessionEvents: true, modelSelection: true }, pid: process.pid } }) + "\\n");
+      if (message.type === "system.hello") process.stdout.write(JSON.stringify({ protocolVersion: 1, requestId: message.requestId, ok: true, result: { protocolVersion: 1, hostVersion: "0.1.0", piVersion: "0.84.2", capabilities: { sessionEvents: true, modelSelection: true, providerManagement: true, cancellableProviderOperations: true }, pid: process.pid } }) + "\\n");
       if (message.type === "system.shutdown") { process.stdout.write(JSON.stringify({ protocolVersion: 1, requestId: message.requestId, ok: true, result: {} }) + "\\n", () => process.exit(0)); }
     });
   `);
@@ -31,7 +31,7 @@ test("starts the agent host from an extracted application archive and verifies i
 
   assert.equal(result.hostVersion, "0.1.0");
   assert.equal(result.piVersion, "0.84.2");
-  assert.deepEqual(result.capabilities, { sessionEvents: true, modelSelection: true });
+  assert.deepEqual(result.capabilities, { sessionEvents: true, modelSelection: true, providerManagement: true, cancellableProviderOperations: true });
   assert.equal(typeof result.pid, "number");
 });
 
@@ -49,7 +49,7 @@ test("fails promptly when the packaged host acknowledges shutdown without exitin
     import readline from "node:readline";
     readline.createInterface({ input: process.stdin }).on("line", (line) => {
       const message = JSON.parse(line);
-      const result = message.type === "system.hello" ? { protocolVersion: 1, hostVersion: "0.1.0", piVersion: "0.84.2", capabilities: { sessionEvents: true, modelSelection: true }, pid: process.pid } : {};
+      const result = message.type === "system.hello" ? { protocolVersion: 1, hostVersion: "0.1.0", piVersion: "0.84.2", capabilities: { sessionEvents: true, modelSelection: true, providerManagement: true, cancellableProviderOperations: true }, pid: process.pid } : {};
       process.stdout.write(JSON.stringify({ protocolVersion: 1, requestId: message.requestId, ok: true, result }) + "\\n");
     });
   `);

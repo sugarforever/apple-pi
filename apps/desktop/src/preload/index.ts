@@ -17,4 +17,23 @@ contextBridge.exposeInMainWorld("applePi", {
     },
   },
   model: { list: () => ipcRenderer.invoke("model:list"), setSession: (model: unknown) => ipcRenderer.invoke("model:setSession", model), setDefault: (model: unknown) => ipcRenderer.invoke("model:setDefault", model) },
+  provider: {
+    list: () => ipcRenderer.invoke("provider:list"),
+    connectApiKey: (providerId: string, apiKey: string, options?: ProviderOperationOptions) => invokeOperation("provider:connectApiKey", { providerId, apiKey }, options),
+    disconnect: (providerId: string, options?: ProviderOperationOptions) => invokeOperation("provider:disconnect", { providerId }, options),
+    verify: (providerId: string, options?: ProviderOperationOptions) => invokeOperation("provider:verify", { providerId }, options),
+    refreshModels: (providerIds?: string[], options?: ProviderOperationOptions) => invokeOperation("model:refresh", { ...(providerIds ? { providerIds } : {}) }, options),
+  },
 });
+
+interface ProviderOperationOptions { signal?: AbortSignal; timeoutMs?: number }
+
+function invokeOperation(channel: string, payload: Record<string, unknown>, options: ProviderOperationOptions = {}): Promise<unknown> {
+  const operationId = crypto.randomUUID();
+  const cancel = () => { void ipcRenderer.invoke("operation:cancel", operationId); };
+  const request = ipcRenderer.invoke(channel, { ...payload, operationId, timeoutMs: options.timeoutMs ?? 15_000 });
+  if (options.signal?.aborted) cancel();
+  else options.signal?.addEventListener("abort", cancel, { once: true });
+  return request
+    .finally(() => options.signal?.removeEventListener("abort", cancel));
+}

@@ -45,7 +45,7 @@ describe("HostServer", () => {
           protocolVersion: 1,
           hostVersion: "0.1.0",
           piVersion: "0.84.2",
-          capabilities: { sessionEvents: true, modelSelection: true },
+          capabilities: { sessionEvents: true, modelSelection: true, providerManagement: true, cancellableProviderOperations: true },
           pid: process.pid,
         },
       });
@@ -95,5 +95,16 @@ describe("HostServer", () => {
         ok: false,
         error: "Agent host request failed",
       });
+  });
+
+  it("sanitizes provider failures before they cross the host boundary", async () => {
+    const server = new HostServer();
+    const service = (server as unknown as { pi: { providers: { list: () => Promise<unknown> } } }).pi.providers;
+    service.list = vi.fn(async () => { throw new Error("sk-private provider response"); });
+
+    const response = await server.handle({ protocolVersion: 1, requestId: "providers", type: "provider.list", payload: {} });
+
+    expect(response).toEqual({ protocolVersion: 1, requestId: "providers", ok: false, error: "Provider operation failed" });
+    expect(JSON.stringify(response)).not.toContain("sk-private");
   });
 });
