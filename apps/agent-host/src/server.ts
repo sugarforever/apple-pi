@@ -1,7 +1,7 @@
 import { PROTOCOL_VERSION, decodeHostRecord, type HostCommandResults, type HostCommandType, decodeHostMessage, type HostEvent, type HostMessage, type HostResponse } from "@apple-pi/protocol";
 import { PI_VERSION, PiSessionService } from "@apple-pi/pi-adapter";
 
-export const HOST_VERSION = "0.1.0" as const;
+export const HOST_VERSION = "0.2.0" as const;
 
 export class HostServer {
   private readonly pi: PiSessionService;
