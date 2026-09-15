@@ -23,6 +23,6 @@ describe("application identity", () => {
     // package.json, so keeping both would let the bundle and the application
     // name drift apart silently.
     expect(manifest.build?.productName).toBeUndefined();
-    expect(manifest.build?.appId).toBe("works.earendil.applepi");
+    expect(manifest.build?.appId).toBe("verysmallwoods.applepi");
   });
 });

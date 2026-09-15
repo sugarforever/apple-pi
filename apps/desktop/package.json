@@ -39,7 +39,7 @@
     "vitest": "4.0.18"
   },
   "build": {
-    "appId": "works.earendil.applepi",
+    "appId": "verysmallwoods.applepi",
     "directories": {
       "output": "release"
     },

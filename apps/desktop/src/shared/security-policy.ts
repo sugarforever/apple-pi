@@ -6,7 +6,7 @@
  * process, where the hardened behaviour it describes cannot be verified.
  */
 
-export const APP_ID = "works.earendil.applepi";
+export const APP_ID = "verysmallwoods.applepi";
 
 /**
  * Must stay byte-identical to the `Content-Security-Policy` meta tag in

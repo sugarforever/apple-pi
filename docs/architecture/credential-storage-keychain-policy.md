@@ -76,8 +76,12 @@ application code, and nothing is transmitted off the machine.
   to the code signature, so an ad-hoc or changing signature invalidates it on every build.
   Tag builds are signed and notarized by the package workflow; local `package:mac` builds
   are not, so they will re-prompt after each rebuild.
-- **Do not rename the application or change `appId`.** The keychain item is derived from
-  the app name, so a rename creates a new item and prompts again.
+- **Do not rename the application or change `appId`.** These invalidate the existing grant
+  through two different paths: renaming changes the keychain item itself (`<app name> Safe
+  Storage`), while changing `appId` leaves the item name alone but changes the
+  `CFBundleIdentifier` baked into the code signature's designated requirement, which is what
+  the keychain's access control list actually matches against. Either one makes macOS treat
+  the app as a stranger to a grant it already holds, and the user gets prompted again.
 - Clicking **Always Allow** records the decision for the current signature. **Deny** is not
   remembered, and the prompt returns on the next launch.
 
@@ -141,6 +145,16 @@ app could look correctly branded on disk while calling itself something else at 
 That is exactly what shipped in 0.3.0: `productName` existed only under `build`, so
 `app.getName()` fell back to `name` and the app asked for **`@apple-pi/desktop Safe Storage`**.
 0.3.1 moves the declaration to the root, so the item is `Apple Pi Safe Storage`.
+
+### `appId` changed in the same release, for the same reason
+
+0.3.0's `appId` was `works.earendil.applepi` — a leftover from an earlier personal domain,
+unrelated to the Apple Pi project. It is now `verysmallwoods.applepi`. `appId` does not
+change the keychain item name (that is still `Apple Pi Safe Storage`, from `productName`),
+but it does change the `CFBundleIdentifier` in the code signature, which the keychain ACL
+matches on. So this by itself would also force a fresh "Always Allow." Landing it in the
+same release as the `productName` fix means anyone upgrading from 0.3.0 absorbs both
+identity corrections as a single prompt instead of two prompts across two releases.
 
 ### Renaming the application cannot migrate credentials
 
