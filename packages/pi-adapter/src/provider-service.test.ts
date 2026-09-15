@@ -4,16 +4,30 @@ import { PiProviderService } from "./provider-service.js";
 function runtimeDouble() {
   const configured = new Set<string>();
   return {
-    getProviders: () => [{ id: "openai", name: "OpenAI", auth: { apiKey: {}, oauth: {} } }, { id: "anthropic", name: "Anthropic", auth: { apiKey: {} } }],
-    getProvider(providerId: string) { return this.getProviders().find((provider) => provider.id === providerId); },
-    getAvailableSnapshot: () => configured.has("openai") ? [{ provider: "openai", id: "gpt", name: "GPT" }] : [],
+    getProviders: () => [
+      { id: "openai", name: "OpenAI", auth: { apiKey: {}, oauth: {} } },
+      { id: "anthropic", name: "Anthropic", auth: { apiKey: {} } },
+    ],
+    getProvider(providerId: string) {
+      return this.getProviders().find((provider) => provider.id === providerId);
+    },
+    getAvailableSnapshot: () => (configured.has("openai") ? [{ provider: "openai", id: "gpt", name: "GPT" }] : []),
     getProviderAuthStatus: (providerId: string) => ({ configured: configured.has(providerId), ...(configured.has(providerId) ? { source: "runtime" } : {}) }),
     listCredentials: vi.fn(async () => []),
-    checkAuth: vi.fn(async (providerId: string, _options?: { signal?: AbortSignal }) => configured.has(providerId) ? { source: "runtime", type: "api_key" as const } : undefined),
-    getAuth: vi.fn(async (providerId: string) => configured.has(providerId) ? { auth: { apiKey: "runtime-secret" } } : undefined),
-    setRuntimeApiKey: vi.fn(async (providerId: string, _apiKey: string, options?: { signal?: AbortSignal }) => { options?.signal?.throwIfAborted(); configured.add(providerId); }),
-    removeRuntimeApiKey: vi.fn(async (providerId: string) => { configured.delete(providerId); }),
-    logout: vi.fn(async (providerId: string) => { configured.delete(providerId); }),
+    checkAuth: vi.fn(async (providerId: string, _options?: { signal?: AbortSignal }) =>
+      configured.has(providerId) ? { source: "runtime", type: "api_key" as const } : undefined,
+    ),
+    getAuth: vi.fn(async (providerId: string) => (configured.has(providerId) ? { auth: { apiKey: "runtime-secret" } } : undefined)),
+    setRuntimeApiKey: vi.fn(async (providerId: string, _apiKey: string, options?: { signal?: AbortSignal }) => {
+      options?.signal?.throwIfAborted();
+      configured.add(providerId);
+    }),
+    removeRuntimeApiKey: vi.fn(async (providerId: string) => {
+      configured.delete(providerId);
+    }),
+    logout: vi.fn(async (providerId: string) => {
+      configured.delete(providerId);
+    }),
     refresh: vi.fn(async (_options?: { signal?: AbortSignal }) => ({ aborted: false, errors: new Map<string, Error>() })),
   };
 }
@@ -59,9 +73,12 @@ describe("PiProviderService", () => {
 
   it("cancels an in-flight authentication operation without exposing its failure", async () => {
     const runtime = runtimeDouble();
-    runtime.checkAuth.mockImplementation((_providerId: string, options?: { signal?: AbortSignal }) => new Promise<{ source: string; type: "api_key" } | undefined>((_resolve, reject) => {
-      options?.signal?.addEventListener("abort", () => reject(new Error("sk-secret provider failure")), { once: true });
-    }));
+    runtime.checkAuth.mockImplementation(
+      (_providerId: string, options?: { signal?: AbortSignal }) =>
+        new Promise<{ source: string; type: "api_key" } | undefined>((_resolve, reject) => {
+          options?.signal?.addEventListener("abort", () => reject(new Error("sk-secret provider failure")), { once: true });
+        }),
+    );
     const service = new PiProviderService(async () => runtime);
 
     const verifying = service.verify("openai", "verify", 1_000);

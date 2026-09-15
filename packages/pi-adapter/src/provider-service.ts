@@ -1,11 +1,4 @@
-import type {
-  CredentialSource,
-  ModelCatalogRefreshResult,
-  ModelItem,
-  ProviderDiagnostic,
-  ProviderItem,
-  ProviderOperationResult,
-} from "@apple-pi/protocol";
+import type { CredentialSource, ModelCatalogRefreshResult, ModelItem, ProviderDiagnostic, ProviderItem, ProviderOperationResult } from "@apple-pi/protocol";
 import { mapPiModel } from "./mappers.js";
 
 interface RuntimeProvider {
@@ -25,7 +18,12 @@ interface RuntimeLike {
   setRuntimeApiKey(providerId: string, apiKey: string, options?: { signal?: AbortSignal }): Promise<void>;
   removeRuntimeApiKey(providerId: string, options?: { signal?: AbortSignal }): Promise<void>;
   logout(providerId: string, options?: { signal?: AbortSignal }): Promise<void>;
-  refresh(options?: { allowNetwork?: boolean; providers?: readonly string[]; force?: boolean; signal?: AbortSignal }): Promise<{ aborted: boolean; errors: ReadonlyMap<string, Error> }>;
+  refresh(options?: {
+    allowNetwork?: boolean;
+    providers?: readonly string[];
+    force?: boolean;
+    signal?: AbortSignal;
+  }): Promise<{ aborted: boolean; errors: ReadonlyMap<string, Error> }>;
 }
 
 type OperationOutcome<T> = { state: "completed"; value: T } | { state: "cancelled" | "timed_out" | "failed" };
@@ -46,14 +44,18 @@ export class PiProviderService {
     for (const model of runtime.getAvailableSnapshot() as Array<{ provider?: unknown }>) {
       if (typeof model.provider === "string") availableCounts.set(model.provider, (availableCounts.get(model.provider) ?? 0) + 1);
     }
-    return runtime.getProviders().map((provider) => this.describe(runtime, provider, stored, availableCounts)).sort((a, b) => a.name.localeCompare(b.name));
+    return runtime
+      .getProviders()
+      .map((provider) => this.describe(runtime, provider, stored, availableCounts))
+      .sort((a, b) => a.name.localeCompare(b.name));
   }
 
   async connectApiKey(providerId: string, apiKey: string, operationId: string, timeoutMs: number): Promise<ProviderOperationResult> {
     return this.providerOperation(providerId, operationId, timeoutMs, async (runtime, signal) => {
       const provider = runtime.getProvider(providerId);
       if (!provider) return providerNotFound();
-      if (!provider.auth.apiKey) return { diagnostics: [diagnostic("authentication_failed", "This provider does not support API-key authentication.", "connect")] };
+      if (!provider.auth.apiKey)
+        return { diagnostics: [diagnostic("authentication_failed", "This provider does not support API-key authentication.", "connect")] };
       await runtime.setRuntimeApiKey(providerId, apiKey, { signal });
       const verification = await this.verifyCredential(runtime, providerId, signal);
       if (verification) {
@@ -70,7 +72,12 @@ export class PiProviderService {
       const source = runtime.getProviderAuthStatus(providerId).source;
       if (source === "runtime") await runtime.removeRuntimeApiKey(providerId, { signal });
       else if (source === "stored") await runtime.logout(providerId, { signal });
-      else if (source) return { diagnostics: [diagnostic("authentication_failed", "This credential is supplied by the environment and cannot be removed by Apple Pi.", "check_environment")] };
+      else if (source)
+        return {
+          diagnostics: [
+            diagnostic("authentication_failed", "This credential is supplied by the environment and cannot be removed by Apple Pi.", "check_environment"),
+          ],
+        };
       return { diagnostics: [] };
     });
   }
@@ -99,7 +106,8 @@ export class PiProviderService {
         signal,
       });
       if (response.ok) return undefined;
-      if (response.status === 401 || response.status === 403) return diagnostic("authentication_failed", "DeepSeek rejected this API key. Check the key and try again.", "reconnect");
+      if (response.status === 401 || response.status === 403)
+        return diagnostic("authentication_failed", "DeepSeek rejected this API key. Check the key and try again.", "reconnect");
       return diagnostic("authentication_failed", "DeepSeek could not verify this API key. Try again in a moment.", "retry");
     } catch {
       if (signal.aborted) throw new DOMException("Operation aborted", "AbortError");
@@ -127,7 +135,8 @@ export class PiProviderService {
 
   private async models(): Promise<ModelItem[]> {
     const runtime = await this.runtime();
-    return (runtime.getAvailableSnapshot() as Parameters<typeof mapPiModel>[0][]).map(mapPiModel)
+    return (runtime.getAvailableSnapshot() as Parameters<typeof mapPiModel>[0][])
+      .map(mapPiModel)
       .sort((a, b) => `${a.provider}/${a.name}`.localeCompare(`${b.provider}/${b.name}`));
   }
 
@@ -151,10 +160,19 @@ export class PiProviderService {
     const controller = new AbortController();
     this.operations.set(operationId, controller);
     let timedOut = false;
-    const aborted = new Promise<OperationOutcome<T>>((resolve) => controller.signal.addEventListener("abort", () => {
-      resolve({ state: timedOut ? "timed_out" : "cancelled" });
-    }, { once: true }));
-    const timer = setTimeout(() => { timedOut = true; controller.abort(); }, timeoutMs);
+    const aborted = new Promise<OperationOutcome<T>>((resolve) =>
+      controller.signal.addEventListener(
+        "abort",
+        () => {
+          resolve({ state: timedOut ? "timed_out" : "cancelled" });
+        },
+        { once: true },
+      ),
+    );
+    const timer = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, timeoutMs);
     try {
       const completed: Promise<OperationOutcome<T>> = operation(controller.signal).then(
         (value): OperationOutcome<T> => ({ state: "completed", value }),

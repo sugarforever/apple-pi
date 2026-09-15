@@ -29,9 +29,7 @@ crashReporter.start({ productName: "Apple Pi", companyName: "Apple Pi", uploadTo
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 const host = new AgentHostSupervisor({
-  hostPath: () => app.isPackaged
-    ? path.join(app.getAppPath(), "out", "agent-host", "index.js")
-    : path.resolve(process.cwd(), "../agent-host/dist/index.js"),
+  hostPath: () => (app.isPackaged ? path.join(app.getAppPath(), "out", "agent-host", "index.js") : path.resolve(process.cwd(), "../agent-host/dist/index.js")),
   hostVersion: () => app.getVersion(),
 });
 let mainWindow: BrowserWindow | undefined;
@@ -58,8 +56,12 @@ function handle(channel: string, handler: (event: IpcMainInvokeEvent, ...args: u
 
 function createWindow(): void {
   const window = new BrowserWindow({
-    width: 1180, height: 800, minWidth: 760, minHeight: 560,
-    titleBarStyle: "hiddenInset", backgroundColor: "#101213",
+    width: 1180,
+    height: 800,
+    minWidth: 760,
+    minHeight: 560,
+    titleBarStyle: "hiddenInset",
+    backgroundColor: "#101213",
     show: false,
     webPreferences: {
       preload: path.join(dirname, "../preload/index.js"),
@@ -81,7 +83,9 @@ function createWindow(): void {
     // Never leave the user with an invisible window and no explanation.
     window.show();
   });
-  window.on("closed", () => { mainWindow = undefined; });
+  window.on("closed", () => {
+    mainWindow = undefined;
+  });
 
   if (process.env.ELECTRON_RENDERER_URL) void window.loadURL(process.env.ELECTRON_RENDERER_URL);
   else void window.loadFile(path.join(dirname, "../renderer/index.html"));
@@ -103,16 +107,23 @@ async function bootstrap(): Promise<void> {
 
   const catalogPath = path.join(app.getPath("userData"), "catalog.json");
   catalog = new AppCatalog({
-    read: () => readFile(catalogPath, "utf8").catch((error: NodeJS.ErrnoException) => error.code === "ENOENT" ? "" : Promise.reject(error)),
-    write: async (value) => { await mkdir(path.dirname(catalogPath), { recursive: true }); await writeFile(catalogPath, value, "utf8"); },
+    read: () => readFile(catalogPath, "utf8").catch((error: NodeJS.ErrnoException) => (error.code === "ENOENT" ? "" : Promise.reject(error))),
+    write: async (value) => {
+      await mkdir(path.dirname(catalogPath), { recursive: true });
+      await writeFile(catalogPath, value, "utf8");
+    },
   });
   await catalog.load();
-  credentials = new CredentialBroker(process.platform, {
-    isEncryptionAvailable: () => safeStorage.isEncryptionAvailable(),
-    encryptString: (value) => safeStorage.encryptString(value),
-    decryptString: (value) => safeStorage.decryptString(value),
-    selectedBackend: () => process.platform === "linux" ? safeStorage.getSelectedStorageBackend() : process.platform === "darwin" ? "keychain" : "dpapi",
-  }, new CredentialFile(path.join(app.getPath("userData"), "credentials.json")));
+  credentials = new CredentialBroker(
+    process.platform,
+    {
+      isEncryptionAvailable: () => safeStorage.isEncryptionAvailable(),
+      encryptString: (value) => safeStorage.encryptString(value),
+      decryptString: (value) => safeStorage.decryptString(value),
+      selectedBackend: () => (process.platform === "linux" ? safeStorage.getSelectedStorageBackend() : process.platform === "darwin" ? "keychain" : "dpapi"),
+    },
+    new CredentialFile(path.join(app.getPath("userData"), "credentials.json")),
+  );
   await credentials.initialize();
   const storageIssue = credentials.storageIssue();
   if (storageIssue) log.warn("credential storage is degraded", { issue: storageIssue, persistence: credentials.storagePersistence() });
@@ -138,7 +149,8 @@ if (!app.requestSingleInstanceLock()) {
     mainWindow.focus();
   });
 
-  app.whenReady()
+  app
+    .whenReady()
     .then(bootstrap)
     .catch((error: unknown) => {
       log.error("failed to start", { error });
@@ -146,8 +158,12 @@ if (!app.requestSingleInstanceLock()) {
       app.exit(1);
     });
 
-  app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });
-  app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
+  app.on("window-all-closed", () => {
+    if (process.platform !== "darwin") app.quit();
+  });
+  app.on("activate", () => {
+    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+  });
 }
 
 installGracefulShutdown(app, host);
@@ -176,7 +192,7 @@ handle("workspace:select", async (_event, requestedPath: unknown) => {
   const session = list[0] ? await host.request("session.openPath", { cwd: workspacePath, path: list[0].path }) : await createSession();
   return { workspacePath, sessions, session };
 });
-handle("session:list", () => workspacePath ? host.request("session.list", { cwd: workspacePath }) : []);
+handle("session:list", () => (workspacePath ? host.request("session.list", { cwd: workspacePath }) : []));
 handle("session:select", (_event, sessionPath: unknown) => {
   if (!workspacePath || typeof sessionPath !== "string") throw new Error("Invalid session");
   return host.request("session.openPath", { cwd: workspacePath, path: sessionPath });
@@ -211,7 +227,8 @@ handle("provider:verify", async (_event, value: unknown) => {
 handle("model:refresh", (_event, value: unknown) => {
   const input = operation(value);
   const providerIds = (value as { providerIds?: unknown }).providerIds;
-  if (providerIds !== undefined && (!Array.isArray(providerIds) || providerIds.length === 0 || providerIds.some((id) => typeof id !== "string" || !id))) throw new Error("Invalid provider selection");
+  if (providerIds !== undefined && (!Array.isArray(providerIds) || providerIds.length === 0 || providerIds.some((id) => typeof id !== "string" || !id)))
+    throw new Error("Invalid provider selection");
   return providerCredentials.refresh(providerIds as string[] | undefined, input);
 });
 handle("operation:cancel", (_event, operationId: unknown) => {
@@ -220,18 +237,31 @@ handle("operation:cancel", (_event, operationId: unknown) => {
 });
 
 function validModel(value: unknown): ModelRef {
-  if (!value || typeof value !== "object" || typeof (value as ModelRef).provider !== "string" || typeof (value as ModelRef).modelId !== "string") throw new Error("Invalid model");
+  if (!value || typeof value !== "object" || typeof (value as ModelRef).provider !== "string" || typeof (value as ModelRef).modelId !== "string")
+    throw new Error("Invalid model");
   return value as ModelRef;
 }
 
-handle("model:setSession", async (_event, value: unknown) => { const model = validModel(value); await providerCredentials.provide(model.provider); return host.request("model.set", { provider: model.provider, modelId: model.modelId }); });
-handle("model:setDefault", async (_event, value: unknown) => { const model = validModel(value); await catalog.setDefaultModel(model); return catalog.snapshot(); });
-handle("model:clearDefault", async () => { await catalog.clearDefaultModel(); return catalog.snapshot(); });
+handle("model:setSession", async (_event, value: unknown) => {
+  const model = validModel(value);
+  await providerCredentials.provide(model.provider);
+  return host.request("model.set", { provider: model.provider, modelId: model.modelId });
+});
+handle("model:setDefault", async (_event, value: unknown) => {
+  const model = validModel(value);
+  await catalog.setDefaultModel(model);
+  return catalog.snapshot();
+});
+handle("model:clearDefault", async () => {
+  await catalog.clearDefaultModel();
+  return catalog.snapshot();
+});
 
 function operation(value: unknown): { operationId: string; timeoutMs: number } {
   if (!value || typeof value !== "object") throw new Error("Invalid operation");
   const { operationId, timeoutMs } = value as { operationId?: unknown; timeoutMs?: unknown };
-  if (typeof operationId !== "string" || !operationId || !Number.isInteger(timeoutMs) || (timeoutMs as number) < 100 || (timeoutMs as number) > 30_000) throw new Error("Invalid operation");
+  if (typeof operationId !== "string" || !operationId || !Number.isInteger(timeoutMs) || (timeoutMs as number) < 100 || (timeoutMs as number) > 30_000)
+    throw new Error("Invalid operation");
   return { operationId, timeoutMs: timeoutMs as number };
 }
 

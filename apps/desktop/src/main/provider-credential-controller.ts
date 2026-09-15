@@ -1,11 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type {
-  HostCommandPayloads,
-  HostCommandResults,
-  HostCommandType,
-  ProviderItem,
-  ProviderOperationResult,
-} from "@apple-pi/protocol";
+import type { HostCommandPayloads, HostCommandResults, HostCommandType, ProviderItem, ProviderOperationResult } from "@apple-pi/protocol";
 import type { CredentialBroker, CredentialStorageIssue } from "./credential-broker.js";
 
 export interface ProviderHost {
@@ -24,12 +18,16 @@ export class ProviderCredentialController {
   async list(): Promise<ProviderItem[]> {
     const providers = await this.host.request("provider.list", {});
     const managed = new Set(this.credentials.list().map((item) => item.providerId));
-    return providers.map((provider) => managed.has(provider.id) ? {
-      ...provider,
-      status: "connected",
-      credentialSource: "apple_pi",
-      diagnostics: provider.diagnostics.filter((item) => item.code !== "authentication_required"),
-    } : provider);
+    return providers.map((provider) =>
+      managed.has(provider.id)
+        ? {
+            ...provider,
+            status: "connected",
+            credentialSource: "apple_pi",
+            diagnostics: provider.diagnostics.filter((item) => item.code !== "authentication_required"),
+          }
+        : provider,
+    );
   }
 
   async connect(input: HostCommandPayloads["provider.connectApiKey"]): Promise<ProviderOperationResult> {
@@ -65,14 +63,19 @@ export class ProviderCredentialController {
 
   async provide(providerId: string): Promise<boolean> {
     if (this.provisioned.has(providerId)) return true;
-    return (await this.credentials.withApiKey(providerId, async (apiKey) => {
-      const result = await this.host.request("provider.connectApiKey", {
-        providerId, apiKey, operationId: this.operationId(), timeoutMs: 15_000,
-      });
-      const connected = result.provider?.status === "connected" && !result.diagnostics.some((item) => item.severity === "error");
-      if (connected) this.provisioned.add(providerId);
-      return connected;
-    })) ?? false;
+    return (
+      (await this.credentials.withApiKey(providerId, async (apiKey) => {
+        const result = await this.host.request("provider.connectApiKey", {
+          providerId,
+          apiKey,
+          operationId: this.operationId(),
+          timeoutMs: 15_000,
+        });
+        const connected = result.provider?.status === "connected" && !result.diagnostics.some((item) => item.severity === "error");
+        if (connected) this.provisioned.add(providerId);
+        return connected;
+      })) ?? false
+    );
   }
 }
 
@@ -80,8 +83,9 @@ function storageWarning(issue: CredentialStorageIssue): ProviderOperationResult[
   return {
     code: "secure_storage_unavailable",
     severity: "warning",
-    message: issue === "store_quarantined"
-      ? "Apple Pi could not read the saved credential store, so it was set aside and this credential is kept for the current session only."
-      : "Apple Pi could not use OS-protected credential storage, so this credential is kept for the current session only and is forgotten when you quit.",
+    message:
+      issue === "store_quarantined"
+        ? "Apple Pi could not read the saved credential store, so it was set aside and this credential is kept for the current session only."
+        : "Apple Pi could not use OS-protected credential storage, so this credential is kept for the current session only and is forgotten when you quit.",
   };
 }

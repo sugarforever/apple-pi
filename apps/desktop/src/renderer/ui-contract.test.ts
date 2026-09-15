@@ -4,9 +4,9 @@ import { describe, expect, it } from "vitest";
 const source = readFileSync(new URL("./src/main.tsx", import.meta.url), "utf8");
 const styles = readFileSync(new URL("./src/styles.css", import.meta.url), "utf8");
 const document = readFileSync(new URL("./index.html", import.meta.url), "utf8");
-const rule = (selector: string): string => {
+const rule = (selector: string, source = styles): string => {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return styles.match(new RegExp(`${escaped}\\s*\\{([^}]*)\\}`))?.[1] ?? "";
+  return source.match(new RegExp(`${escaped}\\s*\\{([^}]*)\\}`))?.[1] ?? "";
 };
 
 describe("renderer accessibility contract", () => {
@@ -23,7 +23,7 @@ describe("renderer accessibility contract", () => {
     expect(source).toContain('name="message"');
     expect(source).toContain('autoComplete="off"');
     expect(source).toContain('ariaLabel="Session model"');
-    expect(source).toContain('aria-label={ariaLabel}');
+    expect(source).toContain("aria-label={ariaLabel}");
     expect(source).toContain('aria-label="Send message"');
   });
 
@@ -31,7 +31,7 @@ describe("renderer accessibility contract", () => {
     const providers = readFileSync(new URL("./src/provider-settings.tsx", import.meta.url), "utf8");
     expect(providers).toContain('type="password"');
     expect(providers).toContain('type="search"');
-    expect(providers).toContain('aria-busy={checking}');
+    expect(providers).toContain("aria-busy={checking}");
     expect(providers).toContain('role={diagnostic.severity === "error" ? "alert" : "status"}');
     expect(source).toContain('<a href="#providers-title">Connect a provider</a>');
   });
@@ -73,9 +73,9 @@ describe("renderer visual contract", () => {
   });
 
   it("isolates tool statuses from conversation error styling", () => {
-    expect(source).toContain('className={`tool-activity status-${item.status}`}');
+    expect(source).toContain("className={`tool-activity status-${item.status}`}");
     expect(source).toContain('className="timeline-error"');
-    expect(source).not.toContain('className={`tool-activity ${item.status}`}');
+    expect(source).not.toContain("className={`tool-activity ${item.status}`}");
     expect(rule(".timeline-error")).toContain("border: 1px solid #75413a");
   });
 
@@ -119,7 +119,8 @@ describe("renderer visual contract", () => {
   });
 
   it("prioritizes the session title over workspace context on narrow screens", () => {
-    expect(styles).toContain(".header-context { display: none; }");
+    const narrowScreenRules = styles.match(/@media \(max-width: 620px\) \{([\s\S]*?)\n\}/)?.[1] ?? "";
+    expect(rule(".header-context", narrowScreenRules)).toContain("display: none;");
   });
 
   it("keeps the chat composer inside the viewport while messages scroll", () => {
@@ -159,7 +160,9 @@ describe("renderer feedback contract", () => {
     expect(source).toContain('if (state.sync.status !== "resyncing") return;');
     expect(source).toContain("runSessionResync(");
     expect(source).toContain("[state.sync.status, state.sync.generation]");
-    expect(source).not.toContain('dispatch({ type: "event", sequence: event.sequence, payload: event.payload });\n      void window.applePi.session.getSnapshot()');
+    expect(source).not.toContain(
+      'dispatch({ type: "event", sequence: event.sequence, payload: event.payload });\n      void window.applePi.session.getSnapshot()',
+    );
   });
 
   it("offers explicit recovery after a resync failure", () => {
@@ -174,7 +177,7 @@ describe("renderer feedback contract", () => {
 
   it("exposes a shared pending state", () => {
     expect(source).toContain('const [pendingLabel, setPendingLabel] = useState("")');
-    expect(source).toContain('aria-busy={Boolean(pendingLabel)}');
+    expect(source).toContain("aria-busy={Boolean(pendingLabel)}");
     expect(source).toContain('className="app-status"');
   });
 
@@ -185,6 +188,6 @@ describe("renderer feedback contract", () => {
 
   it("keeps errors visible outside individual views", () => {
     expect(source).toContain('className="app-error"');
-    expect(source).toContain('Something went wrong.');
+    expect(source).toContain("Something went wrong.");
   });
 });
