@@ -9,12 +9,7 @@ import { fileURLToPath } from "node:url";
 
 import { prepareMacosSigningKey } from "./prepare-macos-signing.mjs";
 
-const PRIVATE_KEY = [
-  "-----BEGIN PRIVATE KEY-----",
-  "dGVzdC1rZXktbWF0ZXJpYWw=",
-  "-----END PRIVATE KEY-----",
-  "",
-].join("\n");
+const PRIVATE_KEY = ["-----BEGIN PRIVATE KEY-----", "dGVzdC1rZXktbWF0ZXJpYWw=", "-----END PRIVATE KEY-----", ""].join("\n");
 const execFileAsync = promisify(execFile);
 const scriptPath = fileURLToPath(new URL("./prepare-macos-signing.mjs", import.meta.url));
 
@@ -37,22 +32,28 @@ test("rejects malformed key material without writing a key file", async (t) => {
   const outputDir = await mkdtemp(path.join(os.tmpdir(), "apple-pi-signing-"));
   t.after(() => rm(outputDir, { recursive: true, force: true }));
 
-  await assert.rejects(prepareMacosSigningKey({
-    encodedApiKey: Buffer.from("not a private key").toString("base64"),
-    keyId: "ABC123DEFG",
-    outputDir,
-  }), /valid PKCS#8 private key/);
+  await assert.rejects(
+    prepareMacosSigningKey({
+      encodedApiKey: Buffer.from("not a private key").toString("base64"),
+      keyId: "ABC123DEFG",
+      outputDir,
+    }),
+    /valid PKCS#8 private key/,
+  );
 });
 
 test("rejects an unsafe API key identifier", async (t) => {
   const outputDir = await mkdtemp(path.join(os.tmpdir(), "apple-pi-signing-"));
   t.after(() => rm(outputDir, { recursive: true, force: true }));
 
-  await assert.rejects(prepareMacosSigningKey({
-    encodedApiKey: Buffer.from(PRIVATE_KEY).toString("base64"),
-    keyId: "../escape",
-    outputDir,
-  }), /API key ID/);
+  await assert.rejects(
+    prepareMacosSigningKey({
+      encodedApiKey: Buffer.from(PRIVATE_KEY).toString("base64"),
+      keyId: "../escape",
+      outputDir,
+    }),
+    /API key ID/,
+  );
 });
 
 test("the CLI publishes only the temporary key path as a GitHub output", async (t) => {

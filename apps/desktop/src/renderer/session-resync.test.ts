@@ -7,7 +7,10 @@ const snapshot = { opened: false, messages: [], running: false } satisfies Sessi
 describe("session resync coordinator", () => {
   it("dispatches a generation-bound snapshot only after the request resolves", async () => {
     let resolveSnapshot!: (value: SessionSnapshot) => void;
-    const getSnapshot = () => new Promise<SessionSnapshot>((resolve) => { resolveSnapshot = resolve; });
+    const getSnapshot = () =>
+      new Promise<SessionSnapshot>((resolve) => {
+        resolveSnapshot = resolve;
+      });
     const dispatch = vi.fn();
 
     const pending = runSessionResync(getSnapshot, 3, dispatch);

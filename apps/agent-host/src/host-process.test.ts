@@ -7,15 +7,31 @@ it("allows shutdown to complete while a send request is still running", async ()
     finishSend = () => resolve({ protocolVersion: 1, requestId: "send", ok: true, result: { opened: false, messages: [], running: false } });
   });
   const server = {
-    handle: vi.fn((message: unknown) => (message as { type: string }).type === "session.send"
-      ? sendResponse
-      : Promise.resolve({ protocolVersion: 1, requestId: "shutdown", ok: true, result: {} })),
+    handle: vi.fn((message: unknown) =>
+      (message as { type: string }).type === "session.send"
+        ? sendResponse
+        : Promise.resolve({ protocolVersion: 1, requestId: "shutdown", ok: true, result: {} }),
+    ),
   };
   const written: unknown[] = [];
   const exit = vi.fn();
 
-  const sending = dispatchHostMessage(server, { type: "session.send" }, async (response) => { written.push(response); }, exit);
-  const shuttingDown = dispatchHostMessage(server, { type: "system.shutdown" }, async (response) => { written.push(response); }, exit);
+  const sending = dispatchHostMessage(
+    server,
+    { type: "session.send" },
+    async (response) => {
+      written.push(response);
+    },
+    exit,
+  );
+  const shuttingDown = dispatchHostMessage(
+    server,
+    { type: "system.shutdown" },
+    async (response) => {
+      written.push(response);
+    },
+    exit,
+  );
   await shuttingDown;
 
   expect(written).toEqual([{ protocolVersion: 1, requestId: "shutdown", ok: true, result: {} }]);

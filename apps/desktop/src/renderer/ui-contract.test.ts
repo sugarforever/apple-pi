@@ -151,7 +151,9 @@ describe("renderer visual contract", () => {
   });
 
   it("sets native dark chrome metadata", () => {
-    expect(document).toContain('<meta name="theme-color" content="#0b0d0d">');
+    // Matched rather than compared to an exact tag: Prettier owns the document's
+    // serialization, so pinning byte-for-byte here breaks on any reformat.
+    expect(document).toMatch(/<meta\s+name="theme-color"\s+content="#0b0d0d"\s*\/?>/);
   });
 });
 

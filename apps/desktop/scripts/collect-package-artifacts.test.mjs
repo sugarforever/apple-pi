@@ -45,15 +45,18 @@ test("rejects a release directory with no matching package", async (t) => {
   const releaseDir = path.join(root, "release");
   await mkdir(releaseDir);
 
-  await assert.rejects(collectPackageArtifacts({
-    releaseDir,
-    outputRoot: path.join(root, "artifacts"),
-    version: "0.1.0",
-    osName: "windows",
-    artifactOs: "win",
-    arch: "x64",
-    requiredSuffixes: ["-setup.exe", "-portable.exe"],
-  }), /Missing packaged artifacts: apple-pi-0\.1\.0-win-x64-portable\.exe, apple-pi-0\.1\.0-win-x64-setup\.exe/);
+  await assert.rejects(
+    collectPackageArtifacts({
+      releaseDir,
+      outputRoot: path.join(root, "artifacts"),
+      version: "0.1.0",
+      osName: "windows",
+      artifactOs: "win",
+      arch: "x64",
+      requiredSuffixes: ["-setup.exe", "-portable.exe"],
+    }),
+    /Missing packaged artifacts: apple-pi-0\.1\.0-win-x64-portable\.exe, apple-pi-0\.1\.0-win-x64-setup\.exe/,
+  );
 });
 
 test("collects distinct installer targets that share an extension", async (t) => {
@@ -75,10 +78,10 @@ test("collects distinct installer targets that share an extension", async (t) =>
     requiredSuffixes: ["-setup.exe", "-portable.exe"],
   });
 
-  assert.deepEqual((await readdir(outputDir)).filter((file) => !file.endsWith(".sha256")), [
-    "apple-pi-0.1.0-win-x64-portable.exe",
-    "apple-pi-0.1.0-win-x64-setup.exe",
-  ]);
+  assert.deepEqual(
+    (await readdir(outputDir)).filter((file) => !file.endsWith(".sha256")),
+    ["apple-pi-0.1.0-win-x64-portable.exe", "apple-pi-0.1.0-win-x64-setup.exe"],
+  );
 });
 
 test("rejects a partial multi-target package set", async (t) => {
@@ -88,15 +91,18 @@ test("rejects a partial multi-target package set", async (t) => {
   await mkdir(releaseDir);
   await writeFile(path.join(releaseDir, "apple-pi-0.1.0-linux-x64.AppImage"), "appimage");
 
-  await assert.rejects(collectPackageArtifacts({
-    releaseDir,
-    outputRoot: path.join(root, "artifacts"),
-    version: "0.1.0",
-    osName: "linux",
-    artifactOs: "linux",
-    arch: "x64",
-    requiredSuffixes: [".AppImage", ".deb"],
-  }), /Missing packaged artifacts: apple-pi-0\.1\.0-linux-x64\.deb/);
+  await assert.rejects(
+    collectPackageArtifacts({
+      releaseDir,
+      outputRoot: path.join(root, "artifacts"),
+      version: "0.1.0",
+      osName: "linux",
+      artifactOs: "linux",
+      arch: "x64",
+      requiredSuffixes: [".AppImage", ".deb"],
+    }),
+    /Missing packaged artifacts: apple-pi-0\.1\.0-linux-x64\.deb/,
+  );
 });
 
 test("writes version and artifact path as GitHub step outputs", async (t) => {
@@ -109,9 +115,5 @@ test("writes version and artifact path as GitHub step outputs", async (t) => {
     artifact_path: "/tmp/artifacts/apple-pi-0.1.0-macos-arm64",
   });
 
-  assert.equal(await readFile(outputFile, "utf8"), [
-    "version=0.1.0",
-    "artifact_path=/tmp/artifacts/apple-pi-0.1.0-macos-arm64",
-    "",
-  ].join("\n"));
+  assert.equal(await readFile(outputFile, "utf8"), ["version=0.1.0", "artifact_path=/tmp/artifacts/apple-pi-0.1.0-macos-arm64", ""].join("\n"));
 });

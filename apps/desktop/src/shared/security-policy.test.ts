@@ -14,7 +14,11 @@ describe("content security policy", () => {
     // Packaged builds load the renderer over file:, so the meta tag is the only
     // place a policy can be delivered. If it drifts from the constant, the app
     // silently ships a weaker policy than the one under test.
-    expect(document).toContain(`content="${CONTENT_SECURITY_POLICY}"`);
+    //
+    // The policy value is compared exactly; only the tag's serialization is
+    // tolerated, because Prettier decides where the attributes wrap.
+    const declared = document.match(/<meta[^>]*http-equiv="Content-Security-Policy"[^>]*content="([^"]+)"/)?.[1];
+    expect(declared).toBe(CONTENT_SECURITY_POLICY);
   });
 
   it("denies what the app never needs", () => {

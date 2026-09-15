@@ -50,7 +50,7 @@ describe("HostServer", () => {
       ok: true,
       result: {
         protocolVersion: 1,
-        hostVersion: "0.5.0",
+        hostVersion: HOST_VERSION,
         piVersion: "0.84.2",
         capabilities: { sessionEvents: true, modelSelection: true, providerManagement: true, cancellableProviderOperations: true },
         pid: process.pid,

@@ -30,8 +30,5 @@ test("rejects staging when a required agent-host file is missing", async (t) => 
   await mkdir(sourceDir);
   await Promise.all(["index.js", "host-process.js"].map((file) => writeFile(path.join(sourceDir, file), `// ${file}\n`)));
 
-  await assert.rejects(
-    stageAgentHost({ sourceDir, destinationDir }),
-    /Required agent-host file is missing: server\.js/,
-  );
+  await assert.rejects(stageAgentHost({ sourceDir, destinationDir }), /Required agent-host file is missing: server\.js/);
 });

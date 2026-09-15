@@ -23,19 +23,25 @@ async function exerciseHost(hostPath, expectedVersion, shutdownTimeoutMs) {
   const child = spawn(process.execPath, [hostPath], { stdio: ["pipe", "pipe", "pipe"] });
   let stdout = "";
   let stderr = "";
-  child.stdout.setEncoding("utf8").on("data", (chunk) => { stdout += chunk; });
-  child.stderr.setEncoding("utf8").on("data", (chunk) => { stderr += chunk; });
+  child.stdout.setEncoding("utf8").on("data", (chunk) => {
+    stdout += chunk;
+  });
+  child.stderr.setEncoding("utf8").on("data", (chunk) => {
+    stderr += chunk;
+  });
   try {
     child.stdin.write(`${JSON.stringify({ protocolVersion: 1, requestId: "hello", type: "system.hello", payload: {} })}\n`);
     const hello = await waitForResponse(() => stdout, "hello");
     if (!hello.ok) throw new Error(`Packaged agent-host handshake failed: ${hello.error}`);
     const result = hello.result;
-    if (result?.protocolVersion !== 1
-      || result.hostVersion !== expectedVersion
-      || typeof result.piVersion !== "string"
-      || result.capabilities?.sessionEvents !== true
-      || result.capabilities?.modelSelection !== true
-      || typeof result.pid !== "number") {
+    if (
+      result?.protocolVersion !== 1 ||
+      result.hostVersion !== expectedVersion ||
+      typeof result.piVersion !== "string" ||
+      result.capabilities?.sessionEvents !== true ||
+      result.capabilities?.modelSelection !== true ||
+      typeof result.pid !== "number"
+    ) {
       throw new Error(`Invalid packaged agent-host handshake: ${JSON.stringify(result)}`);
     }
     child.stdin.write(`${JSON.stringify({ protocolVersion: 1, requestId: "shutdown", type: "system.shutdown", payload: {} })}\n`);
@@ -52,7 +58,9 @@ async function exerciseHost(hostPath, expectedVersion, shutdownTimeoutMs) {
 async function waitForResponse(read, requestId) {
   const deadline = Date.now() + 10_000;
   while (Date.now() < deadline) {
-    const line = read().split("\n").find((candidate) => candidate.includes(`"requestId":"${requestId}"`));
+    const line = read()
+      .split("\n")
+      .find((candidate) => candidate.includes(`"requestId":"${requestId}"`));
     if (line) return JSON.parse(line);
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
@@ -62,9 +70,7 @@ async function waitForResponse(read, requestId) {
 function waitForExit(child, timeoutMs, stderr) {
   if (child.exitCode !== null) return Promise.resolve(child.exitCode);
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(
-      `Packaged agent-host did not exit within ${timeoutMs}ms${stderr ? `: ${stderr}` : ""}`,
-    )), timeoutMs);
+    const timer = setTimeout(() => reject(new Error(`Packaged agent-host did not exit within ${timeoutMs}ms${stderr ? `: ${stderr}` : ""}`)), timeoutMs);
     child.once("exit", (exitCode) => {
       clearTimeout(timer);
       resolve(exitCode);
@@ -76,7 +82,7 @@ async function findAppArchives(directory) {
   const archives = [];
   for (const entry of await readdir(directory, { withFileTypes: true })) {
     const entryPath = path.join(directory, entry.name);
-    if (entry.isDirectory()) archives.push(...await findAppArchives(entryPath));
+    if (entry.isDirectory()) archives.push(...(await findAppArchives(entryPath)));
     else if (entry.isFile() && entry.name === "app.asar") archives.push(entryPath);
   }
   return archives;

@@ -32,6 +32,17 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      # The tag does not carry the version: electron-builder names artifacts and
+      # stamps the app from the committed package.json. Reject a mismatch here,
+      # before a draft release or any platform build exists.
+      - name: Verify the tag matches the packaged version
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        run: node scripts/check-version-sync.mjs --tag "$TAG_NAME"
+
       - name: Create the tag release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -74,8 +85,14 @@ jobs:
       - name: Lint
         run: pnpm lint
 
+      - name: Check formatting
+        run: pnpm format:check
+
       - name: Check documentation links
         run: pnpm docs:check
+
+      - name: Check version declarations
+        run: pnpm versions:check
 
       - name: Build Electron app
         run: pnpm build

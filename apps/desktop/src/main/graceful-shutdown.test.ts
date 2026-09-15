@@ -6,7 +6,12 @@ it("holds the first quit until one shared host shutdown completes", async () => 
   const events = new EventEmitter();
   const app = Object.assign(events, { quit: vi.fn() });
   let release!: () => void;
-  const stop = vi.fn(() => new Promise<void>((resolve) => { release = resolve; }));
+  const stop = vi.fn(
+    () =>
+      new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+  );
   installGracefulShutdown(app, { stop });
   const first = { preventDefault: vi.fn() };
   const repeated = { preventDefault: vi.fn() };

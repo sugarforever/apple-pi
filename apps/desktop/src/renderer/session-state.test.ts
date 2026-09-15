@@ -9,8 +9,7 @@ const openedSnapshot = {
   running: false,
 } satisfies SessionSnapshot;
 
-const openedState = (snapshot: SessionSnapshot = openedSnapshot): SessionState =>
-  reduceSession(initialSessionState, { type: "operation_snapshot", snapshot });
+const openedState = (snapshot: SessionSnapshot = openedSnapshot): SessionState => reduceSession(initialSessionState, { type: "operation_snapshot", snapshot });
 
 describe("session state", () => {
   it("applies ordered text and thinking deltas without requesting a snapshot", () => {
@@ -23,7 +22,13 @@ describe("session state", () => {
       sync: { status: "synced", generation: 0 },
       messages: [
         { role: "user", content: [{ type: "text", text: "Run the checks" }] },
-        { role: "assistant", content: [{ type: "text", text: "Checking files" }, { type: "thinking", text: "Need tests" }] },
+        {
+          role: "assistant",
+          content: [
+            { type: "text", text: "Checking files" },
+            { type: "thinking", text: "Need tests" },
+          ],
+        },
       ],
     });
   });
@@ -42,10 +47,7 @@ describe("session state", () => {
       { type: "lifecycle", phase: "failed", message: "Provider unavailable" },
     ] satisfies ApplePiSessionEvent[];
 
-    const final = events.reduce(
-      (state, payload, index) => reduceSession(state, { type: "event", sequence: index + 1, payload }),
-      openedState(),
-    );
+    const final = events.reduce((state, payload, index) => reduceSession(state, { type: "event", sequence: index + 1, payload }), openedState());
 
     expect(final).toMatchObject({
       lastSequence: events.length,
@@ -88,7 +90,12 @@ describe("session state", () => {
 
     if (staleSnapshot.sync.status !== "resyncing") throw new Error("Expected follow-up resync");
     const recovered = reduceSession(staleSnapshot, { type: "resync_snapshot", snapshot: openedSnapshot, generation: staleSnapshot.sync.generation });
-    expect(recovered).toMatchObject({ lastSequence: 4, sync: { status: "synced", generation: staleSnapshot.sync.generation }, running: false, messages: openedSnapshot.messages });
+    expect(recovered).toMatchObject({
+      lastSequence: 4,
+      sync: { status: "synced", generation: staleSnapshot.sync.generation },
+      running: false,
+      messages: openedSnapshot.messages,
+    });
   });
 
   it("requests resync only for the explicit resync discriminator", () => {

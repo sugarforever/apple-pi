@@ -17,8 +17,12 @@ export function installGracefulShutdown(app: QuitApp, host: GracefulHost): void 
   app.on("before-quit", (event) => {
     if (allowQuit) return;
     event.preventDefault();
-    shutdown ??= host.stop()
-      .then(() => undefined, () => undefined)
+    shutdown ??= host
+      .stop()
+      .then(
+        () => undefined,
+        () => undefined,
+      )
       .then(() => {
         allowQuit = true;
         app.quit();

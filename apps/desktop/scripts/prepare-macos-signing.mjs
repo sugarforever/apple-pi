@@ -22,11 +22,13 @@ if (process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === imp
     encodedApiKey: process.env.APPLE_API_KEY_P8,
     keyId: process.env.APPLE_API_KEY_ID,
     outputDir: process.env.RUNNER_TEMP,
-  }).then(async (keyPath) => {
-    if (!process.env.GITHUB_OUTPUT) throw new Error("Missing GitHub Actions output file");
-    await appendFile(process.env.GITHUB_OUTPUT, `apple_api_key=${keyPath}\n`);
-  }).catch((error) => {
-    console.error(error instanceof Error ? error.message : String(error));
-    process.exitCode = 1;
-  });
+  })
+    .then(async (keyPath) => {
+      if (!process.env.GITHUB_OUTPUT) throw new Error("Missing GitHub Actions output file");
+      await appendFile(process.env.GITHUB_OUTPUT, `apple_api_key=${keyPath}\n`);
+    })
+    .catch((error) => {
+      console.error(error instanceof Error ? error.message : String(error));
+      process.exitCode = 1;
+    });
 }
