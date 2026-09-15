@@ -114,6 +114,9 @@ async function bootstrap(): Promise<void> {
     selectedBackend: () => process.platform === "linux" ? safeStorage.getSelectedStorageBackend() : process.platform === "darwin" ? "keychain" : "dpapi",
   }, new CredentialFile(path.join(app.getPath("userData"), "credentials.json")));
   await credentials.initialize();
+  const storageIssue = credentials.storageIssue();
+  if (storageIssue) log.warn("credential storage is degraded", { issue: storageIssue, persistence: credentials.storagePersistence() });
+  else log.info("credential storage ready", { persistence: credentials.storagePersistence() });
   await host.start();
   providerCredentials = new ProviderCredentialController(credentials, host);
   host.on("session.event", (event) => mainWindow?.webContents.send("session:event", event));
