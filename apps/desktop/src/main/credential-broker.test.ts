@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { CredentialBroker, CredentialFile, storagePolicy, type ProtectedStorage } from "./credential-broker.js";
+import { setLogLevel } from "./logger.js";
+
+// Quarantine warnings are asserted through storageIssue(); keep them out of the output.
+setLogLevel("error");
 
 class FakeStorage implements ProtectedStorage {
   constructor(private readonly backend = "keychain", private readonly available = true) {}
@@ -12,10 +16,10 @@ class FakeStorage implements ProtectedStorage {
   decryptString(value: Buffer): string { return [...value.toString().slice("protected:".length)].reverse().join(""); }
 }
 
-async function fixture(platform: NodeJS.Platform = "darwin", backend = "keychain") {
+async function fixture(platform: NodeJS.Platform = "darwin", backend = "keychain", available = true) {
   const directory = await mkdtemp(path.join(os.tmpdir(), "apple-pi-credentials-"));
   const filePath = path.join(directory, "credentials.json");
-  const broker = new CredentialBroker(platform, new FakeStorage(backend), new CredentialFile(filePath), () => new Date("2026-09-15T00:00:00.000Z"));
+  const broker = new CredentialBroker(platform, new FakeStorage(backend, available), new CredentialFile(filePath), () => new Date("2026-09-15T00:00:00.000Z"));
   await broker.initialize();
   return { broker, filePath };
 }
@@ -61,6 +65,43 @@ describe("CredentialBroker", () => {
     expect(await restored.withApiKey("openai", async (value) => value)).toBeUndefined();
     expect(await degraded.delete("openai")).toBe(true);
   });
+  it("keeps a credential in memory when the OS cannot protect it", async () => {
+    // A denied keychain prompt must degrade storage, not prevent the app starting.
+    const { broker, filePath } = await fixture("darwin", "keychain", false);
+    expect(broker.storagePersistence()).toBe("session");
+    expect(broker.storageIssue()).toBe("os_protection_unavailable");
+    expect((await broker.setApiKey("openai", "denied-keychain-secret")).persistence).toBe("session");
+    expect(await broker.withApiKey("openai", async (value) => value)).toBe("denied-keychain-secret");
+    // Without OS protection, nothing may reach disk.
+    await expect(readFile(filePath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("reports a healthy store when OS protection is available", async () => {
+    const { broker } = await fixture();
+    expect(broker.storageIssue()).toBeUndefined();
+  });
+
+  it("quarantines an unreadable store instead of refusing to start", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "apple-pi-credentials-"));
+    const filePath = path.join(directory, "credentials.json");
+    await writeFile(filePath, "{ not json", "utf8");
+    const broker = new CredentialBroker("darwin", new FakeStorage(), new CredentialFile(filePath), () => new Date("2026-09-15T00:00:00.000Z"));
+
+    await expect(broker.initialize()).resolves.toBeUndefined();
+    expect(broker.storageIssue()).toBe("store_quarantined");
+    expect(broker.list()).toEqual([]);
+    expect(await broker.setApiKey("openai", "fresh-secret")).toMatchObject({ persistence: "persistent" });
+    expect((await readdir(directory)).filter((entry) => entry.startsWith("credentials.json.corrupt-"))).toHaveLength(1);
+  });
+
+  it("does not drop a credential when two providers connect at once", async () => {
+    const { broker } = await fixture();
+    await Promise.all([broker.setApiKey("openai", "first-secret"), broker.setApiKey("deepseek", "second-secret")]);
+
+    expect(broker.list().map((item) => item.providerId).sort()).toEqual(["deepseek", "openai"]);
+    expect(await broker.withApiKey("openai", async (value) => value)).toBe("first-secret");
+    expect(await broker.withApiKey("deepseek", async (value) => value)).toBe("second-secret");
+  });
 });
 
 describe("storagePolicy", () => {
@@ -68,7 +109,10 @@ describe("storagePolicy", () => {
     expect(storagePolicy(platform, new FakeStorage(backend))).toBe("persistent");
   });
 
-  it("refuses unavailable protected storage outside Linux", () => {
-    expect(() => storagePolicy("win32", new FakeStorage("unknown", false))).toThrow("OS-protected credential storage is unavailable");
-  });
+  it.each([["darwin", "keychain"], ["win32", "dpapi"], ["linux", "basic_text"], ["linux", "unknown"]] as const)(
+    "falls back to session storage on %s with %s when OS protection is unavailable",
+    (platform, backend) => {
+      expect(storagePolicy(platform, new FakeStorage(backend, false))).toBe("session");
+    },
+  );
 });

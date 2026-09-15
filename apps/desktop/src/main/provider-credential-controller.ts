@@ -6,7 +6,7 @@ import type {
   ProviderItem,
   ProviderOperationResult,
 } from "@apple-pi/protocol";
-import type { CredentialBroker } from "./credential-broker.js";
+import type { CredentialBroker, CredentialStorageIssue } from "./credential-broker.js";
 
 export interface ProviderHost {
   request<Command extends HostCommandType>(type: Command, payload: HostCommandPayloads[Command]): Promise<HostCommandResults[Command]>;
@@ -36,8 +36,9 @@ export class ProviderCredentialController {
     const result = await this.host.request("provider.connectApiKey", input);
     if (result.provider?.status === "connected" && !result.diagnostics.some((item) => item.severity === "error")) {
       this.provisioned.add(input.providerId);
-      const stored = await this.credentials.setApiKey(input.providerId, input.apiKey);
-      if (stored.persistence === "session") result.diagnostics.push(storageWarning());
+      await this.credentials.setApiKey(input.providerId, input.apiKey);
+      const issue = this.credentials.storageIssue();
+      if (issue) result.diagnostics.push(storageWarning(issue));
     } else this.provisioned.delete(input.providerId);
     return result;
   }
@@ -75,10 +76,12 @@ export class ProviderCredentialController {
   }
 }
 
-function storageWarning(): ProviderOperationResult["diagnostics"][number] {
+function storageWarning(issue: CredentialStorageIssue): ProviderOperationResult["diagnostics"][number] {
   return {
     code: "secure_storage_unavailable",
     severity: "warning",
-    message: "Secure Linux credential storage is unavailable. This credential will be kept for this app session only.",
+    message: issue === "store_quarantined"
+      ? "Apple Pi could not read the saved credential store, so it was set aside and this credential is kept for the current session only."
+      : "Apple Pi could not use OS-protected credential storage, so this credential is kept for the current session only and is forgotten when you quit.",
   };
 }

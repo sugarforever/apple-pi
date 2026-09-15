@@ -1,6 +1,6 @@
 import { describe, expect, expectTypeOf, it } from "vitest";
 import type { ApplePiMessage, ApplePiSessionEvent, ModelItem, SessionItem, SessionSnapshot } from "@apple-pi/protocol";
-import { mapPiEvent, mapPiMessages, mapPiModel, mapPiSessionItem, PiSessionService } from "./index.js";
+import { mapPiEvent, mapPiMessages, mapPiModel, mapPiSessionItem, type PiSessionService } from "./index.js";
 
 describe("Pi adapter public API", () => {
   it("exports mappers whose outputs are owned by Apple Pi", () => {

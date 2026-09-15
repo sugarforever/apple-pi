@@ -60,7 +60,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: 22.20.0
+          node-version: 22.22.1
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v5
@@ -70,6 +70,12 @@ jobs:
 
       - name: Install frozen dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Check documentation links
+        run: pnpm docs:check
 
       - name: Build Electron app
         run: pnpm build
@@ -128,7 +134,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: 22.20.0
+          node-version: 22.22.1
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v5

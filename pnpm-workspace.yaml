@@ -2,6 +2,10 @@ packages:
   - apps/*
   - packages/*
 
+# Lifecycle scripts are blocked unless a package is listed here. Keep this list
+# minimal: every entry is code executed at install time.
 onlyBuiltDependencies:
   - electron
   - esbuild
+  # electron-builder uses this to produce the Windows installer.
+  - electron-winstaller

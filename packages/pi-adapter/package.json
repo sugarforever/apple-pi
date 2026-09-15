@@ -5,12 +5,24 @@
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --passWithNoTests"
   },
-  "dependencies": { "@apple-pi/protocol": "workspace:*", "@earendil-works/pi-coding-agent": "0.84.2" },
-  "devDependencies": { "@types/node": "22.19.19", "typescript": "5.9.3", "vitest": "4.0.18" }
+  "dependencies": {
+    "@apple-pi/protocol": "workspace:*",
+    "@earendil-works/pi-coding-agent": "0.84.2"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.2",
+    "typescript": "5.9.3",
+    "vitest": "4.0.18"
+  }
 }
