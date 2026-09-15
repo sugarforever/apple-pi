@@ -95,6 +95,28 @@ each successful native build directly to a draft GitHub Release with determinist
 version/OS/architecture names and a `.sha256` sidecar for every download. The
 release is published only after every platform build succeeds.
 
+### Cutting a release
+
+Versions are not edited by hand. The
+[Release please workflow](.github/workflows/release-please.yml) reads the
+Conventional Commits merged since the last tag, keeps a **Release vX.Y.Z** pull
+request up to date, and on merge writes the version bump and `CHANGELOG.md`,
+creates the tag, and opens a **draft** release. The package workflow then fills
+that draft and publishes it once every platform build succeeds.
+
+So the whole procedure is: merge a release pull request. The bump updates every
+declaration together, and `pnpm versions:check` fails if they ever disagree —
+including if `.release-please-manifest.json` goes stale, which would otherwise
+make the next bump be computed from the wrong base.
+
+Two things are required for this to work:
+
+- **Settings → Actions → General → Allow GitHub Actions to create and approve pull
+  requests.** Without it the workflow cannot open its release pull request.
+- Release pull requests are opened with `GITHUB_TOKEN`, so they do not themselves
+  trigger CI. That is expected: they only change versions and the changelog, and the
+  tag build gates publication while the release is still a draft.
+
 Verify a downloaded sidecar from the directory containing its package, for
 example with `shasum -a 256 -c <package>.sha256` on macOS/Linux or
 `Get-FileHash -Algorithm SHA256 <package>` on Windows.
