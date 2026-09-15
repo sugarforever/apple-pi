@@ -1,7 +1,7 @@
 # Apple Pi and Pi Agent integration
 
 > Current baseline: Apple Pi `0.1.0`, `@earendil-works/pi-coding-agent`
-> `0.84.2`, Apple Pi Protocol v1, Node `>=22.20.0`, Electron `39.8.2`.
+> `0.84.2`, Apple Pi Protocol v1, Node `>=22.22.1`, Electron `39.8.2`.
 
 Apple Pi is an Electron desktop host for Pi Agent, not a separate agent runtime.
 The renderer talks through a sandboxed preload API to Electron main. Main

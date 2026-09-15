@@ -12,5 +12,9 @@
     "@apple-pi/pi-adapter": "workspace:*",
     "@apple-pi/protocol": "workspace:*"
   },
-  "devDependencies": { "@types/node": "22.19.19", "typescript": "5.9.3", "vitest": "4.0.18" }
+  "devDependencies": {
+    "@types/node": "22.20.2",
+    "typescript": "5.9.3",
+    "vitest": "4.0.18"
+  }
 }

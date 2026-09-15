@@ -41,7 +41,7 @@
 
 ### Task 5: Verify
 
-- [x] `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm build`, `pnpm docs:check` on Node 22.20.0.
+- [x] `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm build`, `pnpm docs:check` on Node 22.22.1.
 
 ## Deliberate non-goals
 

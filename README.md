@@ -6,7 +6,7 @@ An experimental Electron desktop client for the [pi coding agent](https://github
 
 Requirements:
 
-- Node.js 22.20 or newer
+- Node.js 22.22.1 or newer
 - Corepack with pnpm 10.25.0
 - An authenticated [pi coding agent](https://github.com/earendil-works/pi)
 
