@@ -199,6 +199,50 @@ describe("host protocol", () => {
     );
   });
 
+  it("validates the custom provider management commands", () => {
+    const definition = {
+      id: "my-local-llm",
+      name: "My Local LLM",
+      baseUrl: "https://localhost:8080/v1",
+      api: "openai-completions",
+      models: [{ id: "local-model-a" }],
+    } as const;
+    const add = {
+      protocolVersion: 1,
+      requestId: "add-1",
+      type: "provider.addCustom",
+      payload: { definition, operationId: "op-1", timeoutMs: 15_000 },
+    } as const;
+    expect(decodeHostMessage(add)).toEqual(add);
+    expect(() => decodeHostMessage({ ...add, payload: { ...add.payload, definition: { ...definition, apiKey: "sk-leak" } } })).toThrow(
+      "Invalid host message payload",
+    );
+
+    const update = {
+      protocolVersion: 1,
+      requestId: "update-1",
+      type: "provider.updateCustom",
+      payload: { id: "my-local-llm", definition, operationId: "op-2", timeoutMs: 15_000 },
+    } as const;
+    expect(decodeHostMessage(update)).toEqual(update);
+
+    const remove = {
+      protocolVersion: 1,
+      requestId: "remove-1",
+      type: "provider.removeCustom",
+      payload: { id: "my-local-llm", operationId: "op-3", timeoutMs: 15_000 },
+    } as const;
+    expect(decodeHostMessage(remove)).toEqual(remove);
+
+    const list = { protocolVersion: 1, requestId: "list-1", type: "provider.listCustom", payload: {} } as const;
+    expect(decodeHostMessage(list)).toEqual(list);
+
+    expect(decodeCommandResult("provider.listCustom", [definition])).toEqual([definition]);
+    expect(decodeCommandResult("provider.addCustom", { diagnostics: [] })).toEqual({ diagnostics: [] });
+    expect(decodeCommandResult("provider.updateCustom", { diagnostics: [] })).toEqual({ diagnostics: [] });
+    expect(decodeCommandResult("provider.removeCustom", { diagnostics: [] })).toEqual({ diagnostics: [] });
+  });
+
   it("validates a provider auth event pushed while a login operation is running", () => {
     const event = {
       protocolVersion: 1,

@@ -220,6 +220,41 @@ describe("renderer OAuth sign-in contract", () => {
   });
 });
 
+describe("renderer custom provider contract", () => {
+  const providers = readFileSync(new URL("./src/provider-settings.tsx", import.meta.url), "utf8");
+
+  it("offers an Add custom provider action alongside built-in provider search", () => {
+    expect(providers).toContain("Add custom provider");
+    expect(providers).toContain('setCustomProviderForm(customProviderForm === "add" ? null : "add")');
+  });
+
+  it("only offers Edit and Remove for providers Apple Pi's custom-provider store manages", () => {
+    expect(providers).toContain("const isCustom = isCustomProvider(provider.id, props.customProviders);");
+    expect(providers).toContain("{isCustom && !isEditingCustomProvider && (");
+    expect(providers).toContain("{isCustom && (");
+  });
+
+  it("submits only the single supported OpenAI-compatible api type, without exposing a one-option picker", () => {
+    expect(providers).toContain('const CUSTOM_PROVIDER_API = "openai-completions" as const;');
+    expect(providers).toContain("OpenAI-compatible (Chat Completions API)");
+  });
+
+  it("requires at least one model before submitting a custom provider", () => {
+    expect(providers).toContain("if (models.length === 0) {");
+    expect(providers).toContain('message: "Add at least one model."');
+  });
+
+  it("never lets a custom provider's id be changed once created", () => {
+    expect(providers).toContain("disabled={editing || props.busy}");
+  });
+
+  it("keeps a custom provider's connect/verify/disable flow identical to a built-in provider's", () => {
+    // Custom providers reuse the same connect/verify/disconnect buttons as built-in
+    // providers below this point in the file; only Edit/Remove are new.
+    expect(providers).toContain('{provider.status === "connected" && provider.credentialSource === "apple_pi" && (');
+  });
+});
+
 describe("renderer feedback contract", () => {
   it("resyncs only after the reducer marks a gap or explicit resync event", () => {
     expect(source).toContain('if (state.sync.status !== "resyncing") return;');

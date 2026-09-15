@@ -147,6 +147,7 @@ export const ProviderDiagnosticSchema = closedObject({
     Type.Literal("model_refresh_failed"),
     Type.Literal("secure_storage_unavailable"),
     Type.Literal("credential_unresolved"),
+    Type.Literal("invalid_provider_config"),
   ]),
   severity: Type.Union([Type.Literal("info"), Type.Literal("warning"), Type.Literal("error")]),
   message: Type.String({ minLength: 1, maxLength: 240 }),
@@ -177,6 +178,51 @@ export const ModelCatalogRefreshResultSchema = closedObject({
   diagnostics: Type.Array(ProviderDiagnosticSchema),
 });
 export type ModelCatalogRefreshResult = Static<typeof ModelCatalogRefreshResultSchema>;
+
+// The only Pi "api" implementation this version of the SDK exposes that matches the
+// classic meaning of "OpenAI-compatible endpoint" (Chat Completions-shaped request/
+// response, the format vLLM/llama.cpp/LM Studio/OpenRouter-style proxies speak). Pi
+// 0.84.2 also ships "openai-responses" and several provider-specific APIs (see
+// `@earendil-works/pi-ai`'s `KnownApi`), but those are deliberately out of scope here:
+// issue #27 asks for "OpenAI-compatible providers", not general models.json authoring.
+export const CustomProviderApiSchema = Type.Literal("openai-completions");
+export type CustomProviderApi = Static<typeof CustomProviderApiSchema>;
+
+export const CustomModelDefinitionSchema = closedObject({
+  id: Type.String({ minLength: 1, maxLength: 200 }),
+  name: Type.Optional(Type.String({ minLength: 1, maxLength: 200 })),
+  reasoning: Type.Optional(Type.Boolean()),
+  contextWindow: Type.Optional(Type.Integer({ minimum: 1 })),
+  maxTokens: Type.Optional(Type.Integer({ minimum: 1 })),
+});
+export type CustomModelDefinition = Static<typeof CustomModelDefinitionSchema>;
+
+// A deliberately narrow slice of Pi's real `compat` union (see `ModelConfig`'s
+// `OpenAICompletionsCompatSchema`, which alone has ~20 fields spanning routing,
+// chat-template quirks, and cache-control formats for providers Apple Pi does not
+// target here). These four are the ones that actually matter for a self-hosted or
+// third-party OpenAI-compatible endpoint (vLLM, llama.cpp, LM Studio, and similar
+// often reject `max_completion_tokens`, the "developer" role, or strict JSON mode).
+export const CustomProviderCompatSchema = closedObject({
+  supportsDeveloperRole: Type.Optional(Type.Boolean()),
+  supportsStrictMode: Type.Optional(Type.Boolean()),
+  supportsUsageInStreaming: Type.Optional(Type.Boolean()),
+  maxTokensField: Type.Optional(Type.Union([Type.Literal("max_tokens"), Type.Literal("max_completion_tokens")])),
+});
+export type CustomProviderCompat = Static<typeof CustomProviderCompatSchema>;
+
+// The non-secret, Apple-Pi-managed shape of a custom OpenAI-compatible provider.
+// Never carries an API key: that is stored exclusively through the existing
+// `provider.connectApiKey`/CredentialBroker path once the provider is registered.
+export const CustomProviderDefinitionSchema = closedObject({
+  id: Type.String({ minLength: 1, maxLength: 64, pattern: "^[a-z0-9][a-z0-9-_]*$" }),
+  name: Type.String({ minLength: 1, maxLength: 200 }),
+  baseUrl: Type.String({ minLength: 1, maxLength: 2000 }),
+  api: CustomProviderApiSchema,
+  compat: Type.Optional(CustomProviderCompatSchema),
+  models: Type.Array(CustomModelDefinitionSchema, { minItems: 1, maxItems: 50 }),
+});
+export type CustomProviderDefinition = Static<typeof CustomProviderDefinitionSchema>;
 
 // Apple-Pi-owned mirror of Pi's `AuthPrompt` (see `@earendil-works/pi-ai`'s
 // `auth/types.ts`), minus its non-serializable per-prompt `AbortSignal`: a
@@ -288,5 +334,7 @@ export const decodeModelCatalogRefreshResult = (value: unknown): ModelCatalogRef
   decode(ModelCatalogRefreshResultSchema, value, "model catalog refresh result");
 export const decodeProviderAuthEvent = (value: unknown): ProviderAuthEvent => decode(ProviderAuthEventSchema, value, "provider auth event");
 export const decodeModelItem = (value: unknown): ModelItem => decode(ModelItemSchema, value, "model item");
+export const decodeCustomProviderDefinition = (value: unknown): CustomProviderDefinition =>
+  decode(CustomProviderDefinitionSchema, value, "custom provider definition");
 export const decodeSessionItem = (value: unknown): SessionItem => decode(SessionItemSchema, value, "session item");
 export const decodeSessionSnapshot = (value: unknown): SessionSnapshot => decode(SessionSnapshotSchema, value, "session snapshot");

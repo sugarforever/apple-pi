@@ -3,6 +3,7 @@ import {
   decodeApplePiMessage,
   decodeApplePiContentPart,
   decodeApplePiSessionEvent,
+  decodeCustomProviderDefinition,
   decodeHostCapabilities,
   decodeModelItem,
   decodeProviderAuthEvent,
@@ -128,5 +129,45 @@ describe("provider auth events", () => {
       "Invalid provider auth event",
     );
     expect(() => decodeProviderAuthEvent({ type: "unknown", message: "x" })).toThrow("Invalid provider auth event");
+  });
+});
+
+describe("custom provider definitions", () => {
+  const definition = {
+    id: "my-local-llm",
+    name: "My Local LLM",
+    baseUrl: "https://localhost:8080/v1",
+    api: "openai-completions",
+    models: [{ id: "local-model-a", name: "Local Model A", reasoning: false, contextWindow: 8192, maxTokens: 2048 }],
+  };
+
+  it("decodes a well-formed custom provider definition", () => {
+    expect(decodeCustomProviderDefinition(definition)).toEqual(definition);
+  });
+
+  it("decodes a definition carrying the narrow compat subset", () => {
+    const withCompat = { ...definition, compat: { supportsDeveloperRole: false, maxTokensField: "max_completion_tokens" } };
+    expect(decodeCustomProviderDefinition(withCompat)).toEqual(withCompat);
+  });
+
+  it("never carries a secret field", () => {
+    expect(() => decodeCustomProviderDefinition({ ...definition, apiKey: "sk-should-not-be-here" })).toThrow("Invalid custom provider definition");
+  });
+
+  it("rejects an unsupported api type instead of accepting an arbitrary Pi api string", () => {
+    expect(() => decodeCustomProviderDefinition({ ...definition, api: "openai-responses" })).toThrow("Invalid custom provider definition");
+  });
+
+  it("rejects an id outside the safe slug charset", () => {
+    expect(() => decodeCustomProviderDefinition({ ...definition, id: "My Local LLM!" })).toThrow("Invalid custom provider definition");
+  });
+
+  it("requires at least one model", () => {
+    expect(() => decodeCustomProviderDefinition({ ...definition, models: [] })).toThrow("Invalid custom provider definition");
+  });
+
+  it("rejects a non-positive contextWindow or maxTokens", () => {
+    expect(() => decodeCustomProviderDefinition({ ...definition, models: [{ id: "m1", contextWindow: 0 }] })).toThrow("Invalid custom provider definition");
+    expect(() => decodeCustomProviderDefinition({ ...definition, models: [{ id: "m1", maxTokens: -1 }] })).toThrow("Invalid custom provider definition");
   });
 });

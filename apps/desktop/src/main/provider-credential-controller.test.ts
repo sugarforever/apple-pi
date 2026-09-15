@@ -31,12 +31,26 @@ class FakeStorage implements ProtectedStorage {
   }
 }
 
+const customDefinition = {
+  id: "my-local-llm",
+  name: "My Local LLM",
+  baseUrl: "https://localhost:8080/v1",
+  api: "openai-completions" as const,
+  models: [{ id: "local-model-a" }],
+};
+
 async function setup(platform: NodeJS.Platform = "darwin", backend = "keychain") {
   const directory = await mkdtemp(path.join(os.tmpdir(), "apple-pi-controller-"));
   const broker = new CredentialBroker(platform, new FakeStorage(backend), new CredentialFile(path.join(directory, "credentials.json")));
   await broker.initialize();
   const request = vi.fn<(type: string, payload?: unknown) => Promise<any>>(async (type: string) =>
-    type === "provider.list" ? [] : type === "model.refresh" ? { providers: [], models: [], diagnostics: [] } : { provider, diagnostics: [] },
+    type === "provider.list"
+      ? []
+      : type === "model.refresh"
+        ? { providers: [], models: [], diagnostics: [] }
+        : type === "provider.listCustom"
+          ? [customDefinition]
+          : { provider, diagnostics: [] },
   );
   const controller = new ProviderCredentialController(broker, { request } as unknown as ProviderHost, () => "credential-test");
   return { broker, controller, request };
@@ -119,6 +133,40 @@ describe("ProviderCredentialController", () => {
     expect(response).toEqual({ accepted: true });
     // An OAuth credential is never stored by Apple Pi's own broker: it lives
     // entirely in the agent host's own auth.json once `runtime.login()` persists it.
+    expect(broker.list()).toEqual([]);
+  });
+
+  it("passes custom provider management straight through to the host", async () => {
+    const { controller, request } = await setup();
+
+    await expect(controller.listCustomProviders()).resolves.toEqual([customDefinition]);
+    expect(request).toHaveBeenCalledWith("provider.listCustom", {});
+
+    await controller.addCustomProvider({ definition: customDefinition, operationId: "add-1", timeoutMs: 5_000 });
+    expect(request).toHaveBeenCalledWith("provider.addCustom", { definition: customDefinition, operationId: "add-1", timeoutMs: 5_000 });
+
+    await controller.updateCustomProvider({ id: "my-local-llm", definition: customDefinition, operationId: "update-1", timeoutMs: 5_000 });
+    expect(request).toHaveBeenCalledWith("provider.updateCustom", {
+      id: "my-local-llm",
+      definition: customDefinition,
+      operationId: "update-1",
+      timeoutMs: 5_000,
+    });
+  });
+
+  it("forgets a custom provider's stored credential once it is removed, even if the host reports an error", async () => {
+    const { broker, controller, request } = await setup();
+    await broker.setApiKey("my-local-llm", "local-secret");
+
+    await controller.removeCustomProvider({ id: "my-local-llm", operationId: "remove-1", timeoutMs: 5_000 });
+    expect(request).toHaveBeenCalledWith("provider.removeCustom", { id: "my-local-llm", operationId: "remove-1", timeoutMs: 5_000 });
+    expect(broker.list()).toEqual([]);
+
+    await broker.setApiKey("my-local-llm", "local-secret-again");
+    request.mockImplementationOnce(async () => {
+      throw new Error("host failure");
+    });
+    await expect(controller.removeCustomProvider({ id: "my-local-llm", operationId: "remove-2", timeoutMs: 5_000 })).rejects.toThrow("host failure");
     expect(broker.list()).toEqual([]);
   });
 });

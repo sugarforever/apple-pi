@@ -16,7 +16,7 @@ import {
   Terminal,
   X,
 } from "lucide-react";
-import type { ProviderItem, SessionSnapshot } from "@apple-pi/protocol";
+import type { CustomProviderDefinition, ProviderItem, SessionSnapshot } from "@apple-pi/protocol";
 import { runSessionResync } from "../session-resync.js";
 import { initialSessionState, reduceSession } from "../session-state.js";
 import { toTimelineItems, type ToolItem } from "../tool-activity.js";
@@ -79,6 +79,7 @@ function App() {
   const [sessions, setSessions] = useState<UiSessionItem[]>([]);
   const [models, setModels] = useState<ModelItem[]>([]);
   const [providers, setProviders] = useState<ProviderItem[]>([]);
+  const [customProviders, setCustomProviders] = useState<CustomProviderDefinition[]>([]);
   const [draft, setDraft] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [activeSessionId, setActiveSessionId] = useState("");
@@ -130,6 +131,10 @@ function App() {
       .list()
       .then(setProviders)
       .catch(() => setProviders([]));
+    void window.applePi.provider
+      .listCustom()
+      .then(setCustomProviders)
+      .catch(() => setCustomProviders([]));
     return window.applePi.session.subscribe((event) => {
       if (event.type === "session.event") dispatch({ type: "event", sequence: event.sequence, payload: event.payload });
     });
@@ -149,6 +154,10 @@ function App() {
         setProviders(refreshed.providers);
         setModels(refreshed.models);
       })
+      .catch(() => undefined);
+    void window.applePi.provider
+      .listCustom()
+      .then(setCustomProviders)
       .catch(() => undefined);
   }, [settingsOpen]);
 
@@ -431,9 +440,25 @@ function App() {
               providers={providers}
               models={models}
               defaultModel={catalog.defaultModel}
+              customProviders={customProviders}
               onConnect={(providerId, apiKey) => window.applePi.provider.connectApiKey(providerId, apiKey)}
               onDisconnect={(providerId) => window.applePi.provider.disconnect(providerId)}
               onVerify={(providerId) => window.applePi.provider.verify(providerId)}
+              onAddCustomProvider={async (definition) => {
+                const result = await window.applePi.provider.addCustom(definition);
+                setCustomProviders(await window.applePi.provider.listCustom());
+                return result;
+              }}
+              onUpdateCustomProvider={async (id, definition) => {
+                const result = await window.applePi.provider.updateCustom(id, definition);
+                setCustomProviders(await window.applePi.provider.listCustom());
+                return result;
+              }}
+              onRemoveCustomProvider={async (id) => {
+                const result = await window.applePi.provider.removeCustom(id);
+                setCustomProviders(await window.applePi.provider.listCustom());
+                return result;
+              }}
               onRefresh={async (providerId) => {
                 const token = ++modelsRefreshToken.current;
                 const refreshed = await window.applePi.provider.refreshModels([providerId]);

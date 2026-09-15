@@ -1,4 +1,5 @@
 import type {
+  CustomProviderDefinition,
   HostEvent,
   ModelCatalogRefreshResult,
   ModelItem as ProtocolModelItem,
@@ -35,6 +36,10 @@ declare global {
         refreshModels(providerIds?: string[], options?: ProviderOperationOptions): Promise<ModelCatalogRefreshResult>;
         startOAuthLogin(providerId: string, options?: ProviderOperationOptions): { operationId: string; result: Promise<ProviderOperationResult> };
         respondOAuthPrompt(operationId: string, promptId: string, value: string): Promise<{ accepted: boolean }>;
+        listCustom(): Promise<CustomProviderDefinition[]>;
+        addCustom(definition: CustomProviderDefinition, options?: ProviderOperationOptions): Promise<ProviderOperationResult>;
+        updateCustom(id: string, definition: CustomProviderDefinition, options?: ProviderOperationOptions): Promise<ProviderOperationResult>;
+        removeCustom(id: string, options?: ProviderOperationOptions): Promise<ProviderOperationResult>;
         subscribeAuthEvent(listener: (event: HostEvent) => void): () => void;
       };
       operation: { cancel(operationId: string): Promise<{ cancelled: boolean }> };

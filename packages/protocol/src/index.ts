@@ -2,6 +2,7 @@ import { Type } from "typebox";
 import { Value } from "typebox/value";
 import {
   ApplePiSessionEventSchema,
+  CustomProviderDefinitionSchema,
   HostCapabilitiesSchema,
   ModelCatalogRefreshResultSchema,
   ModelItemSchema,
@@ -74,6 +75,28 @@ export const Payloads = {
     { operationId: Type.String({ minLength: 1 }), promptId: Type.String({ minLength: 1 }), value: Type.String() },
     { additionalProperties: false },
   ),
+  "provider.listCustom": Type.Object({}, { additionalProperties: false }),
+  "provider.addCustom": Type.Object(
+    {
+      definition: CustomProviderDefinitionSchema,
+      operationId: Type.String({ minLength: 1 }),
+      timeoutMs: Type.Integer({ minimum: 100, maximum: 30_000 }),
+    },
+    { additionalProperties: false },
+  ),
+  "provider.updateCustom": Type.Object(
+    {
+      id: Type.String({ minLength: 1 }),
+      definition: CustomProviderDefinitionSchema,
+      operationId: Type.String({ minLength: 1 }),
+      timeoutMs: Type.Integer({ minimum: 100, maximum: 30_000 }),
+    },
+    { additionalProperties: false },
+  ),
+  "provider.removeCustom": Type.Object(
+    { id: Type.String({ minLength: 1 }), operationId: Type.String({ minLength: 1 }), timeoutMs: Type.Integer({ minimum: 100, maximum: 30_000 }) },
+    { additionalProperties: false },
+  ),
 } as const;
 
 export const ResultSchemas = {
@@ -105,6 +128,10 @@ export const ResultSchemas = {
   "operation.cancel": Type.Object({ cancelled: Type.Boolean() }, { additionalProperties: false }),
   "provider.startOAuthLogin": ProviderOperationResultSchema,
   "provider.respondOAuthPrompt": Type.Object({ accepted: Type.Boolean() }, { additionalProperties: false }),
+  "provider.listCustom": Type.Array(CustomProviderDefinitionSchema),
+  "provider.addCustom": ProviderOperationResultSchema,
+  "provider.updateCustom": ProviderOperationResultSchema,
+  "provider.removeCustom": ProviderOperationResultSchema,
 } as const;
 
 export const HostEventSchema = Type.Union([

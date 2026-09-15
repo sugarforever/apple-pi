@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import type {
   CredentialSource,
+  CustomProviderDefinition,
   ModelCatalogRefreshResult,
   ModelItem,
   ProviderAuthEvent,
@@ -10,6 +11,7 @@ import type {
   ProviderOperationResult,
 } from "@apple-pi/protocol";
 import { getAgentDir, readStoredCredential } from "@earendil-works/pi-coding-agent";
+import { CustomProviderStore, validateCustomProviderDefinition, type CustomProviderRepository } from "./custom-provider-store.js";
 import { mapPiAuthEvent, mapPiAuthPrompt, mapPiModel } from "./mappers.js";
 
 interface RuntimeProvider {
@@ -107,6 +109,15 @@ export class PiProviderService {
     // Correlates a pushed "prompt" auth event with the `provider.respondOAuthPrompt`
     // call that answers it. Injectable for deterministic test fixtures.
     private readonly generatePromptId: () => string = () => randomUUID(),
+    // Apple Pi's bookkeeping of custom (non-built-in) OpenAI-compatible providers,
+    // and the module that keeps `models.json` in sync with it. Defaults to the same
+    // agent directory `rawCredential` above resolves auth.json from, so a real
+    // `PiProviderService` always manages the same `models.json` its `runtime()` reads.
+    // A lazy factory (like `runtime` above) rather than an eagerly constructed
+    // instance, so constructing a `PiProviderService` never calls `getAgentDir()`
+    // unless a custom-provider method is actually used.
+    private readonly customProviders: () => CustomProviderRepository = () =>
+      new CustomProviderStore(join(getAgentDir(), "apple-pi-custom-providers.json"), join(getAgentDir(), "models.json")),
   ) {}
 
   async list(signal?: AbortSignal): Promise<ProviderItem[]> {
@@ -242,6 +253,89 @@ export class PiProviderService {
       if (signal.aborted) throw new DOMException("Operation aborted", "AbortError");
       return diagnostic("authentication_failed", "Apple Pi could not reach DeepSeek to verify the key. Check your connection and try again.", "retry");
     }
+  }
+
+  // Custom providers are Apple-Pi-managed, non-secret models.json entries (issue
+  // #27): unlike the built-in providers above, they can be created, edited, and
+  // removed entirely from Apple Pi. `CustomProviderStore` owns the actual file I/O
+  // (see its module comment for why it never touches a provider key it does not
+  // manage); this service only adds validation, live-runtime duplicate checks, and
+  // the refresh that makes a models.json change visible without recreating the
+  // runtime — the same "refresh, don't recreate" pattern issue #26/#29 established
+  // for auth.json.
+  async listCustomProviders(): Promise<CustomProviderDefinition[]> {
+    return this.customProviders().list();
+  }
+
+  async addCustomProvider(definition: CustomProviderDefinition, operationId: string, timeoutMs: number): Promise<ProviderOperationResult> {
+    return this.customProviderOperation(
+      operationId,
+      timeoutMs,
+      async (runtime, signal) => {
+        const existingIds = runtime.getProviders().map((provider) => provider.id);
+        const invalid = validateCustomProviderDefinition(definition, existingIds);
+        if (invalid) return { diagnostics: [diagnostic("invalid_provider_config", invalid)] };
+        await this.customProviders().upsert(definition);
+        await runtime.refresh({ allowNetwork: false, force: true, providers: [definition.id], signal });
+        return { diagnostics: [] };
+      },
+      definition.id,
+    );
+  }
+
+  async updateCustomProvider(id: string, definition: CustomProviderDefinition, operationId: string, timeoutMs: number): Promise<ProviderOperationResult> {
+    return this.customProviderOperation(
+      operationId,
+      timeoutMs,
+      async (runtime, signal) => {
+        if (id !== definition.id)
+          return { diagnostics: [diagnostic("invalid_provider_config", "A provider's id cannot be changed. Remove and re-add it instead.")] };
+        if (!(await this.customProviders().get(id))) return providerNotFound();
+        const existingIds = runtime
+          .getProviders()
+          .map((provider) => provider.id)
+          .filter((providerId) => providerId !== id);
+        const invalid = validateCustomProviderDefinition(definition, existingIds);
+        if (invalid) return { diagnostics: [diagnostic("invalid_provider_config", invalid)] };
+        await this.customProviders().upsert(definition);
+        await runtime.refresh({ allowNetwork: false, force: true, providers: [id], signal });
+        return { diagnostics: [] };
+      },
+      id,
+    );
+  }
+
+  async removeCustomProvider(id: string, operationId: string, timeoutMs: number): Promise<ProviderOperationResult> {
+    return this.customProviderOperation(
+      operationId,
+      timeoutMs,
+      async (runtime, signal) => {
+        const removed = await this.customProviders().remove(id);
+        if (!removed) return providerNotFound();
+        // The provider will no longer resolve through `runtime.getProvider()` once this
+        // returns; there is nothing further to look up, so `providerOperation`'s normal
+        // "find the resulting provider" step is skipped for this operation (see
+        // `customProviderOperation` below).
+        await runtime.refresh({ allowNetwork: false, force: true, signal });
+        return { diagnostics: [] };
+      },
+      undefined,
+    );
+  }
+
+  private async customProviderOperation(
+    operationId: string,
+    timeoutMs: number,
+    operation: (runtime: RuntimeLike, signal: AbortSignal) => Promise<Omit<ProviderOperationResult, "provider">>,
+    providerId: string | undefined,
+  ): Promise<ProviderOperationResult> {
+    const outcome = await this.run(operationId, timeoutMs, async (signal) => {
+      const result = await operation(await this.runtime(), signal);
+      const provider = providerId ? (await this.list(signal)).find((item) => item.id === providerId) : undefined;
+      return { ...(provider ? { provider } : {}), diagnostics: result.diagnostics };
+    });
+    if (outcome.state === "completed") return outcome.value;
+    return { diagnostics: operationDiagnostics(outcome, "invalid_provider_config", "The provider configuration could not be saved.") };
   }
 
   // A refresh already in flight always ends up reading the full current
