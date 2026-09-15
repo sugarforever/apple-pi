@@ -2,19 +2,21 @@ import { Type, type Static, type TSchema } from "typebox";
 import { Value } from "typebox/value";
 import { isJsonSerializable } from "./wire-value.js";
 
-const closedObject = <T extends Parameters<typeof Type.Object>[0]>(properties: T) =>
-  Type.Object(properties, { additionalProperties: false });
+const closedObject = <T extends Parameters<typeof Type.Object>[0]>(properties: T) => Type.Object(properties, { additionalProperties: false });
 
-export const JsonValueSchema = Type.Cyclic({
-  JsonValue: Type.Union([
-    Type.Null(),
-    Type.Boolean(),
-    Type.Number(),
-    Type.String(),
-    Type.Array(Type.Ref("JsonValue")),
-    Type.Record(Type.String(), Type.Ref("JsonValue")),
-  ]),
-}, "JsonValue");
+export const JsonValueSchema = Type.Cyclic(
+  {
+    JsonValue: Type.Union([
+      Type.Null(),
+      Type.Boolean(),
+      Type.Number(),
+      Type.String(),
+      Type.Array(Type.Ref("JsonValue")),
+      Type.Record(Type.String(), Type.Ref("JsonValue")),
+    ]),
+  },
+  "JsonValue",
+);
 export type JsonValue = Static<typeof JsonValueSchema>;
 
 export const TextContentPartSchema = closedObject({
@@ -56,12 +58,7 @@ export const ToolResultContentPartSchema = closedObject({
 });
 export type ToolResultContentPart = Static<typeof ToolResultContentPartSchema>;
 
-export const ApplePiContentPartSchema = Type.Union([
-  TextContentPartSchema,
-  ThinkingContentPartSchema,
-  ToolCallContentPartSchema,
-  ToolResultContentPartSchema,
-]);
+export const ApplePiContentPartSchema = Type.Union([TextContentPartSchema, ThinkingContentPartSchema, ToolCallContentPartSchema, ToolResultContentPartSchema]);
 export type ApplePiContentPart = Static<typeof ApplePiContentPartSchema>;
 
 export const ApplePiMessageSchema = Type.Union([
@@ -87,13 +84,10 @@ export const ModelItemSchema = closedObject({
 });
 export type ModelItem = Static<typeof ModelItemSchema>;
 
-const IsoTimestampSchema = Type.Refine(
-  Type.String({ pattern: "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$" }),
-  (value) => {
-    const timestamp = new Date(value);
-    return Number.isFinite(timestamp.valueOf()) && timestamp.toISOString() === value;
-  },
-);
+const IsoTimestampSchema = Type.Refine(Type.String({ pattern: "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$" }), (value) => {
+  const timestamp = new Date(value);
+  return Number.isFinite(timestamp.valueOf()) && timestamp.toISOString() === value;
+});
 
 export const SessionItemSchema = closedObject({
   id: Type.String({ minLength: 1 }),
@@ -154,9 +148,7 @@ export const ProviderDiagnosticSchema = closedObject({
   ]),
   severity: Type.Union([Type.Literal("info"), Type.Literal("warning"), Type.Literal("error")]),
   message: Type.String({ minLength: 1, maxLength: 240 }),
-  action: Type.Optional(Type.Union([
-    Type.Literal("connect"), Type.Literal("reconnect"), Type.Literal("retry"), Type.Literal("check_environment"),
-  ])),
+  action: Type.Optional(Type.Union([Type.Literal("connect"), Type.Literal("reconnect"), Type.Literal("retry"), Type.Literal("check_environment")])),
 });
 export type ProviderDiagnostic = Static<typeof ProviderDiagnosticSchema>;
 
@@ -229,8 +221,10 @@ export const decodeApplePiMessage = (value: unknown): ApplePiMessage => decode(A
 export const decodeApplePiSessionEvent = (value: unknown): ApplePiSessionEvent => decode(ApplePiSessionEventSchema, value, "Apple Pi session event");
 export const decodeHostCapabilities = (value: unknown): HostCapabilities => decode(HostCapabilitiesSchema, value, "host capabilities");
 export const decodeProviderItem = (value: unknown): ProviderItem => decode(ProviderItemSchema, value, "provider item");
-export const decodeProviderOperationResult = (value: unknown): ProviderOperationResult => decode(ProviderOperationResultSchema, value, "provider operation result");
-export const decodeModelCatalogRefreshResult = (value: unknown): ModelCatalogRefreshResult => decode(ModelCatalogRefreshResultSchema, value, "model catalog refresh result");
+export const decodeProviderOperationResult = (value: unknown): ProviderOperationResult =>
+  decode(ProviderOperationResultSchema, value, "provider operation result");
+export const decodeModelCatalogRefreshResult = (value: unknown): ModelCatalogRefreshResult =>
+  decode(ModelCatalogRefreshResultSchema, value, "model catalog refresh result");
 export const decodeModelItem = (value: unknown): ModelItem => decode(ModelItemSchema, value, "model item");
 export const decodeSessionItem = (value: unknown): SessionItem => decode(SessionItemSchema, value, "session item");
 export const decodeSessionSnapshot = (value: unknown): SessionSnapshot => decode(SessionSnapshotSchema, value, "session snapshot");

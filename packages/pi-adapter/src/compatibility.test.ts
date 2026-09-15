@@ -92,15 +92,17 @@ describe("Pi 0.84.2 public SDK compatibility", () => {
       api: "openai-completions",
       baseUrl: "https://invalid.example",
       apiKey: "fixture-token",
-      models: [{
-        id: "fixture-model-b",
-        name: "Fixture Model B",
-        reasoning: true,
-        input: ["text"],
-        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-        contextWindow: 4096,
-        maxTokens: 512,
-      }],
+      models: [
+        {
+          id: "fixture-model-b",
+          name: "Fixture Model B",
+          reasoning: true,
+          input: ["text"],
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+          contextWindow: 4096,
+          maxTokens: 512,
+        },
+      ],
     });
     const model = {
       id: "fixture-model-a",
@@ -159,7 +161,15 @@ describe("Pi 0.84.2 public SDK compatibility", () => {
       },
       {
         role: "tool",
-        content: [{ type: "tool_result", toolCallId: "call-legacy-1", name: "fixture_tool", output: [{ type: "text", text: "Synthetic legacy output" }], isError: false }],
+        content: [
+          {
+            type: "tool_result",
+            toolCallId: "call-legacy-1",
+            name: "fixture_tool",
+            output: [{ type: "text", text: "Synthetic legacy output" }],
+            isError: false,
+          },
+        ],
       },
     ]);
   });
