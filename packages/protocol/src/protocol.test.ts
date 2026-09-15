@@ -67,7 +67,7 @@ describe("host protocol", () => {
   it("validates the complete closed host handshake", () => {
     const hello = {
       protocolVersion: 1,
-      hostVersion: "0.1.0",
+      hostVersion: "0.2.0",
       piVersion: "0.84.2",
       capabilities: { sessionEvents: true, modelSelection: true, providerManagement: true, cancellableProviderOperations: true },
       pid: 42,
