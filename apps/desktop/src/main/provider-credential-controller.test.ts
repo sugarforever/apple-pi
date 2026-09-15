@@ -5,21 +5,39 @@ import path from "node:path";
 import { CredentialBroker, CredentialFile, type ProtectedStorage } from "./credential-broker.js";
 import { ProviderCredentialController, type ProviderHost } from "./provider-credential-controller.js";
 
-const provider = { id: "openai", name: "OpenAI", authMethods: ["api_key" as const], status: "connected" as const, credentialSource: "apple_pi" as const, availableModelCount: 1, diagnostics: [] };
+const provider = {
+  id: "openai",
+  name: "OpenAI",
+  authMethods: ["api_key" as const],
+  status: "connected" as const,
+  credentialSource: "apple_pi" as const,
+  availableModelCount: 1,
+  diagnostics: [],
+};
 
 class FakeStorage implements ProtectedStorage {
   constructor(private readonly backend: string) {}
-  isEncryptionAvailable(): boolean { return true; }
-  selectedBackend(): string { return this.backend; }
-  encryptString(value: string): Buffer { return Buffer.from(`encrypted:${value}`); }
-  decryptString(value: Buffer): string { return value.toString().slice("encrypted:".length); }
+  isEncryptionAvailable(): boolean {
+    return true;
+  }
+  selectedBackend(): string {
+    return this.backend;
+  }
+  encryptString(value: string): Buffer {
+    return Buffer.from(`encrypted:${value}`);
+  }
+  decryptString(value: Buffer): string {
+    return value.toString().slice("encrypted:".length);
+  }
 }
 
 async function setup(platform: NodeJS.Platform = "darwin", backend = "keychain") {
   const directory = await mkdtemp(path.join(os.tmpdir(), "apple-pi-controller-"));
   const broker = new CredentialBroker(platform, new FakeStorage(backend), new CredentialFile(path.join(directory, "credentials.json")));
   await broker.initialize();
-  const request = vi.fn<(type: string, payload?: unknown) => Promise<any>>(async (type: string) => type === "provider.list" ? [] : type === "model.refresh" ? { providers: [], models: [], diagnostics: [] } : { provider, diagnostics: [] });
+  const request = vi.fn<(type: string, payload?: unknown) => Promise<any>>(async (type: string) =>
+    type === "provider.list" ? [] : type === "model.refresh" ? { providers: [], models: [], diagnostics: [] } : { provider, diagnostics: [] },
+  );
   const controller = new ProviderCredentialController(broker, { request } as unknown as ProviderHost, () => "credential-test");
   return { broker, controller, request };
 }
@@ -55,11 +73,34 @@ describe("ProviderCredentialController", () => {
   it("does not persist or cache a rejected replacement key", async () => {
     const { broker, controller, request } = await setup();
     await broker.setApiKey("openai", "existing-secret");
-    request.mockImplementationOnce(async () => ({ diagnostics: [{ code: "authentication_failed" as const, severity: "error" as const, message: "Rejected", action: "reconnect" as const }] }));
+    request.mockImplementationOnce(async () => ({
+      diagnostics: [{ code: "authentication_failed" as const, severity: "error" as const, message: "Rejected", action: "reconnect" as const }],
+    }));
 
     await controller.connect({ providerId: "openai", apiKey: "rejected-secret", operationId: "replace", timeoutMs: 1_000 });
     await controller.provide("openai");
 
     expect(request).toHaveBeenLastCalledWith("provider.connectApiKey", expect.objectContaining({ apiKey: "existing-secret" }));
+  });
+
+  it("resolves a default model that is still in the live catalog", async () => {
+    const { controller, request } = await setup();
+    request.mockImplementation(async (type: string) => (type === "model.list" ? [{ provider: "openai", modelId: "gpt-5", name: "GPT-5" }] : []));
+
+    await expect(controller.resolveDefaultModel({ provider: "openai", modelId: "gpt-5" })).resolves.toEqual({ provider: "openai", modelId: "gpt-5" });
+  });
+
+  it("clears a default model whose provider was disconnected or removed", async () => {
+    const { controller, request } = await setup();
+    request.mockImplementation(async (type: string) => (type === "model.list" ? [] : []));
+
+    await expect(controller.resolveDefaultModel({ provider: "openai", modelId: "gpt-5" })).resolves.toBeUndefined();
+  });
+
+  it("skips the host round-trip when there is no default model to resolve", async () => {
+    const { controller, request } = await setup();
+
+    await expect(controller.resolveDefaultModel(undefined)).resolves.toBeUndefined();
+    expect(request).not.toHaveBeenCalledWith("model.list", expect.anything());
   });
 });
