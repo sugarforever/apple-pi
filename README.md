@@ -125,7 +125,8 @@ unsigned until a trusted Windows code-signing certificate is configured.
 Apple Pi currently supports the exact Pi SDK version negotiated during agent-host
 startup. See the [compatibility matrix](docs/operations/pi-compatibility-matrix.md)
 for the supported Apple Pi/Pi/Protocol/Node combination. Dependency upgrades must
-follow the [Pi upgrade runbook](docs/operations/pi-upgrade-runbook.md).
+follow the [Pi upgrade runbook](docs/operations/pi-upgrade-runbook.md), and release failures
+are covered by the [release runbook](docs/operations/release-runbook.md).
 
 See [how Apple Pi integrates Pi Agent](docs/architecture/apple-pi-pi-agent-integration.md)
 for the process boundary, [the architecture study](docs/architecture/pi-desktop-architecture.md)
