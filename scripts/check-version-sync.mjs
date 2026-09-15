@@ -32,6 +32,9 @@ const MANIFESTS = [
 const HOST_SOURCE = "apps/agent-host/src/server.ts";
 const HOST_VERSION_PATTERN = /export const HOST_VERSION = "([^"]+)"/;
 
+/** Written by release-please; see release-please-config.json. */
+const RELEASE_PLEASE_MANIFEST = ".release-please-manifest.json";
+
 async function readManifestVersion(relativePath) {
   const manifest = JSON.parse(await readFile(resolve(ROOT, relativePath), "utf8"));
   if (typeof manifest.version !== "string" || manifest.version.length === 0) {
@@ -45,6 +48,22 @@ async function readHostVersion() {
   const match = source.match(HOST_VERSION_PATTERN);
   if (!match) throw new Error(`${HOST_SOURCE} does not declare HOST_VERSION`);
   return match[1];
+}
+
+async function readReleasePleaseVersion() {
+  let contents;
+  try {
+    contents = await readFile(resolve(ROOT, RELEASE_PLEASE_MANIFEST), "utf8");
+  } catch (error) {
+    // Absent before the repository adopted release-please; present afterwards.
+    if (error.code === "ENOENT") return undefined;
+    throw error;
+  }
+  const version = JSON.parse(contents)["."];
+  if (typeof version !== "string" || version.length === 0) {
+    throw new Error(`${RELEASE_PLEASE_MANIFEST} does not record a version for "."`);
+  }
+  return version;
 }
 
 function readTagArgument() {
@@ -76,6 +95,13 @@ const tag = readTagArgument();
 const expectedTag = `v${canonicalVersion}`;
 if (tag !== undefined && tag !== expectedTag) {
   failures.push(`tag ${tag} does not match ${expectedTag}, the version in ${canonicalManifest}`);
+}
+
+// release-please reads this to decide the next version, so a stale entry here
+// silently produces a wrong bump rather than a failing build.
+const releasePleaseVersion = await readReleasePleaseVersion();
+if (releasePleaseVersion !== undefined && releasePleaseVersion !== canonicalVersion) {
+  failures.push(`${RELEASE_PLEASE_MANIFEST} records ${releasePleaseVersion}, but ${canonicalManifest} is ${canonicalVersion}`);
 }
 
 if (failures.length > 0) {

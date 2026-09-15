@@ -11,7 +11,7 @@ import {
 } from "@apple-pi/protocol";
 import { PI_VERSION, PiSessionService } from "@apple-pi/pi-adapter";
 
-export const HOST_VERSION = "0.5.0" as const;
+export const HOST_VERSION = "0.5.0" as const; // x-release-please-version
 
 export class HostServer {
   private readonly pi: PiSessionService;
