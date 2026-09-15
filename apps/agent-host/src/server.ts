@@ -129,6 +129,31 @@ export class HostServer {
           return success("provider.respondOAuthPrompt", message.requestId, {
             accepted: this.pi.providers.respondOAuthPrompt(message.payload.operationId, message.payload.promptId, message.payload.value),
           });
+        case "provider.listCustom":
+          return success("provider.listCustom", message.requestId, await this.pi.providers.listCustomProviders());
+        case "provider.addCustom":
+          return success(
+            "provider.addCustom",
+            message.requestId,
+            await this.pi.providers.addCustomProvider(message.payload.definition, message.payload.operationId, message.payload.timeoutMs),
+          );
+        case "provider.updateCustom":
+          return success(
+            "provider.updateCustom",
+            message.requestId,
+            await this.pi.providers.updateCustomProvider(
+              message.payload.id,
+              message.payload.definition,
+              message.payload.operationId,
+              message.payload.timeoutMs,
+            ),
+          );
+        case "provider.removeCustom":
+          return success(
+            "provider.removeCustom",
+            message.requestId,
+            await this.pi.providers.removeCustomProvider(message.payload.id, message.payload.operationId, message.payload.timeoutMs),
+          );
       }
     } catch (error) {
       return failure(message.requestId, isProviderCommand(message.type) ? new Error("Provider operation failed") : error);

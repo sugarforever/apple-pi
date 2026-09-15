@@ -51,6 +51,11 @@ contextBridge.exposeInMainWorld("applePi", {
     },
     respondOAuthPrompt: (operationId: string, promptId: string, value: string) =>
       ipcRenderer.invoke("provider:respondOAuthPrompt", { operationId, promptId, value }),
+    listCustom: () => ipcRenderer.invoke("provider:listCustom"),
+    addCustom: (definition: unknown, options?: ProviderOperationOptions) => invokeOperation("provider:addCustom", { definition }, options),
+    updateCustom: (id: string, definition: unknown, options?: ProviderOperationOptions) =>
+      invokeOperation("provider:updateCustom", { id, definition }, options),
+    removeCustom: (id: string, options?: ProviderOperationOptions) => invokeOperation("provider:removeCustom", { id }, options),
     subscribeAuthEvent: (listener: (event: unknown) => void) => {
       const handler = (_event: Electron.IpcRendererEvent, payload: unknown) => listener(payload);
       ipcRenderer.on("provider:authEvent", handler);

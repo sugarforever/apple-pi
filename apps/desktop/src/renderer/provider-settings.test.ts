@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { ProviderItem } from "@apple-pi/protocol";
-import { canStartOAuthLogin, firstActionableDiagnostic, modelUnavailable } from "./src/provider-settings.js";
+import type { CustomProviderDefinition, ProviderItem } from "@apple-pi/protocol";
+import { canStartOAuthLogin, firstActionableDiagnostic, isCustomProvider, modelUnavailable } from "./src/provider-settings.js";
 
 const model = (provider: string, modelId: string) => ({ provider, modelId, name: modelId });
 
@@ -67,5 +67,27 @@ describe("canStartOAuthLogin", () => {
 
   it("still offers sign-in for a provider that supports both api_key and oauth", () => {
     expect(canStartOAuthLogin(provider({ authMethods: ["api_key", "oauth"] }))).toBe(true);
+  });
+});
+
+describe("isCustomProvider", () => {
+  const customDefinition: CustomProviderDefinition = {
+    id: "my-local-llm",
+    name: "My Local LLM",
+    baseUrl: "https://localhost:8080/v1",
+    api: "openai-completions",
+    models: [{ id: "local-model-a" }],
+  };
+
+  it("is true for a provider Apple Pi's custom-provider store manages", () => {
+    expect(isCustomProvider("my-local-llm", [customDefinition])).toBe(true);
+  });
+
+  it("is false for a built-in provider not present in the custom-provider list", () => {
+    expect(isCustomProvider("openai", [customDefinition])).toBe(false);
+  });
+
+  it("is false when there are no custom providers at all", () => {
+    expect(isCustomProvider("my-local-llm", [])).toBe(false);
   });
 });

@@ -1,6 +1,15 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { AlertCircle, Check, CircleDashed, KeyRound, Search } from "lucide-react";
-import type { HostEvent, ModelItem, ProviderAuthEvent, ProviderDiagnostic, ProviderItem, ProviderOperationResult } from "@apple-pi/protocol";
+import { AlertCircle, Check, CircleDashed, KeyRound, Pencil, Plus, Search, Trash2, X } from "lucide-react";
+import type {
+  CustomProviderDefinition,
+  CustomModelDefinition,
+  HostEvent,
+  ModelItem,
+  ProviderAuthEvent,
+  ProviderDiagnostic,
+  ProviderItem,
+  ProviderOperationResult,
+} from "@apple-pi/protocol";
 
 export type ProviderActivity = "idle" | "checking";
 
@@ -20,12 +29,23 @@ export interface ProviderSettingsProps {
   providers: ProviderItem[];
   models: ModelItem[];
   defaultModel?: { provider: string; modelId: string };
+  customProviders: CustomProviderDefinition[];
   onConnect(providerId: string, apiKey: string): Promise<ProviderOperationResult>;
   onDisconnect(providerId: string): Promise<ProviderOperationResult>;
   onVerify(providerId: string): Promise<ProviderOperationResult>;
   onRefresh(providerId: string): Promise<void>;
   onDefaultModel(model: { provider: string; modelId: string }): Promise<void>;
+  onAddCustomProvider(definition: CustomProviderDefinition): Promise<ProviderOperationResult>;
+  onUpdateCustomProvider(id: string, definition: CustomProviderDefinition): Promise<ProviderOperationResult>;
+  onRemoveCustomProvider(id: string): Promise<ProviderOperationResult>;
   oauth: ProviderOAuthBridge;
+}
+
+// A custom provider is anything Apple Pi's own `provider.listCustom` reports —
+// distinct from a built-in provider even once connected, so the UI can offer
+// Edit/Remove only where they make sense.
+export function isCustomProvider(providerId: string, customProviders: CustomProviderDefinition[]): boolean {
+  return customProviders.some((definition) => definition.id === providerId);
 }
 
 interface OAuthLoginState {
@@ -142,6 +162,221 @@ function OAuthLoginPanel(props: {
   );
 }
 
+interface CustomModelRow {
+  key: string;
+  id: string;
+  name: string;
+  contextWindow: string;
+  maxTokens: string;
+  reasoning: boolean;
+}
+
+let customModelRowSeq = 0;
+const blankModelRow = (): CustomModelRow => ({ key: `row-${++customModelRowSeq}`, id: "", name: "", contextWindow: "", maxTokens: "", reasoning: false });
+
+function modelRowsFrom(models: CustomModelDefinition[]): CustomModelRow[] {
+  return models.length
+    ? models.map((model) => ({
+        key: `row-${++customModelRowSeq}`,
+        id: model.id,
+        name: model.name ?? "",
+        contextWindow: model.contextWindow?.toString() ?? "",
+        maxTokens: model.maxTokens?.toString() ?? "",
+        reasoning: model.reasoning ?? false,
+      }))
+    : [blankModelRow()];
+}
+
+// Converts the form's string-based rows back into `CustomModelDefinition`s. Rows
+// left completely blank (no id typed yet) are dropped rather than rejected, so a
+// spare trailing row does not need to be deleted before submitting.
+function modelsFromRows(rows: CustomModelRow[]): CustomModelDefinition[] {
+  return rows
+    .filter((row) => row.id.trim())
+    .map((row) => ({
+      id: row.id.trim(),
+      ...(row.name.trim() ? { name: row.name.trim() } : {}),
+      ...(row.reasoning ? { reasoning: true } : {}),
+      ...(row.contextWindow.trim() ? { contextWindow: Number(row.contextWindow) } : {}),
+      ...(row.maxTokens.trim() ? { maxTokens: Number(row.maxTokens) } : {}),
+    }));
+}
+
+// The only Pi "api" this form ever submits (see `CustomProviderApiSchema` in
+// `@apple-pi/protocol`): the classic OpenAI Chat Completions wire format that
+// self-hosted and third-party "OpenAI-compatible" endpoints actually speak.
+const CUSTOM_PROVIDER_API = "openai-completions" as const;
+
+function CustomProviderForm(props: {
+  initial?: CustomProviderDefinition;
+  busy: boolean;
+  onCancel: () => void;
+  onSubmit: (definition: CustomProviderDefinition) => Promise<ProviderOperationResult>;
+  onSaved: (id: string) => void;
+}) {
+  const editing = Boolean(props.initial);
+  const [id, setId] = useState(props.initial?.id ?? "");
+  const [name, setName] = useState(props.initial?.name ?? "");
+  const [baseUrl, setBaseUrl] = useState(props.initial?.baseUrl ?? "");
+  const [rows, setRows] = useState<CustomModelRow[]>(() => modelRowsFrom(props.initial?.models ?? []));
+  const [supportsDeveloperRole, setSupportsDeveloperRole] = useState(props.initial?.compat?.supportsDeveloperRole ?? false);
+  const [supportsStrictMode, setSupportsStrictMode] = useState(props.initial?.compat?.supportsStrictMode ?? false);
+  const [maxTokensField, setMaxTokensField] = useState<"" | "max_tokens" | "max_completion_tokens">(props.initial?.compat?.maxTokensField ?? "");
+  const [diagnostic, setDiagnostic] = useState<ProviderDiagnostic | undefined>(undefined);
+
+  const updateRow = (key: string, patch: Partial<CustomModelRow>): void => {
+    setRows((current) => current.map((row) => (row.key === key ? { ...row, ...patch } : row)));
+  };
+
+  const submit = async (event: React.FormEvent): Promise<void> => {
+    event.preventDefault();
+    setDiagnostic(undefined);
+    const models = modelsFromRows(rows);
+    if (models.length === 0) {
+      setDiagnostic({ code: "invalid_provider_config", severity: "error", message: "Add at least one model." });
+      return;
+    }
+    const compat =
+      supportsDeveloperRole || supportsStrictMode || maxTokensField
+        ? {
+            ...(supportsDeveloperRole ? { supportsDeveloperRole: true } : {}),
+            ...(supportsStrictMode ? { supportsStrictMode: true } : {}),
+            ...(maxTokensField ? { maxTokensField } : {}),
+          }
+        : undefined;
+    const definition: CustomProviderDefinition = {
+      id: id.trim(),
+      name: name.trim(),
+      baseUrl: baseUrl.trim(),
+      api: CUSTOM_PROVIDER_API,
+      models,
+      ...(compat ? { compat } : {}),
+    };
+    const result = await props.onSubmit(definition);
+    const failure = firstActionableDiagnostic(result);
+    if (failure && failure.severity === "error") setDiagnostic(failure);
+    else props.onSaved(definition.id);
+  };
+
+  return (
+    <form className="custom-provider-form" aria-label={editing ? "Edit custom provider" : "Add custom provider"} onSubmit={(event) => void submit(event)}>
+      <div className="custom-provider-fields">
+        <label>
+          <span>Provider ID</span>
+          <input
+            value={id}
+            onChange={(event) => setId(event.target.value)}
+            placeholder="my-local-llm"
+            pattern="^[a-z0-9][a-z0-9-_]*$"
+            disabled={editing || props.busy}
+            required
+            autoFocus
+          />
+        </label>
+        <label>
+          <span>Display name</span>
+          <input value={name} onChange={(event) => setName(event.target.value)} placeholder="My Local LLM" disabled={props.busy} required />
+        </label>
+        <label>
+          <span>Base URL</span>
+          <input
+            type="url"
+            value={baseUrl}
+            onChange={(event) => setBaseUrl(event.target.value)}
+            placeholder="https://localhost:8080/v1"
+            disabled={props.busy}
+            required
+          />
+        </label>
+        <p className="custom-provider-api-note">OpenAI-compatible (Chat Completions API)</p>
+      </div>
+      <fieldset className="custom-provider-models">
+        <legend>Models</legend>
+        {rows.map((row) => (
+          <div className="custom-provider-model-row" key={row.key}>
+            <input
+              value={row.id}
+              onChange={(event) => updateRow(row.key, { id: event.target.value })}
+              placeholder="Model ID"
+              aria-label="Model ID"
+              disabled={props.busy}
+            />
+            <input
+              value={row.name}
+              onChange={(event) => updateRow(row.key, { name: event.target.value })}
+              placeholder="Display name (optional)"
+              aria-label="Model display name"
+              disabled={props.busy}
+            />
+            <input
+              type="number"
+              min={1}
+              value={row.contextWindow}
+              onChange={(event) => updateRow(row.key, { contextWindow: event.target.value })}
+              placeholder="Context window"
+              aria-label="Context window"
+              disabled={props.busy}
+            />
+            <input
+              type="number"
+              min={1}
+              value={row.maxTokens}
+              onChange={(event) => updateRow(row.key, { maxTokens: event.target.value })}
+              placeholder="Max tokens"
+              aria-label="Max output tokens"
+              disabled={props.busy}
+            />
+            <button
+              type="button"
+              className="icon-button"
+              aria-label="Remove model"
+              onClick={() => setRows((current) => (current.length > 1 ? current.filter((item) => item.key !== row.key) : current))}
+              disabled={props.busy}
+            >
+              <Trash2 size={14} />
+            </button>
+          </div>
+        ))}
+        <button type="button" className="secondary" onClick={() => setRows((current) => [...current, blankModelRow()])} disabled={props.busy}>
+          <Plus size={13} /> Add model
+        </button>
+      </fieldset>
+      <fieldset className="custom-provider-compat">
+        <legend>Compatibility options</legend>
+        <label className="checkbox-field">
+          <input type="checkbox" checked={supportsDeveloperRole} onChange={(event) => setSupportsDeveloperRole(event.target.checked)} disabled={props.busy} />
+          <span>Supports the OpenAI &quot;developer&quot; role</span>
+        </label>
+        <label className="checkbox-field">
+          <input type="checkbox" checked={supportsStrictMode} onChange={(event) => setSupportsStrictMode(event.target.checked)} disabled={props.busy} />
+          <span>Supports strict JSON mode</span>
+        </label>
+        <label>
+          <span>Max tokens parameter</span>
+          <select value={maxTokensField} onChange={(event) => setMaxTokensField(event.target.value as typeof maxTokensField)} disabled={props.busy}>
+            <option value="">Auto</option>
+            <option value="max_tokens">max_tokens</option>
+            <option value="max_completion_tokens">max_completion_tokens</option>
+          </select>
+        </label>
+      </fieldset>
+      {diagnostic && (
+        <p className="provider-diagnostic error" role="alert">
+          {diagnostic.message}
+        </p>
+      )}
+      <div className="custom-provider-form-actions">
+        <button type="submit" disabled={props.busy}>
+          {editing ? "Save changes" : "Add provider"}
+        </button>
+        <button type="button" className="secondary" onClick={props.onCancel} disabled={props.busy}>
+          Cancel
+        </button>
+      </div>
+    </form>
+  );
+}
+
 export function ProviderSettings(props: ProviderSettingsProps) {
   const [query, setQuery] = useState("");
   const [editing, setEditing] = useState<string | null>(null);
@@ -149,6 +384,11 @@ export function ProviderSettings(props: ProviderSettingsProps) {
   const [activity, setActivity] = useState<Record<string, ProviderActivity>>({});
   const [feedback, setFeedback] = useState<Record<string, ProviderDiagnostic | undefined>>({});
   const [oauthLogin, setOauthLogin] = useState<OAuthLoginState | null>(null);
+  // "add" shows a blank form; a provider id shows that provider's edit form;
+  // null hides the form entirely. Distinct from `editing` above, which only
+  // ever toggles a built-in provider's API-key entry.
+  const [customProviderForm, setCustomProviderForm] = useState<"add" | string | null>(null);
+  const [customProviderBusy, setCustomProviderBusy] = useState(false);
 
   const visible = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase();
@@ -229,6 +469,10 @@ export function ProviderSettings(props: ProviderSettingsProps) {
     if (connected) setEditing(null);
   };
 
+  const removeCustomProvider = async (provider: ProviderItem): Promise<void> => {
+    await run(provider.id, () => props.onRemoveCustomProvider(provider.id), true);
+  };
+
   return (
     <section className="provider-settings" aria-labelledby="providers-title">
       <div className="provider-heading">
@@ -241,7 +485,33 @@ export function ProviderSettings(props: ProviderSettingsProps) {
           <Search size={15} aria-hidden="true" />
           <input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search providers" />
         </label>
+        <button
+          type="button"
+          className="secondary"
+          onClick={() => setCustomProviderForm(customProviderForm === "add" ? null : "add")}
+          aria-expanded={customProviderForm === "add"}
+        >
+          <Plus size={14} /> Add custom provider
+        </button>
       </div>
+      {customProviderForm === "add" && (
+        <CustomProviderForm
+          busy={customProviderBusy}
+          onCancel={() => setCustomProviderForm(null)}
+          onSaved={(id) => {
+            setCustomProviderForm(null);
+            void props.onRefresh(id);
+          }}
+          onSubmit={async (definition) => {
+            setCustomProviderBusy(true);
+            try {
+              return await props.onAddCustomProvider(definition);
+            } finally {
+              setCustomProviderBusy(false);
+            }
+          }}
+        />
+      )}
       {props.providers.length === 0 ? (
         <div className="provider-empty">
           <KeyRound size={22} />
@@ -263,6 +533,8 @@ export function ProviderSettings(props: ProviderSettingsProps) {
               provider.authMethods.includes("api_key") && (provider.credentialSource === "apple_pi" || provider.credentialSource === "unavailable");
             const isEditing = editing === provider.id;
             const isOAuthActive = oauthLogin?.providerId === provider.id;
+            const isCustom = isCustomProvider(provider.id, props.customProviders);
+            const isEditingCustomProvider = customProviderForm === provider.id;
             return (
               <article className={`provider-card status-${checking ? "checking" : provider.status}`} key={provider.id} aria-busy={checking}>
                 <div className="provider-summary">
@@ -356,6 +628,25 @@ export function ProviderSettings(props: ProviderSettingsProps) {
                     </div>
                   </form>
                 )}
+                {isEditingCustomProvider && (
+                  <CustomProviderForm
+                    initial={props.customProviders.find((definition) => definition.id === provider.id)}
+                    busy={customProviderBusy}
+                    onCancel={() => setCustomProviderForm(null)}
+                    onSaved={(id) => {
+                      setCustomProviderForm(null);
+                      void props.onRefresh(id);
+                    }}
+                    onSubmit={async (definition) => {
+                      setCustomProviderBusy(true);
+                      try {
+                        return await props.onUpdateCustomProvider(provider.id, definition);
+                      } finally {
+                        setCustomProviderBusy(false);
+                      }
+                    }}
+                  />
+                )}
                 {provider.status === "connected" && providerModels.length > 0 && (
                   <div className="provider-models">
                     <label htmlFor={`provider-model-${provider.id}`}>Default model</label>
@@ -413,6 +704,24 @@ export function ProviderSettings(props: ProviderSettingsProps) {
                       disabled={checking}
                     >
                       Disconnect
+                    </button>
+                  )}
+                  {isCustom && !isEditingCustomProvider && (
+                    <button
+                      type="button"
+                      className="secondary"
+                      onClick={() => {
+                        setCustomProviderForm(provider.id);
+                        setFeedback((current) => ({ ...current, [provider.id]: undefined }));
+                      }}
+                      disabled={checking}
+                    >
+                      <Pencil size={13} /> Edit
+                    </button>
+                  )}
+                  {isCustom && (
+                    <button type="button" className="danger-button" onClick={() => void removeCustomProvider(provider)} disabled={checking}>
+                      <X size={13} /> Remove
                     </button>
                   )}
                 </div>

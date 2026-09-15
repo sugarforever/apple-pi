@@ -1,5 +1,27 @@
 import { describe, expect, it, vi } from "vitest";
+import type { CustomProviderDefinition } from "@apple-pi/protocol";
+import type { CustomProviderRepository } from "./custom-provider-store.js";
 import { PiProviderService } from "./provider-service.js";
+
+const customDefinition: CustomProviderDefinition = {
+  id: "my-local-llm",
+  name: "My Local LLM",
+  baseUrl: "https://localhost:8080/v1",
+  api: "openai-completions",
+  models: [{ id: "local-model-a", name: "Local Model A" }],
+};
+
+function customProviderRepositoryDouble(initial: CustomProviderDefinition[] = []): CustomProviderRepository {
+  const providers = new Map(initial.map((definition) => [definition.id, definition]));
+  return {
+    list: vi.fn(async () => [...providers.values()]),
+    get: vi.fn(async (id: string) => providers.get(id)),
+    upsert: vi.fn(async (definition: CustomProviderDefinition) => {
+      providers.set(definition.id, definition);
+    }),
+    remove: vi.fn(async (id: string) => providers.delete(id)),
+  };
+}
 
 // `stored` mirrors what a real ModelRuntime's `listCredentials()`/`getProviderAuthStatus()`
 // report for an auth.json entry (the Pi CLI's shared profile): `type` is the credential
@@ -377,6 +399,159 @@ describe("PiProviderService", () => {
 
       expect(JSON.stringify(events)).not.toContain("sk-never-return-this");
       expect(JSON.stringify(result)).not.toContain("sk-never-return-this");
+    });
+  });
+
+  describe("custom providers", () => {
+    it("lists what the store manages", async () => {
+      const store = customProviderRepositoryDouble([customDefinition]);
+      const service = new PiProviderService(
+        async () => runtimeDouble(),
+        fetch,
+        undefined,
+        undefined,
+        () => store,
+      );
+
+      await expect(service.listCustomProviders()).resolves.toEqual([customDefinition]);
+    });
+
+    it("rejects a duplicate provider id without persisting it or touching the runtime", async () => {
+      const runtime = runtimeDouble();
+      const store = customProviderRepositoryDouble();
+      const service = new PiProviderService(
+        async () => runtime,
+        fetch,
+        undefined,
+        undefined,
+        () => store,
+      );
+
+      const result = await service.addCustomProvider({ ...customDefinition, id: "openai" }, "add-dup", 1_000);
+
+      expect(result.diagnostics).toMatchObject([{ code: "invalid_provider_config", severity: "error" }]);
+      expect(store.upsert).not.toHaveBeenCalled();
+      expect(runtime.refresh).not.toHaveBeenCalled();
+    });
+
+    it("rejects an invalid base URL before persisting anything", async () => {
+      const store = customProviderRepositoryDouble();
+      const service = new PiProviderService(
+        async () => runtimeDouble(),
+        fetch,
+        undefined,
+        undefined,
+        () => store,
+      );
+
+      const result = await service.addCustomProvider({ ...customDefinition, baseUrl: "not-a-url" }, "add-bad-url", 1_000);
+
+      expect(result.diagnostics).toMatchObject([{ code: "invalid_provider_config" }]);
+      expect(store.upsert).not.toHaveBeenCalled();
+    });
+
+    it("persists a valid definition and refreshes only that provider", async () => {
+      const runtime = runtimeDouble();
+      const store = customProviderRepositoryDouble();
+      const service = new PiProviderService(
+        async () => runtime,
+        fetch,
+        undefined,
+        undefined,
+        () => store,
+      );
+
+      const result = await service.addCustomProvider(customDefinition, "add-ok", 1_000);
+
+      expect(store.upsert).toHaveBeenCalledWith(customDefinition);
+      expect(runtime.refresh).toHaveBeenCalledWith(expect.objectContaining({ allowNetwork: false, force: true, providers: ["my-local-llm"] }));
+      expect(result.diagnostics).toEqual([]);
+    });
+
+    it("rejects renaming a provider id through update", async () => {
+      const store = customProviderRepositoryDouble([customDefinition]);
+      const service = new PiProviderService(
+        async () => runtimeDouble(),
+        fetch,
+        undefined,
+        undefined,
+        () => store,
+      );
+
+      const result = await service.updateCustomProvider("my-local-llm", { ...customDefinition, id: "renamed" }, "update-rename", 1_000);
+
+      expect(result.diagnostics).toMatchObject([{ code: "invalid_provider_config" }]);
+      expect(store.upsert).not.toHaveBeenCalled();
+    });
+
+    it("reports provider_not_found when updating a definition Apple Pi does not manage", async () => {
+      const store = customProviderRepositoryDouble();
+      const service = new PiProviderService(
+        async () => runtimeDouble(),
+        fetch,
+        undefined,
+        undefined,
+        () => store,
+      );
+
+      const result = await service.updateCustomProvider("my-local-llm", customDefinition, "update-missing", 1_000);
+
+      expect(result.diagnostics).toMatchObject([{ code: "provider_not_found" }]);
+    });
+
+    it("updates an existing definition and refreshes only that provider", async () => {
+      const runtime = runtimeDouble();
+      const store = customProviderRepositoryDouble([customDefinition]);
+      const service = new PiProviderService(
+        async () => runtime,
+        fetch,
+        undefined,
+        undefined,
+        () => store,
+      );
+      const updated = { ...customDefinition, name: "Renamed" };
+
+      const result = await service.updateCustomProvider("my-local-llm", updated, "update-ok", 1_000);
+
+      expect(store.upsert).toHaveBeenCalledWith(updated);
+      expect(runtime.refresh).toHaveBeenCalledWith(expect.objectContaining({ providers: ["my-local-llm"] }));
+      expect(result.diagnostics).toEqual([]);
+    });
+
+    it("removes a managed provider and triggers a full catalog refresh", async () => {
+      const runtime = runtimeDouble();
+      const store = customProviderRepositoryDouble([customDefinition]);
+      const service = new PiProviderService(
+        async () => runtime,
+        fetch,
+        undefined,
+        undefined,
+        () => store,
+      );
+
+      const result = await service.removeCustomProvider("my-local-llm", "remove-ok", 1_000);
+
+      expect(store.remove).toHaveBeenCalledWith("my-local-llm");
+      expect(runtime.refresh).toHaveBeenCalledWith(expect.objectContaining({ allowNetwork: false, force: true }));
+      expect(result.diagnostics).toEqual([]);
+      expect(result.provider).toBeUndefined();
+    });
+
+    it("reports provider_not_found when removing a definition Apple Pi does not manage", async () => {
+      const runtime = runtimeDouble();
+      const store = customProviderRepositoryDouble();
+      const service = new PiProviderService(
+        async () => runtime,
+        fetch,
+        undefined,
+        undefined,
+        () => store,
+      );
+
+      const result = await service.removeCustomProvider("unknown", "remove-missing", 1_000);
+
+      expect(result.diagnostics).toMatchObject([{ code: "provider_not_found" }]);
+      expect(runtime.refresh).not.toHaveBeenCalled();
     });
   });
 });

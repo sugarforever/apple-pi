@@ -6,6 +6,7 @@ import adapterPackage from "../package.json" with { type: "json" };
 
 export { mapPiEvent, mapPiMessages, mapPiModel, mapPiSessionItem } from "./mappers.js";
 export { PiProviderService } from "./provider-service.js";
+export { CustomProviderStore, validateCustomProviderDefinition, type CustomProviderRepository } from "./custom-provider-store.js";
 
 export type PiEventListener = (event: ApplePiSessionEvent) => void;
 
@@ -23,9 +24,13 @@ export class PiSessionService {
   private lifecycle: Promise<void> = Promise.resolve();
   readonly providers = new PiProviderService(() => this.getRuntime());
 
-  onEvent(listener: PiEventListener): void { this.listener = listener; }
+  onEvent(listener: PiEventListener): void {
+    this.listener = listener;
+  }
 
-  private async getRuntime(): Promise<ModelRuntime> { return this.runtime ??= await ModelRuntime.create(); }
+  private async getRuntime(): Promise<ModelRuntime> {
+    return (this.runtime ??= await ModelRuntime.create());
+  }
 
   async listSessions(cwd: string): Promise<SessionItem[]> {
     return (await SessionManager.list(cwd)).map(mapPiSessionItem);
@@ -66,7 +71,9 @@ export class PiSessionService {
     await this.owner.session.prompt(text);
   }
 
-  async cancel(): Promise<void> { await this.owner?.session.abort(); }
+  async cancel(): Promise<void> {
+    await this.owner?.session.abort();
+  }
 
   async setModel(provider: string, modelId: string): Promise<SessionSnapshot> {
     return this.serializeLifecycle(async () => {
@@ -102,15 +109,30 @@ export class PiSessionService {
 
   private serializeLifecycle<T>(operation: () => Promise<T>): Promise<T> {
     const result = this.lifecycle.then(operation, operation);
-    this.lifecycle = result.then(() => undefined, () => undefined);
+    this.lifecycle = result.then(
+      () => undefined,
+      () => undefined,
+    );
     return result;
   }
 
   private async release(owner: SessionOwner, propagateFailure = true): Promise<void> {
     let failure: unknown;
-    try { owner.unsubscribe?.(); } catch (error) { failure = error; }
-    try { await owner.session.abort(); } catch (error) { failure ??= error; }
-    try { owner.session.dispose(); } catch (error) { failure ??= error; }
+    try {
+      owner.unsubscribe?.();
+    } catch (error) {
+      failure = error;
+    }
+    try {
+      await owner.session.abort();
+    } catch (error) {
+      failure ??= error;
+    }
+    try {
+      owner.session.dispose();
+    } catch (error) {
+      failure ??= error;
+    }
     if (failure && propagateFailure) throw failure;
   }
 }

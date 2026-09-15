@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { createAgentSession, ModelRuntime, readStoredCredential, SessionManager } from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, expectTypeOf, it, vi } from "vitest";
-import { PI_VERSION, mapPiEvent, mapPiMessages, mapPiModel, mapPiSessionItem, PiProviderService } from "./index.js";
+import { CustomProviderStore, PI_VERSION, mapPiEvent, mapPiMessages, mapPiModel, mapPiSessionItem, PiProviderService } from "./index.js";
 
 const fixtureUrl = (name: string) => new URL(`../test/fixtures/pi-0.84.2/${name}`, import.meta.url);
 const temporaryDirectories: string[] = [];
@@ -297,5 +297,100 @@ describe("Pi 0.84.2 OAuth sign-in compatibility (issue #28)", () => {
     // auth.json stays exactly as `ModelRuntime.create()` initialized it, with no
     // openai-codex entry.
     expect(JSON.parse(await readFile(authPath, "utf8"))).toEqual({});
+  });
+});
+
+// Grounds issue #27 (custom OpenAI-compatible providers) against the real SDK. A
+// throwaway repro script against the installed @earendil-works/pi-coding-agent@0.84.2
+// established three load-bearing facts this suite locks in: (1) a models.json-only
+// provider with no "apiKey"/"oauth" field still
+// gets a fabricated `auth.apiKey` login method from `composeApiKeyAuth()`, so the
+// existing `provider.connectApiKey`/`verify`/`disconnect` commands work against a
+// custom provider completely unmodified; (2) `ModelRuntime.refresh()` re-reads
+// models.json from disk on every call, so writing a new/edited/removed provider and
+// calling refresh (the same "refresh, don't recreate" path #26/#29 already use for
+// auth.json) is picked up without recreating the runtime; (3) a provider entry that
+// fails Pi's structural validation (e.g. missing baseUrl and models) only drops that
+// one provider — but a genuine JSON-schema violation (e.g. a non-string "api") wipes
+// out every models.json-configured provider, which is exactly why
+// `CustomProviderStore`/`validateCustomProviderDefinition` validate strictly before
+// ever writing to disk.
+describe("Pi 0.84.2 custom OpenAI-compatible provider compatibility (issue #27)", () => {
+  it("registers a custom provider through models.json, connects an API key through the existing runtime auth path, and removal makes it disappear from the live catalog", async () => {
+    const root = await temporaryDirectory();
+    const authPath = join(root, "auth.json");
+    const modelsPath = join(root, "models.json");
+    const store = new CustomProviderStore(join(root, "apple-pi-custom-providers.json"), modelsPath);
+    const runtime = await ModelRuntime.create({ authPath, modelsPath, allowModelNetwork: false, refreshOnCreate: true });
+    const service = new PiProviderService(
+      async () => runtime,
+      fetch,
+      undefined,
+      undefined,
+      () => store,
+    );
+
+    const definition = {
+      id: "my-local-llm",
+      name: "My Local LLM",
+      baseUrl: "https://localhost:8080/v1",
+      api: "openai-completions" as const,
+      models: [{ id: "local-model-a", name: "Local Model A", contextWindow: 8192, maxTokens: 2048 }],
+    };
+
+    const added = await service.addCustomProvider(definition, "add-1", 5_000);
+    expect(added.diagnostics).toEqual([]);
+    expect(added.provider).toMatchObject({ id: "my-local-llm", name: "My Local LLM", status: "disconnected", authMethods: ["api_key"] });
+
+    // The provider's models.json entry never carries a secret.
+    const rawModelsJson = await readFile(modelsPath, "utf8");
+    expect(rawModelsJson).not.toContain("apiKey");
+
+    // The existing, unmodified `connectApiKey` path already works against it because
+    // `composeApiKeyAuth()` always fabricates an api_key auth method for a provider
+    // with no oauth configured, even when models.json sets no "apiKey" field.
+    const connected = await service.connectApiKey("my-local-llm", "sk-local-secret", "connect-1", 5_000);
+    expect(connected.diagnostics).toEqual([]);
+    expect(connected.provider).toMatchObject({ id: "my-local-llm", status: "connected", credentialSource: "apple_pi" });
+    expect(JSON.stringify(connected)).not.toContain("sk-local-secret");
+
+    const models = (await service.refresh(undefined, "refresh-1", 5_000)).models;
+    expect(models).toContainEqual({ provider: "my-local-llm", modelId: "local-model-a", name: "Local Model A" });
+
+    const removed = await service.removeCustomProvider("my-local-llm", "remove-1", 5_000);
+    expect(removed.diagnostics).toEqual([]);
+    expect(removed.provider).toBeUndefined();
+    expect((await service.list()).some((provider) => provider.id === "my-local-llm")).toBe(false);
+    expect(JSON.parse(await readFile(modelsPath, "utf8")).providers["my-local-llm"]).toBeUndefined();
+  });
+
+  it("keeps a pre-existing hand-written provider entry intact when adding and removing an unrelated custom provider", async () => {
+    const root = await temporaryDirectory();
+    const authPath = join(root, "auth.json");
+    const modelsPath = join(root, "models.json");
+    await writeFile(
+      modelsPath,
+      JSON.stringify({ providers: { "hand-written": { baseUrl: "https://hand-written.invalid/v1", api: "openai-completions", models: [{ id: "m1" }] } } }),
+    );
+    const store = new CustomProviderStore(join(root, "apple-pi-custom-providers.json"), modelsPath);
+    const runtime = await ModelRuntime.create({ authPath, modelsPath, allowModelNetwork: false, refreshOnCreate: true });
+    const service = new PiProviderService(
+      async () => runtime,
+      fetch,
+      undefined,
+      undefined,
+      () => store,
+    );
+
+    await service.addCustomProvider(
+      { id: "apple-pi-added", name: "Apple Pi Added", baseUrl: "https://apple-pi-added.invalid/v1", api: "openai-completions", models: [{ id: "m1" }] },
+      "add-1",
+      5_000,
+    );
+    await service.removeCustomProvider("apple-pi-added", "remove-1", 5_000);
+
+    const raw = JSON.parse(await readFile(modelsPath, "utf8"));
+    expect(raw.providers["hand-written"]).toEqual({ baseUrl: "https://hand-written.invalid/v1", api: "openai-completions", models: [{ id: "m1" }] });
+    expect(raw.providers["apple-pi-added"]).toBeUndefined();
   });
 });

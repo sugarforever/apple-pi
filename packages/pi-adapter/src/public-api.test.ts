@@ -1,6 +1,6 @@
 import { describe, expect, expectTypeOf, it } from "vitest";
-import type { ApplePiMessage, ApplePiSessionEvent, ModelItem, SessionItem, SessionSnapshot } from "@apple-pi/protocol";
-import { mapPiEvent, mapPiMessages, mapPiModel, mapPiSessionItem, type PiSessionService } from "./index.js";
+import type { ApplePiMessage, ApplePiSessionEvent, CustomProviderDefinition, ModelItem, SessionItem, SessionSnapshot } from "@apple-pi/protocol";
+import { mapPiEvent, mapPiMessages, mapPiModel, mapPiSessionItem, type PiProviderService, type PiSessionService } from "./index.js";
 
 describe("Pi adapter public API", () => {
   it("exports mappers whose outputs are owned by Apple Pi", () => {
@@ -17,5 +17,9 @@ describe("Pi adapter public API", () => {
     expectTypeOf<PiSessionService["open"]>().returns.resolves.toEqualTypeOf<SessionSnapshot>();
     expectTypeOf<PiSessionService["setModel"]>().returns.resolves.toEqualTypeOf<SessionSnapshot>();
     expectTypeOf<PiSessionService["snapshot"]>().returns.toEqualTypeOf<SessionSnapshot>();
+  });
+
+  it("exposes custom-provider management with non-secret result types", () => {
+    expectTypeOf<PiProviderService["listCustomProviders"]>().returns.resolves.toEqualTypeOf<CustomProviderDefinition[]>();
   });
 });

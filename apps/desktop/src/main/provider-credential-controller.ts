@@ -67,6 +67,32 @@ export class ProviderCredentialController {
     return this.host.request("provider.respondOAuthPrompt", input);
   }
 
+  listCustomProviders(): Promise<HostCommandResults["provider.listCustom"]> {
+    return this.host.request("provider.listCustom", {});
+  }
+
+  addCustomProvider(input: HostCommandPayloads["provider.addCustom"]): Promise<ProviderOperationResult> {
+    return this.host.request("provider.addCustom", input);
+  }
+
+  updateCustomProvider(input: HostCommandPayloads["provider.updateCustom"]): Promise<ProviderOperationResult> {
+    return this.host.request("provider.updateCustom", input);
+  }
+
+  // Removing a custom provider deletes its models.json entry entirely, so any
+  // stored API key for it becomes meaningless: it can never be provided again
+  // once the provider is gone. Purging it here mirrors `disconnect()`'s own
+  // `finally` block above, and runs regardless of whether the host-side removal
+  // reported an error, so a credential never outlives the provider it belongs to.
+  async removeCustomProvider(input: HostCommandPayloads["provider.removeCustom"]): Promise<ProviderOperationResult> {
+    try {
+      return await this.host.request("provider.removeCustom", input);
+    } finally {
+      this.provisioned.delete(input.id);
+      await this.credentials.delete(input.id);
+    }
+  }
+
   async refresh(providerIds: string[] | undefined, input: { operationId: string; timeoutMs: number }) {
     const selected = providerIds ?? this.credentials.list().map((item) => item.providerId);
     await Promise.all(selected.map((providerId) => this.provide(providerId)));

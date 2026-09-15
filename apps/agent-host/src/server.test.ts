@@ -210,4 +210,82 @@ describe("HostServer", () => {
     expect(response).toEqual({ protocolVersion: 1, requestId: "oauth-bad-event", ok: false, error: "Provider operation failed" });
     expect(events).toEqual([]);
   });
+
+  const customDefinition = {
+    id: "my-local-llm",
+    name: "My Local LLM",
+    baseUrl: "https://localhost:8080/v1",
+    api: "openai-completions",
+    models: [{ id: "local-model-a" }],
+  };
+
+  it("lists custom providers from the provider service", async () => {
+    const server = new HostServer();
+    const service = (server as unknown as { pi: { providers: { listCustomProviders: () => Promise<unknown> } } }).pi.providers;
+    service.listCustomProviders = vi.fn(async () => [customDefinition]);
+
+    const response = await server.handle({ protocolVersion: 1, requestId: "list-custom", type: "provider.listCustom", payload: {} });
+
+    expect(response).toEqual({ protocolVersion: 1, requestId: "list-custom", ok: true, result: [customDefinition] });
+  });
+
+  it("routes add/update/remove custom provider commands to the provider service", async () => {
+    const server = new HostServer();
+    const service = (
+      server as unknown as {
+        pi: {
+          providers: {
+            addCustomProvider: (...args: unknown[]) => Promise<unknown>;
+            updateCustomProvider: (...args: unknown[]) => Promise<unknown>;
+            removeCustomProvider: (...args: unknown[]) => Promise<unknown>;
+          };
+        };
+      }
+    ).pi.providers;
+    service.addCustomProvider = vi.fn(async () => ({ diagnostics: [] }));
+    service.updateCustomProvider = vi.fn(async () => ({ diagnostics: [] }));
+    service.removeCustomProvider = vi.fn(async () => ({ diagnostics: [] }));
+
+    await server.handle({
+      protocolVersion: 1,
+      requestId: "add-custom",
+      type: "provider.addCustom",
+      payload: { definition: customDefinition, operationId: "op-1", timeoutMs: 5_000 },
+    });
+    expect(service.addCustomProvider).toHaveBeenCalledWith(customDefinition, "op-1", 5_000);
+
+    await server.handle({
+      protocolVersion: 1,
+      requestId: "update-custom",
+      type: "provider.updateCustom",
+      payload: { id: "my-local-llm", definition: customDefinition, operationId: "op-2", timeoutMs: 5_000 },
+    });
+    expect(service.updateCustomProvider).toHaveBeenCalledWith("my-local-llm", customDefinition, "op-2", 5_000);
+
+    await server.handle({
+      protocolVersion: 1,
+      requestId: "remove-custom",
+      type: "provider.removeCustom",
+      payload: { id: "my-local-llm", operationId: "op-3", timeoutMs: 5_000 },
+    });
+    expect(service.removeCustomProvider).toHaveBeenCalledWith("my-local-llm", "op-3", 5_000);
+  });
+
+  it("sanitizes a custom provider operation failure the same way as other provider operations", async () => {
+    const server = new HostServer();
+    const service = (server as unknown as { pi: { providers: { addCustomProvider: () => Promise<unknown> } } }).pi.providers;
+    service.addCustomProvider = vi.fn(async () => {
+      throw new Error("sk-private failure");
+    });
+
+    const response = await server.handle({
+      protocolVersion: 1,
+      requestId: "add-custom-fail",
+      type: "provider.addCustom",
+      payload: { definition: customDefinition, operationId: "op-1", timeoutMs: 5_000 },
+    });
+
+    expect(response).toEqual({ protocolVersion: 1, requestId: "add-custom-fail", ok: false, error: "Provider operation failed" });
+    expect(JSON.stringify(response)).not.toContain("sk-private");
+  });
 });

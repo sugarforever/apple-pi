@@ -9,7 +9,7 @@ import { CredentialBroker, CredentialFile } from "./credential-broker.js";
 import { ProviderCredentialController } from "./provider-credential-controller.js";
 import { attachFileLogging, log } from "./logger.js";
 import { applyProcessHardening, applySessionPolicy, applyWindowPolicy } from "./security.js";
-import type { SessionSnapshot } from "@apple-pi/protocol";
+import type { CustomProviderDefinition, SessionSnapshot } from "@apple-pi/protocol";
 
 // Must run before `app.whenReady()` resolves.
 //
@@ -251,6 +251,19 @@ handle("provider:respondOAuthPrompt", async (_event, value: unknown) => {
   const input = oauthPromptResponse(value);
   return providerCredentials.respondOAuthPrompt(input);
 });
+handle("provider:listCustom", () => providerCredentials.listCustomProviders());
+handle("provider:addCustom", async (_event, value: unknown) => {
+  const input = customProviderAddOperation(value);
+  return providerCredentials.addCustomProvider(input);
+});
+handle("provider:updateCustom", async (_event, value: unknown) => {
+  const input = customProviderUpdateOperation(value);
+  return providerCredentials.updateCustomProvider(input);
+});
+handle("provider:removeCustom", async (_event, value: unknown) => {
+  const input = customProviderRemoveOperation(value);
+  return providerCredentials.removeCustomProvider(input);
+});
 
 function validModel(value: unknown): ModelRef {
   if (!value || typeof value !== "object" || typeof (value as ModelRef).provider !== "string" || typeof (value as ModelRef).modelId !== "string")
@@ -299,6 +312,35 @@ function oauthLoginOperation(value: unknown): { providerId: string; operationId:
   if (typeof operationId !== "string" || !operationId || !Number.isInteger(timeoutMs) || (timeoutMs as number) < 100 || (timeoutMs as number) > 1_200_000)
     throw new Error("Invalid operation");
   return { providerId, operationId, timeoutMs: timeoutMs as number };
+}
+
+// A shallow IPC-boundary check only: the full shape (id charset, base URL, api
+// type, model definitions) is enforced by the protocol schema once this crosses
+// to the agent host (`decodeHostMessage`), matching `providerOperation()` above,
+// which similarly defers rich validation to that same boundary.
+function customProviderDefinitionInput(value: unknown): CustomProviderDefinition {
+  if (!value || typeof value !== "object") throw new Error("Invalid provider definition");
+  return value as CustomProviderDefinition;
+}
+
+function customProviderAddOperation(value: unknown): { definition: CustomProviderDefinition; operationId: string; timeoutMs: number } {
+  const base = operation(value);
+  const { definition } = value as { definition?: unknown };
+  return { definition: customProviderDefinitionInput(definition), ...base };
+}
+
+function customProviderUpdateOperation(value: unknown): { id: string; definition: CustomProviderDefinition; operationId: string; timeoutMs: number } {
+  const base = operation(value);
+  const { id, definition } = value as { id?: unknown; definition?: unknown };
+  if (typeof id !== "string" || !id) throw new Error("Invalid provider id");
+  return { id, definition: customProviderDefinitionInput(definition), ...base };
+}
+
+function customProviderRemoveOperation(value: unknown): { id: string; operationId: string; timeoutMs: number } {
+  const base = operation(value);
+  const { id } = value as { id?: unknown };
+  if (typeof id !== "string" || !id) throw new Error("Invalid provider id");
+  return { id, ...base };
 }
 
 function oauthPromptResponse(value: unknown): { operationId: string; promptId: string; value: string } {
