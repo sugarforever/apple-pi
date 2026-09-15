@@ -59,6 +59,8 @@
   uploads a curated artifact set. Shipping the runtime without that feed produces an
   updater that can never find an update, so it belongs in a change that also updates the
   release workflow and can be verified by a real tagged build.
-- **Reformatting the existing tree.** A dedicated, no-behaviour-change commit should run
-  `pnpm format` once, after which `format:check` can join `pnpm verify`.
+- **Reformatting the existing tree.** Landed as a dedicated, no-behaviour-change commit, and
+  `format:check` now runs in `pnpm verify` and the pull-request job. The reformat exposed two
+  assertions coupled to HTML serialization (`ui-contract.test.ts`, `security-policy.test.ts`);
+  both now match the tag's shape while still comparing its value exactly.
 - **Renderer update UI** for the `react-hooks/set-state-in-effect` warning.

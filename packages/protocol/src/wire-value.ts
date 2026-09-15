@@ -9,8 +9,13 @@ export function isJsonSerializable(value: unknown, ancestors = new Set<object>()
   const enumerableKeys = Object.keys(value);
   const ownKeys = Reflect.ownKeys(value);
   if (Array.isArray(value)) {
-    if (ownKeys.length !== enumerableKeys.length + 1 || ownKeys.at(-1) !== "length" ||
-        enumerableKeys.length !== value.length || enumerableKeys.some((key, index) => key !== String(index))) return false;
+    if (
+      ownKeys.length !== enumerableKeys.length + 1 ||
+      ownKeys.at(-1) !== "length" ||
+      enumerableKeys.length !== value.length ||
+      enumerableKeys.some((key, index) => key !== String(index))
+    )
+      return false;
   } else if (ownKeys.length !== enumerableKeys.length) {
     return false;
   }

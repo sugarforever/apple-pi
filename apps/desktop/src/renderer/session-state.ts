@@ -1,10 +1,4 @@
-import type {
-  ApplePiMessage,
-  ApplePiSessionEvent,
-  SessionSnapshot,
-  ToolCallContentPart,
-  ToolResultContentPart,
-} from "@apple-pi/protocol";
+import type { ApplePiMessage, ApplePiSessionEvent, SessionSnapshot, ToolCallContentPart, ToolResultContentPart } from "@apple-pi/protocol";
 
 export type SessionSyncState =
   | { status: "synced"; generation: number }
@@ -36,7 +30,9 @@ export type SessionAction =
   | { type: "error"; error: string }
   | { type: "user_message"; text: string };
 
-const unreachable = (value: never): never => { throw new Error(`Unhandled Apple Pi discriminator: ${String(value)}`); };
+const unreachable = (value: never): never => {
+  throw new Error(`Unhandled Apple Pi discriminator: ${String(value)}`);
+};
 type AssistantContentPart = Extract<ApplePiMessage, { role: "assistant" }>["content"][number];
 
 function withSnapshot(snapshot: SessionSnapshot, state: SessionState, sync: SessionSyncState): SessionState {
@@ -95,19 +91,37 @@ function applyEvent(state: SessionState, event: ApplePiSessionEvent): SessionSta
     case "tool_call": {
       const phase = event.phase;
       switch (phase) {
-        case "started": case "updated": case "completed": break;
-        default: unreachable(phase);
+        case "started":
+        case "updated":
+        case "completed":
+          break;
+        default:
+          unreachable(phase);
       }
       return { ...state, messages: upsertToolCall(state.messages, { type: "tool_call", id: event.id, name: event.name, arguments: event.arguments }) };
     }
     case "tool_result":
-      return { ...state, messages: upsertToolResult(state.messages, { type: "tool_result", toolCallId: event.id, name: event.name, output: event.output, isError: event.isError }) };
+      return {
+        ...state,
+        messages: upsertToolResult(state.messages, {
+          type: "tool_result",
+          toolCallId: event.id,
+          name: event.name,
+          output: event.output,
+          isError: event.isError,
+        }),
+      };
     case "lifecycle":
       switch (event.phase) {
-        case "started": return state.opened ? { ...state, running: true, error: undefined } : state;
-        case "completed": case "cancelled": return { ...state, running: false };
-        case "failed": return { ...state, running: false, error: event.message ?? "Agent run failed" };
-        default: return unreachable(event);
+        case "started":
+          return state.opened ? { ...state, running: true, error: undefined } : state;
+        case "completed":
+        case "cancelled":
+          return { ...state, running: false };
+        case "failed":
+          return { ...state, running: false, error: event.message ?? "Agent run failed" };
+        default:
+          return unreachable(event);
       }
     case "resync_required":
       return { ...state, sync: { status: "resyncing", generation: state.sync.generation + 1, dirty: false } };

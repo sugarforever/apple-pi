@@ -9,11 +9,22 @@ import { setLogLevel } from "./logger.js";
 setLogLevel("error");
 
 class FakeStorage implements ProtectedStorage {
-  constructor(private readonly backend = "keychain", private readonly available = true) {}
-  isEncryptionAvailable(): boolean { return this.available; }
-  selectedBackend(): string { return this.backend; }
-  encryptString(value: string): Buffer { return Buffer.from(`protected:${[...value].reverse().join("")}`); }
-  decryptString(value: Buffer): string { return [...value.toString().slice("protected:".length)].reverse().join(""); }
+  constructor(
+    private readonly backend = "keychain",
+    private readonly available = true,
+  ) {}
+  isEncryptionAvailable(): boolean {
+    return this.available;
+  }
+  selectedBackend(): string {
+    return this.backend;
+  }
+  encryptString(value: string): Buffer {
+    return Buffer.from(`protected:${[...value].reverse().join("")}`);
+  }
+  decryptString(value: Buffer): string {
+    return [...value.toString().slice("protected:".length)].reverse().join("");
+  }
 }
 
 async function fixture(platform: NodeJS.Platform = "darwin", backend = "keychain", available = true) {
@@ -98,21 +109,33 @@ describe("CredentialBroker", () => {
     const { broker } = await fixture();
     await Promise.all([broker.setApiKey("openai", "first-secret"), broker.setApiKey("deepseek", "second-secret")]);
 
-    expect(broker.list().map((item) => item.providerId).sort()).toEqual(["deepseek", "openai"]);
+    expect(
+      broker
+        .list()
+        .map((item) => item.providerId)
+        .sort(),
+    ).toEqual(["deepseek", "openai"]);
     expect(await broker.withApiKey("openai", async (value) => value)).toBe("first-secret");
     expect(await broker.withApiKey("deepseek", async (value) => value)).toBe("second-secret");
   });
 });
 
 describe("storagePolicy", () => {
-  it.each([["darwin", "keychain"], ["win32", "dpapi"], ["linux", "gnome_libsecret"], ["linux", "kwallet6"]] as const)("persists on %s with %s", (platform, backend) => {
+  it.each([
+    ["darwin", "keychain"],
+    ["win32", "dpapi"],
+    ["linux", "gnome_libsecret"],
+    ["linux", "kwallet6"],
+  ] as const)("persists on %s with %s", (platform, backend) => {
     expect(storagePolicy(platform, new FakeStorage(backend))).toBe("persistent");
   });
 
-  it.each([["darwin", "keychain"], ["win32", "dpapi"], ["linux", "basic_text"], ["linux", "unknown"]] as const)(
-    "falls back to session storage on %s with %s when OS protection is unavailable",
-    (platform, backend) => {
-      expect(storagePolicy(platform, new FakeStorage(backend, false))).toBe("session");
-    },
-  );
+  it.each([
+    ["darwin", "keychain"],
+    ["win32", "dpapi"],
+    ["linux", "basic_text"],
+    ["linux", "unknown"],
+  ] as const)("falls back to session storage on %s with %s when OS protection is unavailable", (platform, backend) => {
+    expect(storagePolicy(platform, new FakeStorage(backend, false))).toBe("session");
+  });
 });

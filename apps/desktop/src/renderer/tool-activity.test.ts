@@ -25,7 +25,7 @@ describe("tool activity timeline", () => {
         id: "call-1",
         name: "bash",
         summary: "ls -la",
-        argumentsText: "{\n  \"command\": \"ls -la\"\n}",
+        argumentsText: '{\n  "command": "ls -la"\n}',
         outputParts: [{ kind: "text", text: "total 0" }],
         status: "success",
       },
@@ -49,7 +49,13 @@ describe("tool activity timeline", () => {
   it("keeps user and assistant text while omitting thinking content", () => {
     const messages = [
       { role: "user", content: [{ type: "text", text: "What changed?" }] },
-      { role: "assistant", content: [{ type: "thinking", text: "Do not display" }, { type: "text", text: "Two files changed." }] },
+      {
+        role: "assistant",
+        content: [
+          { type: "thinking", text: "Do not display" },
+          { type: "text", text: "Two files changed." },
+        ],
+      },
     ] satisfies ApplePiMessage[];
     const items = toTimelineItems(messages);
 
@@ -61,8 +67,25 @@ describe("tool activity timeline", () => {
 
   it("preserves image output and distinguishes an empty completed result", () => {
     const messages = [
-      { role: "assistant", content: [{ type: "tool_call", id: "image", name: "screenshot", arguments: {} }, { type: "tool_call", id: "empty", name: "write", arguments: {} }] },
-      { role: "tool", content: [{ type: "tool_result", toolCallId: "image", name: "screenshot", output: [{ type: "image", data: "aW1hZ2U=", mimeType: "image/png" }], isError: false }] },
+      {
+        role: "assistant",
+        content: [
+          { type: "tool_call", id: "image", name: "screenshot", arguments: {} },
+          { type: "tool_call", id: "empty", name: "write", arguments: {} },
+        ],
+      },
+      {
+        role: "tool",
+        content: [
+          {
+            type: "tool_result",
+            toolCallId: "image",
+            name: "screenshot",
+            output: [{ type: "image", data: "aW1hZ2U=", mimeType: "image/png" }],
+            isError: false,
+          },
+        ],
+      },
       { role: "tool", content: [{ type: "tool_result", toolCallId: "empty", name: "write", output: [], isError: false }] },
     ] satisfies ApplePiMessage[];
     const items = toTimelineItems(messages);

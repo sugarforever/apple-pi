@@ -62,11 +62,13 @@ husky pre-commit hook, so the usual loop is to commit and let the hook fix what 
 corepack pnpm lint
 corepack pnpm lint:fix
 corepack pnpm format
+corepack pnpm format:check
 ```
 
-Prettier is being adopted incrementally: files are reformatted as they are touched rather
-than in one repository-wide commit, so `pnpm format` is safe to run on the files you are
-already changing. A dedicated reformat commit will let `format:check` join `pnpm verify`.
+`pnpm format:check` is part of `pnpm verify`, so the tree is expected to be clean; run
+`pnpm format` before committing if the hook could not. `docs/` and `CHANGELOG.md` are excluded
+from formatting because the documents under `docs/` are historical records, and reformatting
+them obscures review of what they actually say.
 
 Commit subjects follow [Conventional Commits](https://www.conventionalcommits.org/) and
 are enforced by commitlint, for example `fix(desktop): reject IPC from unknown frames`.
@@ -81,11 +83,11 @@ corepack pnpm package:win
 corepack pnpm package:linux
 ```
 
-| Platform | Architecture | Outputs |
-| --- | --- | --- |
-| macOS | Current runner (`arm64` or `x64`) | DMG, ZIP |
-| Windows | `x64` | NSIS installer, portable EXE |
-| Linux | `x64` | AppImage, DEB |
+| Platform | Architecture                      | Outputs                      |
+| -------- | --------------------------------- | ---------------------------- |
+| macOS    | Current runner (`arm64` or `x64`) | DMG, ZIP                     |
+| Windows  | `x64`                             | NSIS installer, portable EXE |
+| Linux    | `x64`                             | AppImage, DEB                |
 
 Local packages are written to `apps/desktop/release/`. Push a `v*` tag to run the
 [Package desktop workflow](.github/workflows/package-desktop.yml), which uploads

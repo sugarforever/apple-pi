@@ -4,7 +4,12 @@ import { AppCatalog } from "./app-catalog.js";
 describe("AppCatalog", () => {
   it("deduplicates workspaces and persists the default model", async () => {
     let stored = "";
-    const catalog = new AppCatalog({ read: async () => stored, write: async (value) => { stored = value; } });
+    const catalog = new AppCatalog({
+      read: async () => stored,
+      write: async (value) => {
+        stored = value;
+      },
+    });
     await catalog.addWorkspace("/tmp/a");
     await catalog.addWorkspace("/tmp/a");
     await catalog.setDefaultModel({ provider: "openai", modelId: "gpt-5" });

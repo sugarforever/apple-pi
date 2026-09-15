@@ -3,11 +3,7 @@ import type { SessionAction } from "./session-state.js";
 
 type SessionDispatch = (action: SessionAction) => void;
 
-export async function runSessionResync(
-  getSnapshot: () => Promise<SessionSnapshot>,
-  generation: number,
-  dispatch: SessionDispatch,
-): Promise<void> {
+export async function runSessionResync(getSnapshot: () => Promise<SessionSnapshot>, generation: number, dispatch: SessionDispatch): Promise<void> {
   try {
     const snapshot = await getSnapshot();
     dispatch({ type: "resync_snapshot", snapshot, generation });

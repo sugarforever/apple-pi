@@ -20,7 +20,7 @@
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "verify": "pnpm versions:check && pnpm lint && pnpm typecheck && pnpm test && pnpm docs:check",
+    "verify": "pnpm versions:check && pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm docs:check",
     "package:mac": "pnpm --filter @apple-pi/desktop package:mac",
     "package:win": "pnpm --filter @apple-pi/desktop package:win",
     "package:linux": "pnpm --filter @apple-pi/desktop package:linux",

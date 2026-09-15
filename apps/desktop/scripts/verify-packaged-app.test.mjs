@@ -17,14 +17,17 @@ test("starts the agent host from an extracted application archive and verifies i
   await writeFile(path.join(hostDir, "host-process.js"), "export {};\n");
   await writeFile(path.join(hostDir, "server.js"), "export {};\n");
   await writeFile(path.join(sourceDir, "package.json"), '{"type":"module"}\n');
-  await writeFile(path.join(hostDir, "index.js"), `
+  await writeFile(
+    path.join(hostDir, "index.js"),
+    `
     import readline from "node:readline";
     readline.createInterface({ input: process.stdin }).on("line", (line) => {
       const message = JSON.parse(line);
       if (message.type === "system.hello") process.stdout.write(JSON.stringify({ protocolVersion: 1, requestId: message.requestId, ok: true, result: { protocolVersion: 1, hostVersion: "0.1.0", piVersion: "0.84.2", capabilities: { sessionEvents: true, modelSelection: true, providerManagement: true, cancellableProviderOperations: true }, pid: process.pid } }) + "\\n");
       if (message.type === "system.shutdown") { process.stdout.write(JSON.stringify({ protocolVersion: 1, requestId: message.requestId, ok: true, result: {} }) + "\\n", () => process.exit(0)); }
     });
-  `);
+  `,
+  );
   await asar.createPackage(sourceDir, archivePath);
 
   const result = await verifyPackageArchive({ archivePath, expectedVersion: "0.1.0" });
@@ -45,18 +48,18 @@ test("fails promptly when the packaged host acknowledges shutdown without exitin
   await writeFile(path.join(hostDir, "host-process.js"), "export {};\n");
   await writeFile(path.join(hostDir, "server.js"), "export {};\n");
   await writeFile(path.join(sourceDir, "package.json"), '{"type":"module"}\n');
-  await writeFile(path.join(hostDir, "index.js"), `
+  await writeFile(
+    path.join(hostDir, "index.js"),
+    `
     import readline from "node:readline";
     readline.createInterface({ input: process.stdin }).on("line", (line) => {
       const message = JSON.parse(line);
       const result = message.type === "system.hello" ? { protocolVersion: 1, hostVersion: "0.1.0", piVersion: "0.84.2", capabilities: { sessionEvents: true, modelSelection: true, providerManagement: true, cancellableProviderOperations: true }, pid: process.pid } : {};
       process.stdout.write(JSON.stringify({ protocolVersion: 1, requestId: message.requestId, ok: true, result }) + "\\n");
     });
-  `);
+  `,
+  );
   await asar.createPackage(sourceDir, archivePath);
 
-  await assert.rejects(
-    verifyPackageArchive({ archivePath, expectedVersion: "0.1.0", shutdownTimeoutMs: 50 }),
-    /Packaged agent-host did not exit within 50ms/,
-  );
+  await assert.rejects(verifyPackageArchive({ archivePath, expectedVersion: "0.1.0", shutdownTimeoutMs: 50 }), /Packaged agent-host did not exit within 50ms/);
 });

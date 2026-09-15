@@ -40,8 +40,9 @@ export class CredentialFile {
 
   async read(): Promise<CredentialDocument> {
     let text: string;
-    try { text = await readFile(this.filePath, "utf8"); }
-    catch (error) {
+    try {
+      text = await readFile(this.filePath, "utf8");
+    } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return emptyDocument();
       throw error;
     }
@@ -112,18 +113,33 @@ export class CredentialBroker {
     this.initialized = true;
   }
 
-  storagePersistence(): CredentialPersistence { this.assertInitialized(); return this.persistence; }
+  storagePersistence(): CredentialPersistence {
+    this.assertInitialized();
+    return this.persistence;
+  }
 
   /** Undefined when the store is operating normally. */
-  storageIssue(): CredentialStorageIssue | undefined { this.assertInitialized(); return this.issue; }
+  storageIssue(): CredentialStorageIssue | undefined {
+    this.assertInitialized();
+    return this.issue;
+  }
 
   list(): CredentialMetadata[] {
     this.assertInitialized();
-    const persisted = this.persistence === "persistent" ? Object.entries(this.document.credentials).map(([providerId, item]) => ({
-      providerId, kind: item.kind, persistence: "persistent" as const, updatedAt: item.updatedAt,
-    })) : [];
+    const persisted =
+      this.persistence === "persistent"
+        ? Object.entries(this.document.credentials).map(([providerId, item]) => ({
+            providerId,
+            kind: item.kind,
+            persistence: "persistent" as const,
+            updatedAt: item.updatedAt,
+          }))
+        : [];
     const session = [...this.sessionCredentials].map(([providerId, item]) => ({
-      providerId, kind: "api_key" as const, persistence: "session" as const, updatedAt: item.updatedAt,
+      providerId,
+      kind: "api_key" as const,
+      persistence: "session" as const,
+      updatedAt: item.updatedAt,
     }));
     return [...persisted.filter((item) => !this.sessionCredentials.has(item.providerId)), ...session];
   }
@@ -227,7 +243,9 @@ export function storagePolicy(platform: NodeJS.Platform, storage: ProtectedStora
   return storage.isEncryptionAvailable() ? "persistent" : "session";
 }
 
-function emptyDocument(): CredentialDocument { return { version: 1, credentials: {} }; }
+function emptyDocument(): CredentialDocument {
+  return { version: 1, credentials: {} };
+}
 
 function assertProviderId(value: string): void {
   // Control characters are exactly what this rejects: they would corrupt the
@@ -243,7 +261,12 @@ function isCredentialDocument(value: unknown): value is CredentialDocument {
   return Object.entries(record.credentials).every(([providerId, item]) => {
     if (!providerId || !item || typeof item !== "object") return false;
     const credential = item as Partial<StoredCredential>;
-    return credential.kind === "api_key" && typeof credential.ciphertext === "string" && credential.ciphertext.length > 0
-      && typeof credential.updatedAt === "string" && Number.isFinite(Date.parse(credential.updatedAt));
+    return (
+      credential.kind === "api_key" &&
+      typeof credential.ciphertext === "string" &&
+      credential.ciphertext.length > 0 &&
+      typeof credential.updatedAt === "string" &&
+      Number.isFinite(Date.parse(credential.updatedAt))
+    );
   });
 }

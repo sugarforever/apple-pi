@@ -33,9 +33,7 @@ describe("PiSessionService lifecycle ownership", () => {
   it("releases a replaced streaming session once and blocks its stale events", async () => {
     const first = sessionDouble("first", true);
     const second = sessionDouble("second");
-    pi.createAgentSession
-      .mockResolvedValueOnce({ session: first.session })
-      .mockResolvedValueOnce({ session: second.session });
+    pi.createAgentSession.mockResolvedValueOnce({ session: first.session }).mockResolvedValueOnce({ session: second.session });
     const events = vi.fn();
     const service = new PiSessionService();
     service.onEvent(events);
@@ -54,9 +52,7 @@ describe("PiSessionService lifecycle ownership", () => {
 
   it("keeps the current session subscribed when replacement creation fails", async () => {
     const first = sessionDouble("first");
-    pi.createAgentSession
-      .mockResolvedValueOnce({ session: first.session })
-      .mockRejectedValueOnce(new Error("replacement failed"));
+    pi.createAgentSession.mockResolvedValueOnce({ session: first.session }).mockRejectedValueOnce(new Error("replacement failed"));
     const events = vi.fn();
     const service = new PiSessionService();
     service.onEvent(events);
@@ -77,14 +73,11 @@ describe("PiSessionService lifecycle ownership", () => {
     const first = sessionDouble("first");
     first.abort.mockRejectedValueOnce(new Error("abort hook failed"));
     const second = sessionDouble("second");
-    pi.createAgentSession
-      .mockResolvedValueOnce({ session: first.session })
-      .mockResolvedValueOnce({ session: second.session });
+    pi.createAgentSession.mockResolvedValueOnce({ session: first.session }).mockResolvedValueOnce({ session: second.session });
     const service = new PiSessionService();
 
     await service.open("/workspace", undefined, undefined, true);
-    await expect(service.open("/workspace", undefined, undefined, true))
-      .resolves.toMatchObject({ opened: true, sessionId: "second" });
+    await expect(service.open("/workspace", undefined, undefined, true)).resolves.toMatchObject({ opened: true, sessionId: "second" });
 
     expect(first.unsubscribe).toHaveBeenCalledOnce();
     expect(first.abort).toHaveBeenCalledOnce();
@@ -95,9 +88,7 @@ describe("PiSessionService lifecycle ownership", () => {
     const firstCreation = deferred<{ session: ReturnType<typeof sessionDouble>["session"] }>();
     const first = sessionDouble("first");
     const second = sessionDouble("second");
-    pi.createAgentSession
-      .mockImplementationOnce(() => firstCreation.promise)
-      .mockResolvedValueOnce({ session: second.session });
+    pi.createAgentSession.mockImplementationOnce(() => firstCreation.promise).mockResolvedValueOnce({ session: second.session });
     const service = new PiSessionService();
 
     const openingFirst = service.open("/first", undefined, undefined, true);
@@ -119,8 +110,7 @@ describe("PiSessionService lifecycle ownership", () => {
     const service = new PiSessionService();
     await service.open("/workspace", current.session.sessionFile);
 
-    await expect(service.open("/workspace", current.session.sessionFile))
-      .resolves.toMatchObject({ opened: true, sessionId: "current", running: true });
+    await expect(service.open("/workspace", current.session.sessionFile)).resolves.toMatchObject({ opened: true, sessionId: "current", running: true });
 
     expect(pi.createAgentSession).toHaveBeenCalledOnce();
     expect(current.unsubscribe).not.toHaveBeenCalled();
@@ -152,9 +142,7 @@ describe("PiSessionService lifecycle ownership", () => {
       getAvailableSnapshot: () => [],
       getModel: () => ({ provider: "test", id: "next-model", name: "Next Model" }),
     });
-    pi.createAgentSession
-      .mockResolvedValueOnce({ session: first.session })
-      .mockResolvedValueOnce({ session: second.session });
+    pi.createAgentSession.mockResolvedValueOnce({ session: first.session }).mockResolvedValueOnce({ session: second.session });
     const service = new PiSessionService();
     await service.open("/workspace", undefined, undefined, true);
 
@@ -187,7 +175,9 @@ describe("PiSessionService lifecycle ownership", () => {
 
   it("disposes a candidate whose subscription setup fails", async () => {
     const candidate = sessionDouble("candidate");
-    candidate.session.subscribe.mockImplementationOnce(() => { throw new Error("subscribe failed"); });
+    candidate.session.subscribe.mockImplementationOnce(() => {
+      throw new Error("subscribe failed");
+    });
     pi.createAgentSession.mockResolvedValueOnce({ session: candidate.session });
     const service = new PiSessionService();
 

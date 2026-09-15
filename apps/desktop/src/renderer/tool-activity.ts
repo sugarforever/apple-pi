@@ -2,9 +2,7 @@ import type { ApplePiMessage, JsonValue, ToolOutputPart as ProtocolToolOutputPar
 
 type MessageItem = { kind: "message"; role: "user" | "assistant"; text: string };
 export type ToolStatus = "running" | "success" | "error";
-export type ToolOutputPart =
-  | { kind: "text"; text: string }
-  | { kind: "image"; data: string; mimeType: string };
+export type ToolOutputPart = { kind: "text"; text: string } | { kind: "image"; data: string; mimeType: string };
 export type ToolItem = {
   kind: "tool";
   id: string;
@@ -16,7 +14,9 @@ export type ToolItem = {
 };
 export type TimelineItem = MessageItem | ToolItem;
 
-const unreachable = (value: never): never => { throw new Error(`Unhandled Apple Pi discriminator: ${String(value)}`); };
+const unreachable = (value: never): never => {
+  throw new Error(`Unhandled Apple Pi discriminator: ${String(value)}`);
+};
 type AssistantContentPart = Extract<ApplePiMessage, { role: "assistant" }>["content"][number];
 
 function toolSummary(argumentsValue: Record<string, JsonValue>): string {
@@ -28,9 +28,12 @@ function toolSummary(argumentsValue: Record<string, JsonValue>): string {
 
 function outputPart(part: ProtocolToolOutputPart): ToolOutputPart {
   switch (part.type) {
-    case "text": return { kind: "text", text: part.text };
-    case "image": return { kind: "image", data: part.data, mimeType: part.mimeType };
-    default: return unreachable(part);
+    case "text":
+      return { kind: "text", text: part.text };
+    case "image":
+      return { kind: "image", data: part.data, mimeType: part.mimeType };
+    default:
+      return unreachable(part);
   }
 }
 
@@ -42,15 +45,17 @@ function projectAssistantPart(part: AssistantContentPart, results: Map<string, T
       return [];
     case "tool_call": {
       const result = results.get(part.id);
-      return [{
-        kind: "tool",
-        id: part.id,
-        name: part.name,
-        summary: toolSummary(part.arguments),
-        argumentsText: JSON.stringify(part.arguments, null, 2),
-        outputParts: result ? result.output.map(outputPart) : [],
-        status: !result ? "running" : result.isError ? "error" : "success",
-      }];
+      return [
+        {
+          kind: "tool",
+          id: part.id,
+          name: part.name,
+          summary: toolSummary(part.arguments),
+          argumentsText: JSON.stringify(part.arguments, null, 2),
+          outputParts: result ? result.output.map(outputPart) : [],
+          status: !result ? "running" : result.isError ? "error" : "success",
+        },
+      ];
     }
     default:
       return unreachable(part);
@@ -61,11 +66,14 @@ export function toTimelineItems(messages: ApplePiMessage[]): TimelineItem[] {
   const results = new Map<string, ToolResultContentPart>();
   for (const message of messages) {
     switch (message.role) {
-      case "user": case "assistant": break;
+      case "user":
+      case "assistant":
+        break;
       case "tool":
         for (const result of message.content) results.set(result.toolCallId, result);
         break;
-      default: unreachable(message);
+      default:
+        unreachable(message);
     }
   }
 
@@ -73,7 +81,10 @@ export function toTimelineItems(messages: ApplePiMessage[]): TimelineItem[] {
   for (const message of messages) {
     switch (message.role) {
       case "user": {
-        const text = message.content.map((part) => part.text).filter(Boolean).join("\n");
+        const text = message.content
+          .map((part) => part.text)
+          .filter(Boolean)
+          .join("\n");
         if (text) items.push({ kind: "message", role: "user", text });
         break;
       }

@@ -16,9 +16,7 @@ export async function stageAgentHost({ sourceDir, destinationDir }) {
 
   await rm(destinationDir, { recursive: true, force: true });
   await mkdir(destinationDir, { recursive: true });
-  await Promise.all(REQUIRED_AGENT_HOST_FILES.map((file) => (
-    copyFile(path.join(sourceDir, file), path.join(destinationDir, file))
-  )));
+  await Promise.all(REQUIRED_AGENT_HOST_FILES.map((file) => copyFile(path.join(sourceDir, file), path.join(destinationDir, file))));
   return [...REQUIRED_AGENT_HOST_FILES];
 }
 
