@@ -155,6 +155,23 @@ describe("renderer visual contract", () => {
   });
 });
 
+describe("renderer model recovery contract", () => {
+  it("clears a stale default model after any authoritative model list load, not only after a manual refresh", () => {
+    expect(source).toContain("[models, catalog.defaultModel]");
+    expect(source).toContain("void window.applePi.model.clearDefault().then(setCatalog);");
+  });
+
+  it("guards provider-triggered model refreshes against stale out-of-order responses", () => {
+    expect(source).toContain("const modelsRefreshToken = useRef(0);");
+    expect(source).toContain("if (modelsRefreshToken.current !== token) return;");
+  });
+
+  it("tells the user when the active session's model is no longer available", () => {
+    expect(source).toContain("const activeModelUnavailable = state.opened && modelUnavailable(models, state.model);");
+    expect(source).toContain('className="model-unavailable-notice"');
+  });
+});
+
 describe("renderer feedback contract", () => {
   it("resyncs only after the reducer marks a gap or explicit resync event", () => {
     expect(source).toContain('if (state.sync.status !== "resyncing") return;');

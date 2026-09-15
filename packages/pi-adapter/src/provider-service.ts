@@ -30,6 +30,7 @@ type OperationOutcome<T> = { state: "completed"; value: T } | { state: "cancelle
 
 export class PiProviderService {
   private readonly operations = new Map<string, AbortController>();
+  private inFlightRefresh?: Promise<ModelCatalogRefreshResult>;
 
   constructor(
     private readonly runtime: () => Promise<RuntimeLike>,
@@ -115,7 +116,23 @@ export class PiProviderService {
     }
   }
 
+  // A refresh already in flight always ends up reading the full current
+  // provider/model list regardless of which providers it targeted, so a
+  // second caller can safely join it instead of racing another network
+  // round-trip. The joining caller's own operationId is never registered,
+  // so it cannot independently cancel just its share of the join.
   async refresh(providerIds: string[] | undefined, operationId: string, timeoutMs: number): Promise<ModelCatalogRefreshResult> {
+    if (this.inFlightRefresh) return this.inFlightRefresh;
+    const refreshing = this.performRefresh(providerIds, operationId, timeoutMs);
+    this.inFlightRefresh = refreshing;
+    try {
+      return await refreshing;
+    } finally {
+      if (this.inFlightRefresh === refreshing) this.inFlightRefresh = undefined;
+    }
+  }
+
+  private async performRefresh(providerIds: string[] | undefined, operationId: string, timeoutMs: number): Promise<ModelCatalogRefreshResult> {
     const outcome = await this.run(operationId, timeoutMs, async (signal) => {
       const runtime = await this.runtime();
       const result = await runtime.refresh({ allowNetwork: true, force: true, ...(providerIds ? { providers: providerIds } : {}), signal });
@@ -123,7 +140,19 @@ export class PiProviderService {
       return { providers: await this.list(signal), models: await this.models(), diagnostics };
     });
     if (outcome.state === "completed") return outcome.value;
-    return { providers: [], models: [], diagnostics: operationDiagnostics(outcome, "model_refresh_failed", "The model catalog could not be refreshed.") };
+    // The refresh attempt failed, timed out, or was cancelled: fall back to
+    // whatever the runtime already has cached rather than wiping the catalog
+    // the UI is currently showing.
+    const cached = await this.cachedCatalog();
+    return { ...cached, diagnostics: operationDiagnostics(outcome, "model_refresh_failed", "The model catalog could not be refreshed.") };
+  }
+
+  private async cachedCatalog(): Promise<{ providers: ProviderItem[]; models: ModelItem[] }> {
+    try {
+      return { providers: await this.list(), models: await this.models() };
+    } catch {
+      return { providers: [], models: [] };
+    }
   }
 
   cancel(operationId: string): boolean {

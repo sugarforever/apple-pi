@@ -27,6 +27,14 @@ export function firstActionableDiagnostic(result: ProviderOperationResult): Prov
   return result.diagnostics.find((item) => item.severity === "error") ?? result.diagnostics[0];
 }
 
+// A saved default or an already-open session's model can outlive the
+// provider it came from. `models.length === 0` is treated as "not loaded
+// yet" rather than "everything was removed", so a transient empty catalog
+// never triggers a false recovery.
+export function modelUnavailable(models: ModelItem[], ref: { provider: string; modelId: string } | undefined): boolean {
+  return Boolean(ref) && models.length > 0 && !models.some((model) => model.provider === ref!.provider && model.modelId === ref!.modelId);
+}
+
 export function ProviderSettings(props: ProviderSettingsProps) {
   const [query, setQuery] = useState("");
   const [editing, setEditing] = useState<string | null>(null);

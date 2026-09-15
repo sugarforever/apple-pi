@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useReducer, useState } from "react";
+import React, { useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   AlertCircle,
@@ -21,7 +21,7 @@ import { runSessionResync } from "../session-resync.js";
 import { initialSessionState, reduceSession } from "../session-state.js";
 import { toTimelineItems, type ToolItem } from "../tool-activity.js";
 import type { Catalog, ModelItem, ModelRef, SessionItem, WorkspaceOpenResult } from "../global.js";
-import { ProviderSettings } from "./provider-settings.js";
+import { ProviderSettings, modelUnavailable } from "./provider-settings.js";
 import "./styles.css";
 
 type UiSessionItem = SessionItem & { persisted: boolean };
@@ -86,6 +86,7 @@ function App() {
   const [pendingLabel, setPendingLabel] = useState("");
   const [notice, setNotice] = useState("");
   const [appError, setAppError] = useState("");
+  const modelsRefreshToken = useRef(0);
 
   const groupedModels = useMemo(() => {
     return models.reduce((groups, model) => {
@@ -94,6 +95,7 @@ function App() {
     }, new Map<string, ModelItem[]>());
   }, [models]);
   const timelineItems = useMemo(() => toTimelineItems(state.messages), [state.messages]);
+  const activeModelUnavailable = state.opened && modelUnavailable(models, state.model);
   const workspaceName = workspacePath.split("/").filter(Boolean).at(-1) ?? "No workspace";
   const activeSessionName = activeSessionId ? (sessions.find((session) => session.id === activeSessionId)?.name ?? "New session") : "Welcome to Apple Pi";
 
@@ -130,6 +132,14 @@ function App() {
       .catch(() => setProviders([]));
     return window.applePi.session.subscribe((event) => dispatch({ type: "event", sequence: event.sequence, payload: event.payload }));
   }, []);
+
+  // Runs after any authoritative model list load (startup, or a live refresh
+  // below), so a default model whose provider was disconnected or removed
+  // never keeps showing as selected once Apple Pi has evidence it is gone.
+  useEffect(() => {
+    if (!modelUnavailable(models, catalog.defaultModel)) return;
+    void window.applePi.model.clearDefault().then(setCatalog);
+  }, [models, catalog.defaultModel]);
 
   useEffect(() => {
     if (state.sync.status !== "resyncing") return;
@@ -406,14 +416,13 @@ function App() {
               onDisconnect={(providerId) => window.applePi.provider.disconnect(providerId)}
               onVerify={(providerId) => window.applePi.provider.verify(providerId)}
               onRefresh={async (providerId) => {
+                const token = ++modelsRefreshToken.current;
                 const refreshed = await window.applePi.provider.refreshModels([providerId]);
+                // A newer refresh already landed while this one was in flight; applying
+                // this stale result would clobber more current provider/model state.
+                if (modelsRefreshToken.current !== token) return;
                 setProviders(refreshed.providers);
                 setModels(refreshed.models);
-                if (
-                  catalog.defaultModel &&
-                  !refreshed.models.some((model) => model.provider === catalog.defaultModel?.provider && model.modelId === catalog.defaultModel?.modelId)
-                )
-                  setCatalog(await window.applePi.model.clearDefault());
               }}
               onDefaultModel={async (model) => {
                 setCatalog(await window.applePi.model.setDefault(model));
@@ -455,6 +464,11 @@ function App() {
                 </div>
               )}
             </section>
+            {activeModelUnavailable && (
+              <p className="model-unavailable-notice" role="status">
+                This session’s model is no longer available. Choose another model to continue.
+              </p>
+            )}
             <footer className="composer">
               <div className="input-toolbar">
                 <textarea

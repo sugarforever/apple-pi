@@ -177,8 +177,8 @@ handle("workspace:pick", async () => {
   const chosenPath = await import("node:fs/promises").then(({ realpath }) => realpath(result.filePaths[0]!));
   workspacePath = chosenPath;
   await catalog.addWorkspace(chosenPath);
-  const defaultModel = catalog.snapshot().defaultModel;
   const sessions = await host.request("session.list", { cwd: workspacePath });
+  const defaultModel = await resolvedDefaultModel();
   if (defaultModel?.provider) await providerCredentials.provide(defaultModel.provider);
   const session = await host.request("session.create", { cwd: workspacePath, ...defaultModel });
   return { catalog: catalog.snapshot(), workspacePath, sessions, session };
@@ -275,7 +275,19 @@ function providerOperation(value: unknown, withApiKey = false): { providerId: st
 
 async function createSession(): Promise<SessionSnapshot> {
   if (!workspacePath) throw new Error("Select a workspace first");
-  const defaultModel = catalog.snapshot().defaultModel;
+  const defaultModel = await resolvedDefaultModel();
   if (defaultModel?.provider) await providerCredentials.provide(defaultModel.provider);
   return host.request("session.create", { cwd: workspacePath, ...defaultModel });
+}
+
+// The saved default model can outlive its provider (removed credential,
+// disconnected provider). Clearing it here keeps `catalog.json` and every
+// renderer that reads `workspace:list` in sync with what will actually be
+// used, instead of quietly falling back to Pi's own default while Settings
+// keeps showing a phantom selection.
+async function resolvedDefaultModel(): Promise<ModelRef | undefined> {
+  const requested = catalog.snapshot().defaultModel;
+  const resolved = await providerCredentials.resolveDefaultModel(requested);
+  if (requested && !resolved) await catalog.clearDefaultModel();
+  return resolved;
 }

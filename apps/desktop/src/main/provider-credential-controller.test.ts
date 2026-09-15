@@ -82,4 +82,25 @@ describe("ProviderCredentialController", () => {
 
     expect(request).toHaveBeenLastCalledWith("provider.connectApiKey", expect.objectContaining({ apiKey: "existing-secret" }));
   });
+
+  it("resolves a default model that is still in the live catalog", async () => {
+    const { controller, request } = await setup();
+    request.mockImplementation(async (type: string) => (type === "model.list" ? [{ provider: "openai", modelId: "gpt-5", name: "GPT-5" }] : []));
+
+    await expect(controller.resolveDefaultModel({ provider: "openai", modelId: "gpt-5" })).resolves.toEqual({ provider: "openai", modelId: "gpt-5" });
+  });
+
+  it("clears a default model whose provider was disconnected or removed", async () => {
+    const { controller, request } = await setup();
+    request.mockImplementation(async (type: string) => (type === "model.list" ? [] : []));
+
+    await expect(controller.resolveDefaultModel({ provider: "openai", modelId: "gpt-5" })).resolves.toBeUndefined();
+  });
+
+  it("skips the host round-trip when there is no default model to resolve", async () => {
+    const { controller, request } = await setup();
+
+    await expect(controller.resolveDefaultModel(undefined)).resolves.toBeUndefined();
+    expect(request).not.toHaveBeenCalledWith("model.list", expect.anything());
+  });
 });

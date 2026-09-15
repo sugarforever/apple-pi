@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { HostCommandPayloads, HostCommandResults, HostCommandType, ProviderItem, ProviderOperationResult } from "@apple-pi/protocol";
 import type { CredentialBroker, CredentialStorageIssue } from "./credential-broker.js";
+import type { ModelRef } from "./app-catalog.js";
 
 export interface ProviderHost {
   request<Command extends HostCommandType>(type: Command, payload: HostCommandPayloads[Command]): Promise<HostCommandResults[Command]>;
@@ -59,6 +60,16 @@ export class ProviderCredentialController {
     const selected = providerIds ?? this.credentials.list().map((item) => item.providerId);
     await Promise.all(selected.map((providerId) => this.provide(providerId)));
     return this.host.request("model.refresh", { ...input, ...(providerIds ? { providerIds } : {}) });
+  }
+
+  // A stored default model can outlive the provider it came from (removed
+  // credential, disconnected provider, changed catalog). Callers that are
+  // about to act on a default model should resolve it first so a stale
+  // reference never silently reaches session creation.
+  async resolveDefaultModel(model: ModelRef | undefined): Promise<ModelRef | undefined> {
+    if (!model) return undefined;
+    const models = await this.host.request("model.list", {});
+    return models.some((item) => item.provider === model.provider && item.modelId === model.modelId) ? model : undefined;
   }
 
   async provide(providerId: string): Promise<boolean> {

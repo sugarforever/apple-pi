@@ -650,6 +650,15 @@ main > header {
   line-height: 20px;
 }
 
+.model-unavailable-notice {
+  margin: 0 max(28px, calc((100% - 820px) / 2)) 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #242019;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
 .composer {
   display: flex;
   gap: 9px;
