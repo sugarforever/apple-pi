@@ -105,7 +105,9 @@ describe("host protocol", () => {
   it("validates the complete closed host handshake", () => {
     const hello = {
       protocolVersion: 1,
-      hostVersion: "0.5.0",
+      // Arbitrary: this fixture asserts the schema shape, not a release. It must
+      // not track the application version, or every release has to edit it.
+      hostVersion: "0.0.0-fixture",
       piVersion: "0.84.2",
       capabilities: { sessionEvents: true, modelSelection: true, providerManagement: true, cancellableProviderOperations: true },
       pid: 42,
