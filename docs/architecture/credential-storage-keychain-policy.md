@@ -102,10 +102,12 @@ credential has to degrade gracefully:
 
 The middle row is why `storagePolicy` no longer throws. It previously did, which turned a
 denied keychain prompt — or a locked keychain — into an application that could not launch
-at all, with no path back for the user. Failing closed means "do not write to disk", which
-session-only storage already guarantees, so degrading is both safer and more usable.
-Degraded storage is surfaced as a `secure_storage_unavailable` diagnostic and logged at
-startup.
+at all, with no path back for the user. This is reachable rather than theoretical, because
+Electron documents `safeStorage.isEncryptionAvailable()` as returning "true if Keychain is
+available" on macOS, so a denied prompt makes it return false. Failing closed means "do not
+write to disk", which session-only storage already guarantees, so degrading is both safer
+and more usable. Degraded storage is surfaced as a `secure_storage_unavailable` diagnostic
+and logged at startup.
 
 Store mutations are serialized through a promise queue. Each is a read-modify-write of one
 document, so two overlapping connects would otherwise both write from the same base and
