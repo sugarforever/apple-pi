@@ -7,6 +7,7 @@ import {
   type HostEvent,
   type HostMessage,
   type HostResponse,
+  type ProviderAuthEvent,
 } from "@apple-pi/protocol";
 import { PI_VERSION, PiSessionService } from "@apple-pi/pi-adapter";
 
@@ -15,7 +16,7 @@ export const HOST_VERSION = "0.4.0" as const;
 export class HostServer {
   private readonly pi: PiSessionService;
   private closing?: Promise<void>;
-  constructor(onEvent: (event: HostEvent) => void = () => {}) {
+  constructor(private readonly onEvent: (event: HostEvent) => void = () => {}) {
     this.pi = new PiSessionService();
     let sequence = 0;
     this.pi.onEvent((payload) => {
@@ -27,8 +28,22 @@ export class HostServer {
       } catch {
         throw new HostProtocolFault();
       }
-      onEvent(record);
+      this.onEvent(record);
     });
+  }
+
+  // Pushed while a `provider.startOAuthLogin` operation is in flight, relaying
+  // Pi's `AuthInteraction` notify()/prompt() calls for that operationId.
+  private pushAuthEvent(operationId: string, payload: ProviderAuthEvent): void {
+    let record: HostEvent;
+    try {
+      const decoded = decodeHostRecord({ protocolVersion: PROTOCOL_VERSION, type: "provider.authEvent", operationId, payload });
+      if (!("type" in decoded)) throw new HostProtocolFault();
+      record = decoded;
+    } catch {
+      throw new HostProtocolFault();
+    }
+    this.onEvent(record);
   }
 
   async handle(input: unknown): Promise<HostResponse> {
@@ -102,6 +117,18 @@ export class HostServer {
           );
         case "operation.cancel":
           return success("operation.cancel", message.requestId, { cancelled: this.pi.providers.cancel(message.payload.operationId) });
+        case "provider.startOAuthLogin":
+          return success(
+            "provider.startOAuthLogin",
+            message.requestId,
+            await this.pi.providers.oauthLogin(message.payload.providerId, message.payload.operationId, message.payload.timeoutMs, (event) =>
+              this.pushAuthEvent(message.payload.operationId, event),
+            ),
+          );
+        case "provider.respondOAuthPrompt":
+          return success("provider.respondOAuthPrompt", message.requestId, {
+            accepted: this.pi.providers.respondOAuthPrompt(message.payload.operationId, message.payload.promptId, message.payload.value),
+          });
       }
     } catch (error) {
       return failure(message.requestId, isProviderCommand(message.type) ? new Error("Provider operation failed") : error);

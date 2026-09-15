@@ -185,6 +185,41 @@ describe("renderer credential reuse contract", () => {
   });
 });
 
+describe("renderer OAuth sign-in contract", () => {
+  const providers = readFileSync(new URL("./src/provider-settings.tsx", import.meta.url), "utf8");
+
+  it("offers a Sign in action for an oauth-capable provider that has no api_key method to fall back on", () => {
+    expect(providers).toContain("export function canStartOAuthLogin(provider: ProviderItem): boolean {");
+    expect(providers).toContain('provider.authMethods.includes("oauth") && provider.status !== "connected"');
+    expect(providers).toContain("{canStartOAuthLogin(provider) && !isOAuthActive && (");
+  });
+
+  it("relays every AuthInteraction step (auth url, device code, progress, and prompt) without ever rendering a raw token", () => {
+    expect(providers).toContain('latest?.type === "auth_url"');
+    expect(providers).toContain('latest?.type === "device_code"');
+    expect(providers).toContain('latest?.type === "progress"');
+    expect(providers).toContain('latest?.type === "prompt" && latest.prompt.type === "select"');
+    expect(providers).not.toContain("credential.access");
+    expect(providers).not.toContain("credential.refresh");
+  });
+
+  it("lets a select prompt answer with one click and a text/secret/manual_code prompt answer through a form", () => {
+    expect(providers).toContain("onClick={() => props.onSubmit(option.id)}");
+    expect(providers).toContain('type={latest.prompt.type === "secret" ? "password" : "text"}');
+  });
+
+  it("always offers a way to cancel an in-flight sign-in", () => {
+    expect(providers).toContain("Cancel sign-in");
+    expect(providers).toContain("onClick={props.onCancel}");
+  });
+
+  it("opens the system browser automatically for an auth_url step, from the main process rather than the renderer", () => {
+    const main = readFileSync(new URL("../main/index.ts", import.meta.url), "utf8");
+    expect(main).toContain('if (event.payload.type === "auth_url")');
+    expect(main).toContain("void shell.openExternal(event.payload.url)");
+  });
+});
+
 describe("renderer feedback contract", () => {
   it("resyncs only after the reducer marks a gap or explicit resync event", () => {
     expect(source).toContain('if (state.sync.status !== "resyncing") return;');

@@ -1,12 +1,48 @@
+import { randomUUID } from "node:crypto";
 import { join } from "node:path";
-import type { CredentialSource, ModelCatalogRefreshResult, ModelItem, ProviderDiagnostic, ProviderItem, ProviderOperationResult } from "@apple-pi/protocol";
+import type {
+  CredentialSource,
+  ModelCatalogRefreshResult,
+  ModelItem,
+  ProviderAuthEvent,
+  ProviderDiagnostic,
+  ProviderItem,
+  ProviderOperationResult,
+} from "@apple-pi/protocol";
 import { getAgentDir, readStoredCredential } from "@earendil-works/pi-coding-agent";
-import { mapPiModel } from "./mappers.js";
+import { mapPiAuthEvent, mapPiAuthPrompt, mapPiModel } from "./mappers.js";
 
 interface RuntimeProvider {
   id: string;
   name: string;
   auth: { apiKey?: unknown; oauth?: unknown };
+}
+
+// Mirrors `@earendil-works/pi-ai`'s `AuthPrompt`/`AuthEvent`/`AuthInteraction`
+// (see `auth/types.ts`) without importing them: `ModelRuntime.login()` takes an
+// interaction object shaped like this, not an SDK-exported class.
+interface RuntimeAuthPrompt {
+  signal?: AbortSignal;
+  type: "text" | "secret" | "manual_code";
+  message: string;
+  placeholder?: string;
+}
+interface RuntimeAuthSelectPrompt {
+  signal?: AbortSignal;
+  type: "select";
+  message: string;
+  options: readonly { id: string; label: string; description?: string }[];
+}
+type RuntimeAuthPromptInput = RuntimeAuthPrompt | RuntimeAuthSelectPrompt;
+type RuntimeAuthEvent =
+  | { type: "info"; message: string; links?: readonly { url: string; label?: string }[] }
+  | { type: "auth_url"; url: string; instructions?: string }
+  | { type: "device_code"; userCode: string; verificationUri: string; intervalSeconds?: number; expiresInSeconds?: number }
+  | { type: "progress"; message: string };
+interface RuntimeAuthInteraction {
+  signal?: AbortSignal;
+  prompt(prompt: RuntimeAuthPromptInput): Promise<string>;
+  notify(event: RuntimeAuthEvent): void;
 }
 
 // Mirrors the "source" values a real ModelRuntime.getProviderAuthStatus() reports:
@@ -31,6 +67,12 @@ interface RuntimeLike {
   setRuntimeApiKey(providerId: string, apiKey: string, options?: { signal?: AbortSignal }): Promise<void>;
   removeRuntimeApiKey(providerId: string, options?: { signal?: AbortSignal }): Promise<void>;
   logout(providerId: string, options?: { signal?: AbortSignal }): Promise<void>;
+  // Drives Pi's own OAuth implementation (PKCE + loopback callback server for
+  // openai-codex) end to end; on success it persists the credential itself into
+  // the same auth.json a `pi auth login` run from a terminal would write to
+  // (see `Models.login()` in `@earendil-works/pi-ai`). Apple Pi never sees or
+  // stores the resulting token.
+  login(providerId: string, type: "oauth", interaction: RuntimeAuthInteraction): Promise<unknown>;
   refresh(options?: {
     allowNetwork?: boolean;
     providers?: readonly string[];
@@ -50,6 +92,7 @@ interface RawCredential {
 
 export class PiProviderService {
   private readonly operations = new Map<string, AbortController>();
+  private readonly pendingOAuthPrompts = new Map<string, { promptId: string; resolve: (value: string) => void; reject: (error: unknown) => void }>();
   private inFlightRefresh?: Promise<ModelCatalogRefreshResult>;
 
   constructor(
@@ -61,6 +104,9 @@ export class PiProviderService {
     // pointed at a non-default agent directory (or a temp fixture) stay consistent.
     private readonly rawCredential: (providerId: string) => RawCredential | undefined = (providerId) =>
       readStoredCredential(providerId, join(getAgentDir(), "auth.json")),
+    // Correlates a pushed "prompt" auth event with the `provider.respondOAuthPrompt`
+    // call that answers it. Injectable for deterministic test fixtures.
+    private readonly generatePromptId: () => string = () => randomUUID(),
   ) {}
 
   async list(signal?: AbortSignal): Promise<ProviderItem[]> {
@@ -116,6 +162,62 @@ export class PiProviderService {
       if (!auth) return { diagnostics: [diagnostic("authentication_required", "No usable credential is configured for this provider.", "connect")] };
       const verification = await this.verifyCredential(runtime, providerId, signal);
       return { diagnostics: verification ? [verification] : [] };
+    });
+  }
+
+  // Drives Pi's own interactive OAuth login (see `RuntimeAuthInteraction` above)
+  // and relays every notify()/prompt() call as a `provider.authEvent` via
+  // `onEvent`. A `prompt()` call blocks on `respondOAuthPrompt()` being called
+  // with a matching promptId; cancelling this operation (or its timeout)
+  // rejects any prompt still waiting on an answer instead of leaking it.
+  async oauthLogin(providerId: string, operationId: string, timeoutMs: number, onEvent: (event: ProviderAuthEvent) => void): Promise<ProviderOperationResult> {
+    return this.providerOperation(providerId, operationId, timeoutMs, async (runtime, signal) => {
+      const provider = runtime.getProvider(providerId);
+      if (!provider) return providerNotFound();
+      if (!provider.auth.oauth) return { diagnostics: [diagnostic("authentication_failed", "This provider does not support sign-in.", "connect")] };
+      await runtime.login(providerId, "oauth", {
+        signal,
+        notify: (event) => onEvent(mapPiAuthEvent(event)),
+        prompt: (prompt) => this.awaitOAuthPrompt(operationId, prompt, signal, onEvent),
+      });
+      return { diagnostics: [] };
+    });
+  }
+
+  // Answers a prompt raised by an in-flight `oauthLogin` operation. Returns
+  // false for an unknown or already-answered/cancelled operationId/promptId
+  // pair instead of throwing, since a race between the user and a cancellation
+  // is an expected, harmless outcome rather than a protocol fault.
+  respondOAuthPrompt(operationId: string, promptId: string, value: string): boolean {
+    const pending = this.pendingOAuthPrompts.get(operationId);
+    if (!pending || pending.promptId !== promptId) return false;
+    pending.resolve(value);
+    return true;
+  }
+
+  private awaitOAuthPrompt(
+    operationId: string,
+    prompt: RuntimeAuthPromptInput,
+    signal: AbortSignal,
+    onEvent: (event: ProviderAuthEvent) => void,
+  ): Promise<string> {
+    const promptId = this.generatePromptId();
+    return new Promise<string>((resolve, reject) => {
+      const settle = (run: () => void): void => {
+        this.pendingOAuthPrompts.delete(operationId);
+        signal.removeEventListener("abort", onAbort);
+        prompt.signal?.removeEventListener("abort", onAbort);
+        run();
+      };
+      const onAbort = (): void => settle(() => reject(new DOMException("Operation aborted", "AbortError")));
+      this.pendingOAuthPrompts.set(operationId, { promptId, resolve: (value) => settle(() => resolve(value)), reject: (error) => settle(() => reject(error)) });
+      if (signal.aborted || prompt.signal?.aborted) {
+        onAbort();
+        return;
+      }
+      signal.addEventListener("abort", onAbort, { once: true });
+      prompt.signal?.addEventListener("abort", onAbort, { once: true });
+      onEvent(mapPiAuthPrompt(promptId, prompt));
     });
   }
 

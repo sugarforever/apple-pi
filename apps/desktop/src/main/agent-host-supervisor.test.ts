@@ -219,6 +219,35 @@ describe("agent host supervisor handshake", () => {
     expect(host.kill).not.toHaveBeenCalled();
   });
 
+  it("emits a provider auth event under its own name, leaving session.event listeners untouched", async () => {
+    const host = controllableHost();
+    const supervisor = new AgentHostSupervisor({
+      hostPath: () => "/fake/agent-host.js",
+      hostVersion: () => "0.1.0",
+      spawnHost: () => host.child,
+    });
+    const authEvents = vi.fn();
+    const sessionEvents = vi.fn();
+    supervisor.on("provider.authEvent", authEvents);
+    supervisor.on("session.event", sessionEvents);
+    await supervisor.start();
+
+    host.write({
+      protocolVersion: 1,
+      type: "provider.authEvent",
+      operationId: "op-1",
+      payload: { type: "auth_url", url: "https://auth.openai.com/oauth/authorize" },
+    });
+
+    expect(authEvents).toHaveBeenCalledWith({
+      protocolVersion: 1,
+      type: "provider.authEvent",
+      operationId: "op-1",
+      payload: { type: "auth_url", url: "https://auth.openai.com/oauth/authorize" },
+    });
+    expect(sessionEvents).not.toHaveBeenCalled();
+  });
+
   it("does not become ready when a valid hello and invalid record share a chunk", async () => {
     const host = controllableHost({
       helloRecords: (requestId) => [

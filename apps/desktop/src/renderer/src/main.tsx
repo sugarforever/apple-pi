@@ -130,7 +130,9 @@ function App() {
       .list()
       .then(setProviders)
       .catch(() => setProviders([]));
-    return window.applePi.session.subscribe((event) => dispatch({ type: "event", sequence: event.sequence, payload: event.payload }));
+    return window.applePi.session.subscribe((event) => {
+      if (event.type === "session.event") dispatch({ type: "event", sequence: event.sequence, payload: event.payload });
+    });
   }, []);
 
   // Reusing compatible Pi CLI credentials means a `pi auth login`/`logout` or a
@@ -444,6 +446,12 @@ function App() {
               onDefaultModel={async (model) => {
                 setCatalog(await window.applePi.model.setDefault(model));
                 setNotice("Default model saved");
+              }}
+              oauth={{
+                start: (providerId) => window.applePi.provider.startOAuthLogin(providerId),
+                respond: (operationId, promptId, value) => window.applePi.provider.respondOAuthPrompt(operationId, promptId, value),
+                cancel: (operationId) => window.applePi.operation.cancel(operationId),
+                subscribe: (listener) => window.applePi.provider.subscribeAuthEvent(listener),
               }}
             />
           </section>

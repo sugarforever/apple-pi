@@ -47,6 +47,21 @@ function runtimeDouble() {
       configured.delete(providerId);
     }),
     refresh: vi.fn(async (_options?: { signal?: AbortSignal }) => ({ aborted: false, errors: new Map<string, Error>() })),
+    // A real `ModelRuntime.login()` persists the credential itself; this double only
+    // needs to drive the interaction (notify/prompt) the way the real openai-codex
+    // OAuth flow does, then mark the provider connected the way a real runtime would
+    // report it afterwards (see the compatibility test for the real, grounded shape).
+    login: vi.fn(
+      async (
+        providerId: string,
+        _type: "oauth",
+        interaction: { signal?: AbortSignal; notify: (event: unknown) => void; prompt: (prompt: unknown) => Promise<string> },
+      ) => {
+        interaction.signal?.throwIfAborted();
+        stored.set(providerId, { type: "oauth", resolved: true });
+        return { type: "oauth" };
+      },
+    ),
     // Test-only helper: simulates an auth.json entry (the Pi CLI's shared profile).
     _storeCredential: (providerId: string, type: "api_key" | "oauth", resolved: boolean) => stored.set(providerId, { type, resolved }),
   };
@@ -263,5 +278,105 @@ describe("PiProviderService", () => {
 
     await expect(service.connectApiKey("deepseek", "sk-valid", "connect-deepseek", 1_000)).resolves.toMatchObject({ diagnostics: [] });
     expect(request).toHaveBeenCalledWith("https://api.deepseek.com/user/balance", expect.objectContaining({ method: "GET", signal: expect.any(AbortSignal) }));
+  });
+
+  describe("oauthLogin", () => {
+    it("rejects an unknown provider and a provider without an oauth auth method", async () => {
+      const service = new PiProviderService(async () => runtimeDouble());
+
+      await expect(service.oauthLogin("missing", "oauth-missing", 1_000, () => undefined)).resolves.toEqual({
+        diagnostics: [{ code: "provider_not_found", severity: "error", message: "The requested provider is not available.", action: "retry" }],
+      });
+      await expect(service.oauthLogin("anthropic", "oauth-no-oauth", 1_000, () => undefined)).resolves.toMatchObject({
+        diagnostics: [{ code: "authentication_failed", action: "connect" }],
+      });
+    });
+
+    it("relays notify() calls as provider auth events and reports the provider connected afterwards", async () => {
+      const runtime = runtimeDouble();
+      runtime.login.mockImplementation(async (providerId: string, _type: "oauth", interaction: { notify: (event: unknown) => void }) => {
+        interaction.notify({ type: "auth_url", url: "https://auth.openai.com/oauth/authorize?state=abc", instructions: "A browser window should open." });
+        interaction.notify({ type: "progress", message: "Waiting for authentication..." });
+        (runtime as unknown as { _storeCredential: (id: string, type: "oauth", resolved: boolean) => void })._storeCredential(providerId, "oauth", true);
+        return { type: "oauth" };
+      });
+      const service = new PiProviderService(async () => runtime);
+      const events: unknown[] = [];
+
+      const result = await service.oauthLogin("openai", "oauth-openai", 1_000, (event) => events.push(event));
+
+      expect(events).toEqual([
+        { type: "auth_url", url: "https://auth.openai.com/oauth/authorize?state=abc", instructions: "A browser window should open." },
+        { type: "progress", message: "Waiting for authentication..." },
+      ]);
+      expect(result).toMatchObject({ provider: { status: "connected", credentialSource: "oauth" }, diagnostics: [] });
+    });
+
+    it("relays a select prompt with a generated promptId and forwards the answer to the runtime", async () => {
+      const runtime = runtimeDouble();
+      let capturedAnswer: string | undefined;
+      runtime.login.mockImplementation(async (_providerId: string, _type: "oauth", interaction: { prompt: (prompt: unknown) => Promise<string> }) => {
+        capturedAnswer = await interaction.prompt({ type: "select", message: "Select login method", options: [{ id: "browser", label: "Browser login" }] });
+        return { type: "oauth" };
+      });
+      const service = new PiProviderService(
+        async () => runtime,
+        fetch,
+        undefined,
+        () => "prompt-fixed-id",
+      );
+      const events: unknown[] = [];
+
+      const login = service.oauthLogin("openai", "oauth-select", 5_000, (event) => events.push(event));
+      await vi.waitFor(() => expect(events).toHaveLength(1));
+      expect(events[0]).toEqual({
+        type: "prompt",
+        prompt: { type: "select", promptId: "prompt-fixed-id", message: "Select login method", options: [{ id: "browser", label: "Browser login" }] },
+      });
+
+      expect(service.respondOAuthPrompt("oauth-select", "prompt-fixed-id", "browser")).toBe(true);
+      await login;
+      expect(capturedAnswer).toBe("browser");
+    });
+
+    it("ignores a prompt response for a stale or unknown promptId", async () => {
+      const service = new PiProviderService(async () => runtimeDouble());
+      expect(service.respondOAuthPrompt("no-such-operation", "no-such-prompt", "value")).toBe(false);
+    });
+
+    it("rejects a pending prompt and reports cancellation when the operation is cancelled mid-login", async () => {
+      const runtime = runtimeDouble();
+      runtime.login.mockImplementation(async (_providerId: string, _type: "oauth", interaction: { prompt: (prompt: unknown) => Promise<string> }) => {
+        await interaction.prompt({ type: "manual_code", message: "Paste the authorization code" });
+        return { type: "oauth" };
+      });
+      const service = new PiProviderService(async () => runtime);
+      const events: unknown[] = [];
+
+      const login = service.oauthLogin("openai", "oauth-cancel", 5_000, (event) => events.push(event));
+      await vi.waitFor(() => expect(events).toHaveLength(1));
+      expect(service.cancel("oauth-cancel")).toBe(true);
+
+      const result = await login;
+      expect(result.diagnostics).toMatchObject([{ code: "operation_cancelled" }]);
+      // Cancelling did not leave the prompt answerable afterwards.
+      expect(service.respondOAuthPrompt("oauth-cancel", "prompt-fixed-id", "anything")).toBe(false);
+    });
+
+    it("never lets an oauth login event or diagnostic carry a bearer token", async () => {
+      const runtime = runtimeDouble();
+      runtime.login.mockImplementation(async (providerId: string, _type: "oauth", interaction: { notify: (event: unknown) => void }) => {
+        interaction.notify({ type: "auth_url", url: "https://auth.openai.com/oauth/authorize?state=abc" });
+        (runtime as unknown as { _storeCredential: (id: string, type: "oauth", resolved: boolean) => void })._storeCredential(providerId, "oauth", true);
+        return { type: "oauth", access: "sk-never-return-this-access-token", refresh: "sk-never-return-this-refresh-token" };
+      });
+      const service = new PiProviderService(async () => runtime);
+      const events: unknown[] = [];
+
+      const result = await service.oauthLogin("openai", "oauth-secret", 1_000, (event) => events.push(event));
+
+      expect(JSON.stringify(events)).not.toContain("sk-never-return-this");
+      expect(JSON.stringify(result)).not.toContain("sk-never-return-this");
+    });
   });
 });

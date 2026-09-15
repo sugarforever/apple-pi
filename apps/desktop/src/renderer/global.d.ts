@@ -33,7 +33,11 @@ declare global {
         disconnect(providerId: string, options?: ProviderOperationOptions): Promise<ProviderOperationResult>;
         verify(providerId: string, options?: ProviderOperationOptions): Promise<ProviderOperationResult>;
         refreshModels(providerIds?: string[], options?: ProviderOperationOptions): Promise<ModelCatalogRefreshResult>;
+        startOAuthLogin(providerId: string, options?: ProviderOperationOptions): { operationId: string; result: Promise<ProviderOperationResult> };
+        respondOAuthPrompt(operationId: string, promptId: string, value: string): Promise<{ accepted: boolean }>;
+        subscribeAuthEvent(listener: (event: HostEvent) => void): () => void;
       };
+      operation: { cancel(operationId: string): Promise<{ cancelled: boolean }> };
     };
   }
 }

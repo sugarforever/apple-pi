@@ -2,12 +2,14 @@ import {
   decodeApplePiMessage,
   decodeApplePiSessionEvent,
   decodeModelItem,
+  decodeProviderAuthEvent,
   decodeSessionItem,
   type ApplePiContentPart,
   type ApplePiMessage,
   type ApplePiSessionEvent,
   type JsonValue,
   type ModelItem,
+  type ProviderAuthEvent,
   type SessionItem,
   type ToolOutputPart,
 } from "@apple-pi/protocol";
@@ -208,6 +210,82 @@ export function mapPiEvent(value: unknown): ApplePiSessionEvent {
 export function mapPiModel(value: unknown): ModelItem {
   const item = record(value);
   return decodeModelItem({ provider: item?.provider, modelId: item?.id, name: item?.name || item?.id });
+}
+
+// Maps a Pi `AuthEvent` (from `AuthInteraction.notify()`) to Apple Pi's wire
+// shape. Never carries a token: `auth_url`/`device_code` are public onboarding
+// artifacts by construction (see `@earendil-works/pi-ai`'s `AuthEvent`).
+export function mapPiAuthEvent(value: unknown): ProviderAuthEvent {
+  const event = record(value);
+  switch (event?.type) {
+    case "info":
+      return decodeProviderAuthEvent({
+        type: "info",
+        message: printable(event.message),
+        ...(Array.isArray(event.links) ? { links: authLinks(event.links) } : {}),
+      });
+    case "auth_url":
+      return decodeProviderAuthEvent({
+        type: "auth_url",
+        url: printable(event.url),
+        ...(nonEmptyString(event.instructions) ? { instructions: event.instructions } : {}),
+      });
+    case "device_code":
+      return decodeProviderAuthEvent({
+        type: "device_code",
+        userCode: printable(event.userCode),
+        verificationUri: printable(event.verificationUri),
+        ...(typeof event.intervalSeconds === "number" ? { intervalSeconds: event.intervalSeconds } : {}),
+        ...(typeof event.expiresInSeconds === "number" ? { expiresInSeconds: event.expiresInSeconds } : {}),
+      });
+    case "progress":
+      return decodeProviderAuthEvent({ type: "progress", message: printable(event.message) });
+    default:
+      return decodeProviderAuthEvent({ type: "progress", message: `Unsupported Pi auth event: ${printable(event?.type)}` });
+  }
+}
+
+function authLinks(value: unknown[]): Array<{ url: string; label?: string }> {
+  return value.flatMap((link) => {
+    const item = record(link);
+    return nonEmptyString(item?.url) ? [{ url: item.url, ...(nonEmptyString(item.label) ? { label: item.label } : {}) }] : [];
+  });
+}
+
+// Maps a Pi `AuthPrompt` (from `AuthInteraction.prompt()`) to a `provider.authEvent`
+// of type "prompt". `promptId` is Apple Pi's own correlation id (the real
+// `AuthPrompt` has no id, only a non-serializable per-prompt `AbortSignal`);
+// `provider.respondOAuthPrompt` answers a specific prompt by this id.
+export function mapPiAuthPrompt(promptId: string, value: unknown): ProviderAuthEvent {
+  const prompt = record(value);
+  const placeholder = nonEmptyString(prompt?.placeholder) ? { placeholder: prompt.placeholder } : {};
+  switch (prompt?.type) {
+    case "secret":
+      return decodeProviderAuthEvent({ type: "prompt", prompt: { type: "secret", promptId, message: printable(prompt.message), ...placeholder } });
+    case "select":
+      return decodeProviderAuthEvent({
+        type: "prompt",
+        prompt: { type: "select", promptId, message: printable(prompt.message), options: authSelectOptions(prompt.options) },
+      });
+    case "manual_code":
+      return decodeProviderAuthEvent({ type: "prompt", prompt: { type: "manual_code", promptId, message: printable(prompt.message), ...placeholder } });
+    case "text":
+    default:
+      return decodeProviderAuthEvent({
+        type: "prompt",
+        prompt: { type: "text", promptId, message: printable(prompt?.message ?? "Provide a value to continue signing in."), ...placeholder },
+      });
+  }
+}
+
+function authSelectOptions(value: unknown): Array<{ id: string; label: string; description?: string }> {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((option) => {
+    const item = record(option);
+    return nonEmptyString(item?.id) && nonEmptyString(item.label)
+      ? [{ id: item.id, label: item.label, ...(nonEmptyString(item.description) ? { description: item.description } : {}) }]
+      : [];
+  });
 }
 
 export function mapPiSessionItem(value: unknown): SessionItem {

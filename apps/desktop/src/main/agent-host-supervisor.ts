@@ -146,8 +146,11 @@ export class AgentHostSupervisor extends EventEmitter {
       this.failProtocol(child, pending ? requestId : undefined);
       return;
     }
+    // `decoded.type` is a `HostEvent` discriminant ("session.event" today,
+    // "provider.authEvent" for an in-flight OAuth login): emitting under that
+    // name lets each event kind get its own listener without new plumbing here.
     if ("type" in decoded) {
-      this.emit("session.event", decoded);
+      this.emit(decoded.type, decoded);
       return;
     }
     if (requestId && ignoredType) {

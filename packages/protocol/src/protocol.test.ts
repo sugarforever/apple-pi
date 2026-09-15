@@ -173,6 +173,51 @@ describe("host protocol", () => {
     });
   });
 
+  it("validates bounded OAuth login and prompt-response commands", () => {
+    const start = {
+      protocolVersion: 1,
+      requestId: "oauth-start",
+      type: "provider.startOAuthLogin",
+      payload: { providerId: "openai-codex", operationId: "op-1", timeoutMs: 600_000 },
+    } as const;
+    expect(decodeHostMessage(start)).toEqual(start);
+    expect(() => decodeHostMessage({ ...start, payload: { ...start.payload, timeoutMs: 1_200_001 } })).toThrow("Invalid host message payload");
+    expect(() => decodeHostMessage({ ...start, payload: { ...start.payload, timeoutMs: 40_000 } })).not.toThrow();
+
+    const respond = {
+      protocolVersion: 1,
+      requestId: "oauth-respond",
+      type: "provider.respondOAuthPrompt",
+      payload: { operationId: "op-1", promptId: "prompt-1", value: "browser" },
+    } as const;
+    expect(decodeHostMessage(respond)).toEqual(respond);
+
+    expect(decodeCommandResult("provider.startOAuthLogin", { diagnostics: [] })).toEqual({ diagnostics: [] });
+    expect(decodeCommandResult("provider.respondOAuthPrompt", { accepted: true })).toEqual({ accepted: true });
+    expect(() => decodeCommandResult("provider.respondOAuthPrompt", { accepted: true, promptId: "leak" })).toThrow(
+      "Invalid result for provider.respondOAuthPrompt",
+    );
+  });
+
+  it("validates a provider auth event pushed while a login operation is running", () => {
+    const event = {
+      protocolVersion: 1,
+      type: "provider.authEvent",
+      operationId: "op-1",
+      payload: { type: "auth_url", url: "https://auth.openai.com/oauth/authorize" },
+    } as const;
+    expect(decodeHostEvent(event)).toEqual(event);
+    expect(() => decodeHostEvent({ ...event, operationId: "" })).toThrow("Invalid host event");
+    expect(() => decodeHostEvent({ ...event, payload: { type: "unknown" } })).toThrow("Invalid host event");
+    // A session event still decodes correctly now that HostEventSchema is a union.
+    expect(decodeHostEvent({ protocolVersion: 1, type: "session.event", sequence: 1, payload: { type: "lifecycle", phase: "started" } })).toEqual({
+      protocolVersion: 1,
+      type: "session.event",
+      sequence: 1,
+      payload: { type: "lifecycle", phase: "started" },
+    });
+  });
+
   it("rejects unknown event types and invalid event sequences", () => {
     expect(() =>
       decodeHostRecord({

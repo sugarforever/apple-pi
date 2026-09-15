@@ -5,6 +5,7 @@ import {
   decodeApplePiSessionEvent,
   decodeHostCapabilities,
   decodeModelItem,
+  decodeProviderAuthEvent,
   decodeSessionItem,
   decodeSessionSnapshot,
 } from "./domain.js";
@@ -104,5 +105,28 @@ describe("Apple Pi domain decoders", () => {
     expect(() => decodeApplePiContentPart({ type: "tool_call", id: "call-1", name: "bash", arguments: { value: arrayWithMetadata } })).toThrow(
       "Invalid Apple Pi content part",
     );
+  });
+});
+
+describe("provider auth events", () => {
+  it.each([
+    { type: "info", message: "Signed in as jane@example.com" },
+    { type: "auth_url", url: "https://auth.openai.com/oauth/authorize?state=abc", instructions: "A browser window should open." },
+    { type: "device_code", userCode: "ABCD-1234", verificationUri: "https://auth.openai.com/codex/device", intervalSeconds: 5, expiresInSeconds: 900 },
+    { type: "progress", message: "Waiting for authentication..." },
+    {
+      type: "prompt",
+      prompt: { type: "manual_code", promptId: "prompt-1", message: "Paste the authorization code", placeholder: "http://localhost:1455/auth/callback?..." },
+    },
+    { type: "prompt", prompt: { type: "select", promptId: "prompt-2", message: "Select login method", options: [{ id: "browser", label: "Browser login" }] } },
+  ])("decodes the $type auth event fixture", (event) => {
+    expect(decodeProviderAuthEvent(event)).toEqual(event);
+  });
+
+  it("rejects an auth event carrying an unexpected secret-shaped field", () => {
+    expect(() => decodeProviderAuthEvent({ type: "auth_url", url: "https://auth.openai.com/oauth/authorize", accessToken: "sk-should-not-be-here" })).toThrow(
+      "Invalid provider auth event",
+    );
+    expect(() => decodeProviderAuthEvent({ type: "unknown", message: "x" })).toThrow("Invalid provider auth event");
   });
 });
