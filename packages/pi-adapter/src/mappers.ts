@@ -13,12 +13,10 @@ import {
 } from "@apple-pi/protocol";
 
 const record = (value: unknown): Record<string, unknown> | undefined =>
-  value !== null && typeof value === "object" ? value as Record<string, unknown> : undefined;
+  value !== null && typeof value === "object" ? (value as Record<string, unknown>) : undefined;
 
 const printable = (value: unknown): string =>
-  typeof value === "string" || typeof value === "number" || typeof value === "boolean" || typeof value === "bigint"
-    ? String(value)
-    : "unknown";
+  typeof value === "string" || typeof value === "number" || typeof value === "boolean" || typeof value === "bigint" ? String(value) : "unknown";
 
 const nonEmptyString = (value: unknown): value is string => typeof value === "string" && value.length > 0;
 
@@ -88,7 +86,14 @@ export function mapPiMessages(value: unknown): ApplePiMessage[] {
     if (item?.role === "user") return [decodeApplePiMessage({ role: "user", content: contentParts(item.content, "user") })];
     if (item?.role === "assistant") return [decodeApplePiMessage({ role: "assistant", content: contentParts(item.content, "assistant") })];
     if (item?.role === "toolResult" && nonEmptyString(item.toolCallId) && nonEmptyString(item.toolName)) {
-      return [decodeApplePiMessage({ role: "tool", content: [{ type: "tool_result", toolCallId: item.toolCallId, name: item.toolName, output: outputParts(item.content), isError: item.isError === true }] })];
+      return [
+        decodeApplePiMessage({
+          role: "tool",
+          content: [
+            { type: "tool_result", toolCallId: item.toolCallId, name: item.toolName, output: outputParts(item.content), isError: item.isError === true },
+          ],
+        }),
+      ];
     }
     return [];
   });
@@ -98,16 +103,22 @@ export function mapPiEvent(value: unknown): ApplePiSessionEvent {
   const event = record(value);
   let mapped: ApplePiSessionEvent;
   switch (event?.type) {
-    case "agent_start": mapped = { type: "lifecycle", phase: "started" }; break;
+    case "agent_start":
+      mapped = { type: "lifecycle", phase: "started" };
+      break;
     case "agent_end": {
       if (event.willRetry === true) {
         mapped = { type: "resync_required", reason: "Pi agent scheduled a retry" };
         break;
       }
       const messages = Array.isArray(event.messages) ? event.messages : [];
-      const assistant = [...messages].reverse().map(record).find((message) => message?.role === "assistant");
+      const assistant = [...messages]
+        .reverse()
+        .map(record)
+        .find((message) => message?.role === "assistant");
       if (assistant?.stopReason === "aborted") mapped = { type: "lifecycle", phase: "cancelled" };
-      else if (assistant?.stopReason === "error") mapped = { type: "lifecycle", phase: "failed", ...(typeof assistant.errorMessage === "string" ? { message: assistant.errorMessage } : {}) };
+      else if (assistant?.stopReason === "error")
+        mapped = { type: "lifecycle", phase: "failed", ...(typeof assistant.errorMessage === "string" ? { message: assistant.errorMessage } : {}) };
       else mapped = { type: "lifecycle", phase: "completed" };
       break;
     }
@@ -117,15 +128,16 @@ export function mapPiEvent(value: unknown): ApplePiSessionEvent {
       else if (update?.type === "thinking_delta" && typeof update.delta === "string") mapped = { type: "thinking_delta", text: update.delta };
       else if (update?.type === "toolcall_start" || update?.type === "toolcall_delta" || update?.type === "toolcall_end") {
         const toolCall = streamedToolCall(update);
-        mapped = nonEmptyString(toolCall?.id) && nonEmptyString(toolCall.name)
-          ? {
-              type: "tool_call",
-              phase: update.type === "toolcall_start" ? "started" : update.type === "toolcall_delta" ? "updated" : "completed",
-              id: toolCall.id,
-              name: toolCall.name,
-              arguments: jsonObject(toolCall.arguments),
-            }
-          : { type: "resync_required", reason: `Malformed Pi message update: ${update.type}` };
+        mapped =
+          nonEmptyString(toolCall?.id) && nonEmptyString(toolCall.name)
+            ? {
+                type: "tool_call",
+                phase: update.type === "toolcall_start" ? "started" : update.type === "toolcall_delta" ? "updated" : "completed",
+                id: toolCall.id,
+                name: toolCall.name,
+                arguments: jsonObject(toolCall.arguments),
+              }
+            : { type: "resync_required", reason: `Malformed Pi message update: ${update.type}` };
       } else mapped = { type: "resync_required", reason: `Unsupported Pi message update: ${printable(update?.type)}` };
       break;
     }
@@ -137,9 +149,10 @@ export function mapPiEvent(value: unknown): ApplePiSessionEvent {
       break;
     case "tool_execution_end": {
       const result = record(event.result);
-      mapped = nonEmptyString(event.toolCallId) && nonEmptyString(event.toolName)
-        ? { type: "tool_result", id: event.toolCallId, name: event.toolName, output: outputParts(result?.content), isError: event.isError === true }
-        : { type: "resync_required", reason: "Malformed Pi event: tool_execution_end" };
+      mapped =
+        nonEmptyString(event.toolCallId) && nonEmptyString(event.toolName)
+          ? { type: "tool_result", id: event.toolCallId, name: event.toolName, output: outputParts(result?.content), isError: event.isError === true }
+          : { type: "resync_required", reason: "Malformed Pi event: tool_execution_end" };
       break;
     }
     case "queue_update":
@@ -176,16 +189,18 @@ export function mapPiEvent(value: unknown): ApplePiSessionEvent {
       };
       break;
     case "summarization_retry_attempt_start":
-      mapped = event.source === "compaction"
-        ? { type: "resync_required", reason: `Pi compaction summarization retry started (${printable(event.reason)})` }
-        : event.source === "branchSummary"
-          ? { type: "resync_required", reason: "Pi branch summary retry started" }
-          : { type: "resync_required", reason: "Pi summarization retry started" };
+      mapped =
+        event.source === "compaction"
+          ? { type: "resync_required", reason: `Pi compaction summarization retry started (${printable(event.reason)})` }
+          : event.source === "branchSummary"
+            ? { type: "resync_required", reason: "Pi branch summary retry started" }
+            : { type: "resync_required", reason: "Pi summarization retry started" };
       break;
     case "summarization_retry_finished":
       mapped = { type: "resync_required", reason: "Pi summarization retry finished" };
       break;
-    default: mapped = { type: "resync_required", reason: `Unsupported Pi event: ${printable(event?.type)}` };
+    default:
+      mapped = { type: "resync_required", reason: `Unsupported Pi event: ${printable(event?.type)}` };
   }
   return decodeApplePiSessionEvent(mapped);
 }
