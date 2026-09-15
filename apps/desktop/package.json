@@ -1,5 +1,6 @@
 {
   "name": "@apple-pi/desktop",
+  "productName": "Apple Pi",
   "version": "0.3.0",
   "private": true,
   "homepage": "https://github.com/sugarforever/apple-pi",
@@ -39,7 +40,6 @@
   },
   "build": {
     "appId": "works.earendil.applepi",
-    "productName": "Apple Pi",
     "directories": {
       "output": "release"
     },
