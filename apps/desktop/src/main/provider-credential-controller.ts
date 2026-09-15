@@ -38,7 +38,7 @@ export class ProviderCredentialController {
       this.provisioned.add(input.providerId);
       const stored = await this.credentials.setApiKey(input.providerId, input.apiKey);
       if (stored.persistence === "session") result.diagnostics.push(storageWarning());
-    }
+    } else this.provisioned.delete(input.providerId);
     return result;
   }
 

@@ -19,7 +19,7 @@ async function setup(platform: NodeJS.Platform = "darwin", backend = "keychain")
   const directory = await mkdtemp(path.join(os.tmpdir(), "apple-pi-controller-"));
   const broker = new CredentialBroker(platform, new FakeStorage(backend), new CredentialFile(path.join(directory, "credentials.json")));
   await broker.initialize();
-  const request = vi.fn(async (type: string) => type === "provider.list" ? [] : type === "model.refresh" ? { providers: [], models: [], diagnostics: [] } : { provider, diagnostics: [] });
+  const request = vi.fn<(type: string, payload?: unknown) => Promise<any>>(async (type: string) => type === "provider.list" ? [] : type === "model.refresh" ? { providers: [], models: [], diagnostics: [] } : { provider, diagnostics: [] });
   const controller = new ProviderCredentialController(broker, { request } as unknown as ProviderHost, () => "credential-test");
   return { broker, controller, request };
 }
@@ -50,5 +50,16 @@ describe("ProviderCredentialController", () => {
     expect(JSON.stringify(publicResult)).not.toContain("runtime-only-secret");
     await controller.disconnect({ providerId: "openai", operationId: "delete", timeoutMs: 1_000 });
     expect(broker.list()).toEqual([]);
+  });
+
+  it("does not persist or cache a rejected replacement key", async () => {
+    const { broker, controller, request } = await setup();
+    await broker.setApiKey("openai", "existing-secret");
+    request.mockImplementationOnce(async () => ({ diagnostics: [{ code: "authentication_failed" as const, severity: "error" as const, message: "Rejected", action: "reconnect" as const }] }));
+
+    await controller.connect({ providerId: "openai", apiKey: "rejected-secret", operationId: "replace", timeoutMs: 1_000 });
+    await controller.provide("openai");
+
+    expect(request).toHaveBeenLastCalledWith("provider.connectApiKey", expect.objectContaining({ apiKey: "existing-secret" }));
   });
 });

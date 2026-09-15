@@ -9,5 +9,7 @@ describe("AppCatalog", () => {
     await catalog.addWorkspace("/tmp/a");
     await catalog.setDefaultModel({ provider: "openai", modelId: "gpt-5" });
     expect(catalog.snapshot()).toMatchObject({ workspaces: [{ path: "/tmp/a", name: "a" }], defaultModel: { provider: "openai", modelId: "gpt-5" } });
+    await catalog.clearDefaultModel();
+    expect(catalog.snapshot().defaultModel).toBeUndefined();
   });
 });

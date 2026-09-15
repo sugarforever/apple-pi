@@ -17,5 +17,6 @@ export class AppCatalog {
     await this.persist();
   }
   async setDefaultModel(model: ModelRef): Promise<void> { this.data.defaultModel = model; await this.persist(); }
+  async clearDefaultModel(): Promise<void> { delete this.data.defaultModel; await this.persist(); }
   private persist(): Promise<void> { return this.storage.write(`${JSON.stringify(this.data, null, 2)}\n`); }
 }
