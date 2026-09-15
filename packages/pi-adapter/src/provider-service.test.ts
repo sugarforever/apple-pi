@@ -1,8 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
 import { PiProviderService } from "./provider-service.js";
 
+// `stored` mirrors what a real ModelRuntime's `listCredentials()`/`getProviderAuthStatus()`
+// report for an auth.json entry (the Pi CLI's shared profile): `type` is the credential
+// kind and `resolved` is whether it actually resolves to a usable value (false for a
+// `$VARIABLE` reference this process cannot see). A real runtime always types a
+// provider's `listCredentials()` entry as "api_key" once Apple Pi injects a runtime
+// override, even when an unrelated stored entry exists underneath it — `configured`
+// (the runtime override) must win over `stored` in both places, matching that behavior.
 function runtimeDouble() {
   const configured = new Set<string>();
+  const stored = new Map<string, { type: "api_key" | "oauth"; resolved: boolean }>();
   return {
     getProviders: () => [
       { id: "openai", name: "OpenAI", auth: { apiKey: {}, oauth: {} } },
@@ -12,8 +20,18 @@ function runtimeDouble() {
       return this.getProviders().find((provider) => provider.id === providerId);
     },
     getAvailableSnapshot: () => (configured.has("openai") ? [{ provider: "openai", id: "gpt", name: "GPT" }] : []),
-    getProviderAuthStatus: (providerId: string) => ({ configured: configured.has(providerId), ...(configured.has(providerId) ? { source: "runtime" } : {}) }),
-    listCredentials: vi.fn(async () => []),
+    getProviderAuthStatus: (providerId: string) => {
+      if (configured.has(providerId)) return { configured: true, source: "runtime" };
+      if (stored.has(providerId)) return { configured: true, source: "stored" };
+      return { configured: false };
+    },
+    hasConfiguredAuth: (providerId: string) => configured.has(providerId) || (stored.get(providerId)?.resolved ?? false),
+    listCredentials: vi.fn(async () => {
+      const entries = new Map<string, { providerId: string; type: "api_key" | "oauth" }>();
+      for (const [providerId, credential] of stored) entries.set(providerId, { providerId, type: credential.type });
+      for (const providerId of configured) entries.set(providerId, { providerId, type: "api_key" });
+      return [...entries.values()];
+    }),
     checkAuth: vi.fn(async (providerId: string, _options?: { signal?: AbortSignal }) =>
       configured.has(providerId) ? { source: "runtime", type: "api_key" as const } : undefined,
     ),
@@ -29,6 +47,8 @@ function runtimeDouble() {
       configured.delete(providerId);
     }),
     refresh: vi.fn(async (_options?: { signal?: AbortSignal }) => ({ aborted: false, errors: new Map<string, Error>() })),
+    // Test-only helper: simulates an auth.json entry (the Pi CLI's shared profile).
+    _storeCredential: (providerId: string, type: "api_key" | "oauth", resolved: boolean) => stored.set(providerId, { type, resolved }),
   };
 }
 
@@ -45,6 +65,74 @@ describe("PiProviderService", () => {
       { id: "openai", status: "connected", credentialSource: "apple_pi", availableModelCount: 1 },
     ]);
     expect(JSON.stringify(providers)).not.toContain("sk-never-return-this");
+  });
+
+  it("prioritizes an Apple Pi runtime credential over a same-shaped stored entry", async () => {
+    // A real ModelRuntime types both an Apple-Pi-injected runtime key and a genuine
+    // auth.json entry as "api_key" in listCredentials(), so the two are indistinguishable
+    // by type alone. Apple Pi's own credential must still win for display purposes.
+    const runtime = runtimeDouble();
+    runtime._storeCredential("openai", "api_key", true);
+    await runtime.setRuntimeApiKey("openai", "apple-pi-secret");
+
+    const service = new PiProviderService(async () => runtime);
+    const providers = await service.list();
+
+    expect(providers.find((provider) => provider.id === "openai")).toMatchObject({ credentialSource: "apple_pi", status: "connected" });
+  });
+
+  it("classifies a working auth.json credential as the shared Pi profile", async () => {
+    const runtime = runtimeDouble();
+    runtime._storeCredential("anthropic", "api_key", true);
+
+    const service = new PiProviderService(async () => runtime);
+    const providers = await service.list();
+
+    expect(providers.find((provider) => provider.id === "anthropic")).toMatchObject({ credentialSource: "shared_pi_profile", status: "connected" });
+  });
+
+  it("explains when a shared credential's $VARIABLE reference cannot resolve in this process", async () => {
+    const runtime = runtimeDouble();
+    runtime._storeCredential("anthropic", "api_key", false);
+    const rawCredential = vi.fn(() => ({ type: "api_key" as const, key: "$TOTALLY_UNSET_VAR_XYZ" }));
+
+    const service = new PiProviderService(async () => runtime, fetch, rawCredential);
+    const providers = await service.list();
+
+    expect(rawCredential).toHaveBeenCalledWith("anthropic");
+    expect(providers.find((provider) => provider.id === "anthropic")).toMatchObject({
+      status: "disconnected",
+      credentialSource: "unavailable",
+      diagnostics: [{ code: "credential_unresolved", severity: "error", action: "check_environment" }],
+    });
+    const message = providers.find((provider) => provider.id === "anthropic")!.diagnostics[0]!.message;
+    expect(message).toContain("TOTALLY_UNSET_VAR_XYZ");
+    expect(message.length).toBeLessThanOrEqual(240);
+  });
+
+  it("does not flag a command-based shared credential as an unresolved variable", async () => {
+    const runtime = runtimeDouble();
+    // Command references resolve lazily at request time, so the SDK reports them as
+    // configured up front without actually running the command.
+    runtime._storeCredential("anthropic", "api_key", true);
+    const rawCredential = vi.fn(() => ({ type: "api_key" as const, key: "!echo sk-from-command" }));
+
+    const service = new PiProviderService(async () => runtime, fetch, rawCredential);
+    const providers = await service.list();
+
+    expect(providers.find((provider) => provider.id === "anthropic")).toMatchObject({ status: "connected", credentialSource: "shared_pi_profile" });
+  });
+
+  it("classifies a models.json shell-command credential as a command reference", async () => {
+    const runtime = runtimeDouble();
+    runtime.getProviderAuthStatus = (providerId: string) =>
+      providerId === "anthropic" ? { configured: true, source: "models_json_command" } : { configured: false };
+    runtime.hasConfiguredAuth = (providerId: string) => providerId === "anthropic";
+
+    const service = new PiProviderService(async () => runtime);
+    const providers = await service.list();
+
+    expect(providers.find((provider) => provider.id === "anthropic")).toMatchObject({ status: "connected", credentialSource: "command" });
   });
 
   it("returns actionable diagnostics for missing providers and credentials", async () => {
