@@ -35,6 +35,6 @@ export function validateHostHandshake(value: unknown, expectedHostVersion: strin
   try {
     return decodeCommandResult("system.hello", value);
   } catch (error) {
-    throw new Error(`Invalid agent host handshake: ${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(`Invalid agent host handshake: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
   }
 }

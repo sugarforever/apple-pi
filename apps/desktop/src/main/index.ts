@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, safeStorage, shell } from "electron";
+import { app, BrowserWindow, crashReporter, dialog, ipcMain, safeStorage, session, type IpcMainInvokeEvent } from "electron";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { AgentHostSupervisor } from "./agent-host-supervisor.js";
@@ -7,7 +7,25 @@ import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { installGracefulShutdown } from "./graceful-shutdown.js";
 import { CredentialBroker, CredentialFile } from "./credential-broker.js";
 import { ProviderCredentialController } from "./provider-credential-controller.js";
+import { attachFileLogging, log } from "./logger.js";
+import { applyProcessHardening, applySessionPolicy, applyWindowPolicy } from "./security.js";
 import type { SessionSnapshot } from "@apple-pi/protocol";
+
+// Must run before `app.whenReady()` resolves.
+//
+// Note what is deliberately absent: `--use-mock-keychain`. The credential
+// broker below persists provider API keys through `safeStorage`, which is
+// backed by the OS keychain. Chromium's mock keychain keeps
+// `isEncryptionAvailable()` returning true while encrypting with a well-known
+// key, so credentials would reach disk looking protected but readable by
+// anything that can open the file. The macOS keychain prompt is therefore
+// intentional behaviour, and stable code signing is what stops it from
+// reappearing after every release.
+applyProcessHardening();
+
+// Local dumps only: no crash report leaves the machine. Enabling remote crash
+// reporting is a privacy decision that needs an explicit opt-in first.
+crashReporter.start({ productName: "Apple Pi", companyName: "Apple Pi", uploadToServer: false, compress: true });
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 const host = new AgentHostSupervisor({
@@ -22,21 +40,67 @@ let catalog: AppCatalog;
 let credentials: CredentialBroker;
 let providerCredentials: ProviderCredentialController;
 
-function createWindow(): void {
-  mainWindow = new BrowserWindow({
-    width: 1180, height: 800, minWidth: 760, minHeight: 560,
-    titleBarStyle: "hiddenInset", backgroundColor: "#101213",
-    webPreferences: { preload: path.join(dirname, "../preload/index.js"), sandbox: true, contextIsolation: true, nodeIntegration: false },
-  });
-  mainWindow.webContents.setWindowOpenHandler(({ url }) => { openExternal(url); return { action: "deny" }; });
-  mainWindow.webContents.on("will-navigate", (event, url) => { if (url !== mainWindow?.webContents.getURL()) { event.preventDefault(); openExternal(url); } });
-  if (process.env.ELECTRON_RENDERER_URL) void mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL);
-  else void mainWindow.loadFile(path.join(dirname, "../renderer/index.html"));
+/**
+ * The renderer is the only legitimate caller of the IPC surface, and only from
+ * its main frame. Anything else is rejected rather than answered.
+ */
+function assertTrustedSender(event: IpcMainInvokeEvent): void {
+  if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents) throw new Error("Rejected IPC call from an untrusted sender");
+  if (event.senderFrame && event.senderFrame !== mainWindow.webContents.mainFrame) throw new Error("Rejected IPC call from a subframe");
 }
 
-function openExternal(value: string): void { try { const url = new URL(value); if (url.protocol === "https:") void shell.openExternal(url.href); } catch {} }
+function handle(channel: string, handler: (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown): void {
+  ipcMain.handle(channel, async (event, ...args: unknown[]) => {
+    assertTrustedSender(event);
+    return handler(event, ...args);
+  });
+}
 
-app.whenReady().then(async () => {
+function createWindow(): void {
+  const window = new BrowserWindow({
+    width: 1180, height: 800, minWidth: 760, minHeight: 560,
+    titleBarStyle: "hiddenInset", backgroundColor: "#101213",
+    show: false,
+    webPreferences: {
+      preload: path.join(dirname, "../preload/index.js"),
+      sandbox: true,
+      contextIsolation: true,
+      nodeIntegration: false,
+      webviewTag: false,
+      spellcheck: false,
+      devTools: !app.isPackaged,
+    },
+  });
+  mainWindow = window;
+
+  applyWindowPolicy(window, { devServerUrl: process.env.ELECTRON_RENDERER_URL, rendererRoot: path.join(dirname, "../renderer") });
+
+  window.once("ready-to-show", () => window.show());
+  window.webContents.on("did-fail-load", (_event, errorCode, errorDescription, validatedUrl) => {
+    log.error("renderer failed to load", { errorCode, errorDescription, validatedUrl });
+    // Never leave the user with an invisible window and no explanation.
+    window.show();
+  });
+  window.on("closed", () => { mainWindow = undefined; });
+
+  if (process.env.ELECTRON_RENDERER_URL) void window.loadURL(process.env.ELECTRON_RENDERER_URL);
+  else void window.loadFile(path.join(dirname, "../renderer/index.html"));
+}
+
+async function bootstrap(): Promise<void> {
+  const logPath = attachFileLogging(app.getPath("logs"));
+  log.info("Apple Pi starting", {
+    version: app.getVersion(),
+    electron: process.versions.electron,
+    node: process.versions.node,
+    platform: process.platform,
+    arch: process.arch,
+    packaged: app.isPackaged,
+    logPath,
+  });
+
+  applySessionPolicy(session.defaultSession);
+
   const catalogPath = path.join(app.getPath("userData"), "catalog.json");
   catalog = new AppCatalog({
     read: () => readFile(catalogPath, "utf8").catch((error: NodeJS.ErrnoException) => error.code === "ENOENT" ? "" : Promise.reject(error)),
@@ -54,12 +118,41 @@ app.whenReady().then(async () => {
   providerCredentials = new ProviderCredentialController(credentials, host);
   host.on("session.event", (event) => mainWindow?.webContents.send("session:event", event));
   createWindow();
-});
-app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });
-app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
+  log.info("Apple Pi ready");
+}
+
+// pi sessions are JSONL files written by the agent host. Two app instances would
+// mean two writers on the same session lease, so a second launch focuses the
+// existing window instead of starting a competing agent host.
+if (!app.requestSingleInstanceLock()) {
+  log.info("another instance already holds the single-instance lock; exiting");
+  app.quit();
+} else {
+  app.on("second-instance", () => {
+    if (!mainWindow) return;
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+  });
+
+  app.whenReady()
+    .then(bootstrap)
+    .catch((error: unknown) => {
+      log.error("failed to start", { error });
+      dialog.showErrorBox("Apple Pi failed to start", error instanceof Error ? error.message : String(error));
+      app.exit(1);
+    });
+
+  app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });
+  app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
+}
+
 installGracefulShutdown(app, host);
 
-ipcMain.handle("workspace:pick", async () => {
+process.on("unhandledRejection", (reason) => log.error("unhandled promise rejection", { reason }));
+process.on("uncaughtException", (error) => log.error("uncaught exception", { error }));
+
+handle("workspace:pick", async () => {
   const result = await dialog.showOpenDialog(mainWindow!, { properties: ["openDirectory"] });
   if (result.canceled || !result.filePaths[0]) return null;
   const chosenPath = await import("node:fs/promises").then(({ realpath }) => realpath(result.filePaths[0]!));
@@ -71,8 +164,8 @@ ipcMain.handle("workspace:pick", async () => {
   const session = await host.request("session.create", { cwd: workspacePath, ...defaultModel });
   return { catalog: catalog.snapshot(), workspacePath, sessions, session };
 });
-ipcMain.handle("workspace:list", () => catalog.snapshot());
-ipcMain.handle("workspace:select", async (_event, requestedPath: unknown) => {
+handle("workspace:list", () => catalog.snapshot());
+handle("workspace:select", async (_event, requestedPath: unknown) => {
   if (typeof requestedPath !== "string" || !catalog.snapshot().workspaces.some((item) => item.path === requestedPath)) throw new Error("Unknown workspace");
   workspacePath = requestedPath;
   const sessions = await host.request("session.list", { cwd: workspacePath });
@@ -80,55 +173,57 @@ ipcMain.handle("workspace:select", async (_event, requestedPath: unknown) => {
   const session = list[0] ? await host.request("session.openPath", { cwd: workspacePath, path: list[0].path }) : await createSession();
   return { workspacePath, sessions, session };
 });
-ipcMain.handle("session:list", () => workspacePath ? host.request("session.list", { cwd: workspacePath }) : []);
-ipcMain.handle("session:select", (_event, sessionPath: unknown) => {
+handle("session:list", () => workspacePath ? host.request("session.list", { cwd: workspacePath }) : []);
+handle("session:select", (_event, sessionPath: unknown) => {
   if (!workspacePath || typeof sessionPath !== "string") throw new Error("Invalid session");
   return host.request("session.openPath", { cwd: workspacePath, path: sessionPath });
 });
-ipcMain.handle("session:create", () => {
+handle("session:create", () => {
   if (!workspacePath) throw new Error("Select a workspace first");
   return createSession();
 });
-ipcMain.handle("session:send", async (_event, text: unknown) => {
+handle("session:send", async (_event, text: unknown) => {
   if (!workspacePath || typeof text !== "string" || !text.trim()) throw new Error("Select a workspace and enter a message");
   const snapshot = await host.request("session.snapshot", {});
   if (snapshot.opened && snapshot.model?.provider) await providerCredentials.provide(snapshot.model.provider);
   return host.request("session.send", { text: text.trim() });
 });
-ipcMain.handle("session:cancel", () => host.request("session.cancel", {}));
-ipcMain.handle("session:snapshot", () => host.request("session.snapshot", {}));
-ipcMain.handle("system:version", () => app.getVersion());
-ipcMain.handle("model:list", () => host.request("model.list", {}));
-ipcMain.handle("provider:list", () => providerCredentials.list());
-ipcMain.handle("provider:connectApiKey", async (_event, value: unknown) => {
+handle("session:cancel", () => host.request("session.cancel", {}));
+handle("session:snapshot", () => host.request("session.snapshot", {}));
+handle("system:version", () => app.getVersion());
+handle("model:list", () => host.request("model.list", {}));
+handle("provider:list", () => providerCredentials.list());
+handle("provider:connectApiKey", async (_event, value: unknown) => {
   const input = providerOperation(value, true);
   return providerCredentials.connect({ ...input, apiKey: input.apiKey! });
 });
-ipcMain.handle("provider:disconnect", async (_event, value: unknown) => {
+handle("provider:disconnect", async (_event, value: unknown) => {
   const input = providerOperation(value);
   return providerCredentials.disconnect(input);
 });
-ipcMain.handle("provider:verify", async (_event, value: unknown) => {
+handle("provider:verify", async (_event, value: unknown) => {
   const input = providerOperation(value);
   return providerCredentials.verify(input);
 });
-ipcMain.handle("model:refresh", (_event, value: unknown) => {
+handle("model:refresh", (_event, value: unknown) => {
   const input = operation(value);
   const providerIds = (value as { providerIds?: unknown }).providerIds;
   if (providerIds !== undefined && (!Array.isArray(providerIds) || providerIds.length === 0 || providerIds.some((id) => typeof id !== "string" || !id))) throw new Error("Invalid provider selection");
   return providerCredentials.refresh(providerIds as string[] | undefined, input);
 });
-ipcMain.handle("operation:cancel", (_event, operationId: unknown) => {
+handle("operation:cancel", (_event, operationId: unknown) => {
   if (typeof operationId !== "string" || !operationId) throw new Error("Invalid operation");
   return host.request("operation.cancel", { operationId });
 });
+
 function validModel(value: unknown): ModelRef {
   if (!value || typeof value !== "object" || typeof (value as ModelRef).provider !== "string" || typeof (value as ModelRef).modelId !== "string") throw new Error("Invalid model");
   return value as ModelRef;
 }
-ipcMain.handle("model:setSession", async (_event, value: unknown) => { const model = validModel(value); await providerCredentials.provide(model.provider); return host.request("model.set", { provider: model.provider, modelId: model.modelId }); });
-ipcMain.handle("model:setDefault", async (_event, value: unknown) => { const model = validModel(value); await catalog.setDefaultModel(model); return catalog.snapshot(); });
-ipcMain.handle("model:clearDefault", async () => { await catalog.clearDefaultModel(); return catalog.snapshot(); });
+
+handle("model:setSession", async (_event, value: unknown) => { const model = validModel(value); await providerCredentials.provide(model.provider); return host.request("model.set", { provider: model.provider, modelId: model.modelId }); });
+handle("model:setDefault", async (_event, value: unknown) => { const model = validModel(value); await catalog.setDefaultModel(model); return catalog.snapshot(); });
+handle("model:clearDefault", async () => { await catalog.clearDefaultModel(); return catalog.snapshot(); });
 
 function operation(value: unknown): { operationId: string; timeoutMs: number } {
   if (!value || typeof value !== "object") throw new Error("Invalid operation");

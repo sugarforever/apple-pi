@@ -1,6 +1,7 @@
-import { ChildProcessWithoutNullStreams, spawn } from "node:child_process";
+import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
+import { log } from "./logger.js";
 import {
   decodeHostRecord,
   encodeRecord,
@@ -65,7 +66,9 @@ export class AgentHostSupervisor extends EventEmitter {
     });
     child.stderr.setEncoding("utf8");
     child.stderr.on("data", (chunk: string) => {
-      if (this.child === child) console.error(`[agent-host] ${chunk.trimEnd()}`);
+      // Host stderr can contain provider URLs and error text, so it goes through
+      // the redacting logger rather than straight to the console.
+      if (this.child === child) log.info("agent-host", { message: chunk.trimEnd() });
     });
     child.once("exit", () => {
       this.resolveExitWaiter(child);
@@ -103,8 +106,7 @@ export class AgentHostSupervisor extends EventEmitter {
     if (!child) return Promise.resolve();
     this.rejectPending(() => "Agent host stopped", true);
     const operation = this.stopChild(child);
-    let shared: Promise<void>;
-    shared = operation.finally(() => {
+    const shared: Promise<void> = operation.finally(() => {
       if (this.stopping?.promise === shared) this.stopping = undefined;
     });
     this.stopping = { child, promise: shared };
@@ -155,7 +157,8 @@ export class AgentHostSupervisor extends EventEmitter {
       return;
     }
     this.pending.delete(response.requestId);
-    response.ok ? responsePending.resolve(response.result) : responsePending.reject(new Error(response.error));
+    if (response.ok) responsePending.resolve(response.result);
+    else responsePending.reject(new Error(response.error));
   }
 
   private failProtocol(child: ChildProcessWithoutNullStreams, requestId?: string): void {

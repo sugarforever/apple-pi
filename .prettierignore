@@ -1,0 +1,13 @@
+node_modules/
+dist/
+out/
+release/
+coverage/
+test-results/
+playwright-report/
+pnpm-lock.yaml
+
+# Historical design and planning records: formatting churn would obscure the
+# original text and makes review of those documents harder.
+docs/
+CHANGELOG.md

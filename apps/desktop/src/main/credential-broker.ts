@@ -117,6 +117,7 @@ export class CredentialBroker {
       plaintext = this.storage.decryptString(Buffer.from(stored.ciphertext, "base64"));
       return await use(plaintext);
     } finally {
+      // eslint-disable-next-line no-useless-assignment -- deliberate best-effort scrub of the decrypted secret
       plaintext = undefined;
     }
   }
@@ -156,6 +157,9 @@ export function storagePolicy(platform: NodeJS.Platform, storage: ProtectedStora
 function emptyDocument(): CredentialDocument { return { version: 1, credentials: {} }; }
 
 function assertProviderId(value: string): void {
+  // Control characters are exactly what this rejects: they would corrupt the
+  // provider identifier wherever it is later used as a key.
+  // eslint-disable-next-line no-control-regex
   if (!value || value.length > 160 || /[\u0000-\u001f]/.test(value)) throw new Error("Invalid provider identifier");
 }
 

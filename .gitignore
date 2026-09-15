@@ -4,3 +4,19 @@ out/
 release/
 .DS_Store
 *.log
+
+# Build and test artifacts
+coverage/
+test-results/
+playwright-report/
+*.tsbuildinfo
+.sbom/
+
+# Local environment and secrets. Never commit these.
+.env
+.env.*
+!.env.example
+*.p8
+*.p12
+*.mobileprovision
+*.provisionprofile

@@ -39,17 +39,37 @@ the process boundary, update the protocol first, then its producer and consumer.
 Before opening a pull request, run:
 
 ```bash
+corepack pnpm lint
+corepack pnpm typecheck
 corepack pnpm test
 corepack pnpm test:pi-compatibility
-corepack pnpm typecheck
 corepack pnpm build
 corepack pnpm test:host-smoke
 corepack pnpm docs:check
 ```
 
-`test:host-smoke` builds the desktop output, starts the staged agent host, checks
-the compatibility handshake, and shuts it down. Pull requests also run the
+`corepack pnpm verify` runs the lint, typecheck, unit test, and documentation gates in
+one command. `test:host-smoke` builds the desktop output, starts the staged agent host,
+checks the compatibility handshake, and shuts it down. Pull requests also run the
 [Pi compatibility workflow](.github/workflows/pi-compatibility.yml).
+
+### Code style and commits
+
+ESLint and Prettier define the style. Both run automatically on staged files through a
+husky pre-commit hook, so the usual loop is to commit and let the hook fix what it can.
+
+```bash
+corepack pnpm lint
+corepack pnpm lint:fix
+corepack pnpm format
+```
+
+Prettier is being adopted incrementally: files are reformatted as they are touched rather
+than in one repository-wide commit, so `pnpm format` is safe to run on the files you are
+already changing. A dedicated reformat commit will let `format:check` join `pnpm verify`.
+
+Commit subjects follow [Conventional Commits](https://www.conventionalcommits.org/) and
+are enforced by commitlint, for example `fix(desktop): reject IPC from unknown frames`.
 
 ## Packaging
 
@@ -106,5 +126,6 @@ for the supported Apple Pi/Pi/Protocol/Node combination. Dependency upgrades mus
 follow the [Pi upgrade runbook](docs/operations/pi-upgrade-runbook.md).
 
 See [how Apple Pi integrates Pi Agent](docs/architecture/apple-pi-pi-agent-integration.md)
-for the process boundary and [the architecture study](docs/architecture/pi-desktop-architecture.md)
-for the broader design.
+for the process boundary, [the architecture study](docs/architecture/pi-desktop-architecture.md)
+for the broader design, and the [credential storage and keychain policy](docs/architecture/credential-storage-keychain-policy.md)
+before touching anything that reads or writes provider credentials.
