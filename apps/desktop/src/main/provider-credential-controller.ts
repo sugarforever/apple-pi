@@ -56,6 +56,17 @@ export class ProviderCredentialController {
     return this.host.request("provider.verify", input);
   }
 
+  // Unlike an API key, an OAuth credential is never client-managed: `runtime.login()`
+  // persists it directly into the agent host's own auth.json (see `PiProviderService`),
+  // so there is nothing for `CredentialBroker` to hold or `provide()` before use.
+  startOAuthLogin(input: HostCommandPayloads["provider.startOAuthLogin"]): Promise<ProviderOperationResult> {
+    return this.host.request("provider.startOAuthLogin", input);
+  }
+
+  respondOAuthPrompt(input: HostCommandPayloads["provider.respondOAuthPrompt"]): Promise<HostCommandResults["provider.respondOAuthPrompt"]> {
+    return this.host.request("provider.respondOAuthPrompt", input);
+  }
+
   async refresh(providerIds: string[] | undefined, input: { operationId: string; timeoutMs: number }) {
     const selected = providerIds ?? this.credentials.list().map((item) => item.providerId);
     await Promise.all(selected.map((providerId) => this.provide(providerId)));

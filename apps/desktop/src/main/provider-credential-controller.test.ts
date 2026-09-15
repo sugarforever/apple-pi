@@ -103,4 +103,22 @@ describe("ProviderCredentialController", () => {
     await expect(controller.resolveDefaultModel(undefined)).resolves.toBeUndefined();
     expect(request).not.toHaveBeenCalledWith("model.list", expect.anything());
   });
+
+  it("forwards an OAuth login start and prompt response straight to the host, without touching the credential broker", async () => {
+    const { controller, request, broker } = await setup();
+    request.mockImplementation(async (type: string) =>
+      type === "provider.startOAuthLogin" ? { provider, diagnostics: [] } : type === "provider.respondOAuthPrompt" ? { accepted: true } : [],
+    );
+
+    const result = await controller.startOAuthLogin({ providerId: "openai-codex", operationId: "oauth-1", timeoutMs: 600_000 });
+    expect(request).toHaveBeenCalledWith("provider.startOAuthLogin", { providerId: "openai-codex", operationId: "oauth-1", timeoutMs: 600_000 });
+    expect(result).toEqual({ provider, diagnostics: [] });
+
+    const response = await controller.respondOAuthPrompt({ operationId: "oauth-1", promptId: "prompt-1", value: "browser" });
+    expect(request).toHaveBeenCalledWith("provider.respondOAuthPrompt", { operationId: "oauth-1", promptId: "prompt-1", value: "browser" });
+    expect(response).toEqual({ accepted: true });
+    // An OAuth credential is never stored by Apple Pi's own broker: it lives
+    // entirely in the agent host's own auth.json once `runtime.login()` persists it.
+    expect(broker.list()).toEqual([]);
+  });
 });

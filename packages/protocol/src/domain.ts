@@ -178,6 +178,65 @@ export const ModelCatalogRefreshResultSchema = closedObject({
 });
 export type ModelCatalogRefreshResult = Static<typeof ModelCatalogRefreshResultSchema>;
 
+// Apple-Pi-owned mirror of Pi's `AuthPrompt` (see `@earendil-works/pi-ai`'s
+// `auth/types.ts`), minus its non-serializable per-prompt `AbortSignal`: a
+// `promptId` stands in for it on the wire, and `provider.respondOAuthPrompt`
+// answers a specific prompt by id.
+export const ProviderAuthPromptSchema = Type.Union([
+  closedObject({
+    type: Type.Literal("text"),
+    promptId: Type.String({ minLength: 1 }),
+    message: Type.String({ minLength: 1 }),
+    placeholder: Type.Optional(Type.String()),
+  }),
+  closedObject({
+    type: Type.Literal("secret"),
+    promptId: Type.String({ minLength: 1 }),
+    message: Type.String({ minLength: 1 }),
+    placeholder: Type.Optional(Type.String()),
+  }),
+  closedObject({
+    type: Type.Literal("select"),
+    promptId: Type.String({ minLength: 1 }),
+    message: Type.String({ minLength: 1 }),
+    options: Type.Array(closedObject({ id: Type.String({ minLength: 1 }), label: Type.String({ minLength: 1 }), description: Type.Optional(Type.String()) }), {
+      minItems: 1,
+    }),
+  }),
+  closedObject({
+    type: Type.Literal("manual_code"),
+    promptId: Type.String({ minLength: 1 }),
+    message: Type.String({ minLength: 1 }),
+    placeholder: Type.Optional(Type.String()),
+  }),
+]);
+export type ProviderAuthPrompt = Static<typeof ProviderAuthPromptSchema>;
+
+// Apple-Pi-owned mirror of Pi's `AuthEvent`, plus a `prompt` variant that
+// carries a `ProviderAuthPrompt` needing a `provider.respondOAuthPrompt` reply.
+// Never carries a token, code, or other secret: `auth_url`/`device_code` are
+// public onboarding artifacts, and the one value a user might type back
+// (an authorization code pasted as a `manual_code` prompt reply) is a
+// single-use exchange code, not the persisted credential.
+export const ProviderAuthEventSchema = Type.Union([
+  closedObject({
+    type: Type.Literal("info"),
+    message: Type.String({ minLength: 1 }),
+    links: Type.Optional(Type.Array(closedObject({ url: Type.String({ minLength: 1 }), label: Type.Optional(Type.String()) }))),
+  }),
+  closedObject({ type: Type.Literal("auth_url"), url: Type.String({ minLength: 1 }), instructions: Type.Optional(Type.String()) }),
+  closedObject({
+    type: Type.Literal("device_code"),
+    userCode: Type.String({ minLength: 1 }),
+    verificationUri: Type.String({ minLength: 1 }),
+    intervalSeconds: Type.Optional(Type.Number()),
+    expiresInSeconds: Type.Optional(Type.Number()),
+  }),
+  closedObject({ type: Type.Literal("progress"), message: Type.String({ minLength: 1 }) }),
+  closedObject({ type: Type.Literal("prompt"), prompt: ProviderAuthPromptSchema }),
+]);
+export type ProviderAuthEvent = Static<typeof ProviderAuthEventSchema>;
+
 export const ApplePiSessionEventSchema = Type.Union([
   closedObject({
     type: Type.Literal("text_delta"),
@@ -227,6 +286,7 @@ export const decodeProviderOperationResult = (value: unknown): ProviderOperation
   decode(ProviderOperationResultSchema, value, "provider operation result");
 export const decodeModelCatalogRefreshResult = (value: unknown): ModelCatalogRefreshResult =>
   decode(ModelCatalogRefreshResultSchema, value, "model catalog refresh result");
+export const decodeProviderAuthEvent = (value: unknown): ProviderAuthEvent => decode(ProviderAuthEventSchema, value, "provider auth event");
 export const decodeModelItem = (value: unknown): ModelItem => decode(ModelItemSchema, value, "model item");
 export const decodeSessionItem = (value: unknown): SessionItem => decode(SessionItemSchema, value, "session item");
 export const decodeSessionSnapshot = (value: unknown): SessionSnapshot => decode(SessionSnapshotSchema, value, "session snapshot");

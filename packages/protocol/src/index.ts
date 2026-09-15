@@ -5,11 +5,13 @@ import {
   HostCapabilitiesSchema,
   ModelCatalogRefreshResultSchema,
   ModelItemSchema,
+  ProviderAuthEventSchema,
   ProviderItemSchema,
   ProviderOperationResultSchema,
   SessionItemSchema,
   SessionSnapshotSchema,
   type ApplePiSessionEvent,
+  type ProviderAuthEvent,
 } from "./domain.js";
 import { isJsonSerializable } from "./wire-value.js";
 
@@ -23,7 +25,10 @@ export const Payloads = {
   "system.shutdown": Type.Object({}, { additionalProperties: false }),
   "session.open": Type.Object({ cwd: Type.String({ minLength: 1 }) }, { additionalProperties: false }),
   "session.openPath": Type.Object({ cwd: Type.String({ minLength: 1 }), path: Type.String({ minLength: 1 }) }, { additionalProperties: false }),
-  "session.create": Type.Object({ cwd: Type.String({ minLength: 1 }), provider: Type.Optional(Type.String()), modelId: Type.Optional(Type.String()) }, { additionalProperties: false }),
+  "session.create": Type.Object(
+    { cwd: Type.String({ minLength: 1 }), provider: Type.Optional(Type.String()), modelId: Type.Optional(Type.String()) },
+    { additionalProperties: false },
+  ),
   "session.list": Type.Object({ cwd: Type.String({ minLength: 1 }) }, { additionalProperties: false }),
   "session.send": Type.Object({ text: Type.String({ minLength: 1 }) }, { additionalProperties: false }),
   "session.cancel": Type.Object({}, { additionalProperties: false }),
@@ -31,21 +36,57 @@ export const Payloads = {
   "model.list": Type.Object({}, { additionalProperties: false }),
   "model.set": Type.Object({ provider: Type.String({ minLength: 1 }), modelId: Type.String({ minLength: 1 }) }, { additionalProperties: false }),
   "provider.list": Type.Object({}, { additionalProperties: false }),
-  "provider.connectApiKey": Type.Object({ providerId: Type.String({ minLength: 1 }), apiKey: Type.String({ minLength: 1 }), operationId: Type.String({ minLength: 1 }), timeoutMs: Type.Integer({ minimum: 100, maximum: 30_000 }) }, { additionalProperties: false }),
-  "provider.disconnect": Type.Object({ providerId: Type.String({ minLength: 1 }), operationId: Type.String({ minLength: 1 }), timeoutMs: Type.Integer({ minimum: 100, maximum: 30_000 }) }, { additionalProperties: false }),
-  "provider.verify": Type.Object({ providerId: Type.String({ minLength: 1 }), operationId: Type.String({ minLength: 1 }), timeoutMs: Type.Integer({ minimum: 100, maximum: 30_000 }) }, { additionalProperties: false }),
-  "model.refresh": Type.Object({ providerIds: Type.Optional(Type.Array(Type.String({ minLength: 1 }), { minItems: 1 })), operationId: Type.String({ minLength: 1 }), timeoutMs: Type.Integer({ minimum: 100, maximum: 30_000 }) }, { additionalProperties: false }),
+  "provider.connectApiKey": Type.Object(
+    {
+      providerId: Type.String({ minLength: 1 }),
+      apiKey: Type.String({ minLength: 1 }),
+      operationId: Type.String({ minLength: 1 }),
+      timeoutMs: Type.Integer({ minimum: 100, maximum: 30_000 }),
+    },
+    { additionalProperties: false },
+  ),
+  "provider.disconnect": Type.Object(
+    { providerId: Type.String({ minLength: 1 }), operationId: Type.String({ minLength: 1 }), timeoutMs: Type.Integer({ minimum: 100, maximum: 30_000 }) },
+    { additionalProperties: false },
+  ),
+  "provider.verify": Type.Object(
+    { providerId: Type.String({ minLength: 1 }), operationId: Type.String({ minLength: 1 }), timeoutMs: Type.Integer({ minimum: 100, maximum: 30_000 }) },
+    { additionalProperties: false },
+  ),
+  "model.refresh": Type.Object(
+    {
+      providerIds: Type.Optional(Type.Array(Type.String({ minLength: 1 }), { minItems: 1 })),
+      operationId: Type.String({ minLength: 1 }),
+      timeoutMs: Type.Integer({ minimum: 100, maximum: 30_000 }),
+    },
+    { additionalProperties: false },
+  ),
   "operation.cancel": Type.Object({ operationId: Type.String({ minLength: 1 }) }, { additionalProperties: false }),
+  // An interactive OAuth login waits on the user (opening a browser, approving
+  // a device code), so it needs a much longer budget than the other bounded
+  // provider operations above; 20 minutes comfortably covers the OpenAI Codex
+  // device-code flow's own 15-minute expiry plus a margin for the browser flow.
+  "provider.startOAuthLogin": Type.Object(
+    { providerId: Type.String({ minLength: 1 }), operationId: Type.String({ minLength: 1 }), timeoutMs: Type.Integer({ minimum: 100, maximum: 1_200_000 }) },
+    { additionalProperties: false },
+  ),
+  "provider.respondOAuthPrompt": Type.Object(
+    { operationId: Type.String({ minLength: 1 }), promptId: Type.String({ minLength: 1 }), value: Type.String() },
+    { additionalProperties: false },
+  ),
 } as const;
 
 export const ResultSchemas = {
-  "system.hello": Type.Object({
-    protocolVersion: Type.Literal(PROTOCOL_VERSION),
-    hostVersion: Type.String({ minLength: 1 }),
-    piVersion: Type.String({ minLength: 1 }),
-    capabilities: HostCapabilitiesSchema,
-    pid: Type.Integer({ minimum: 1 }),
-  }, { additionalProperties: false }),
+  "system.hello": Type.Object(
+    {
+      protocolVersion: Type.Literal(PROTOCOL_VERSION),
+      hostVersion: Type.String({ minLength: 1 }),
+      piVersion: Type.String({ minLength: 1 }),
+      capabilities: HostCapabilitiesSchema,
+      pid: Type.Integer({ minimum: 1 }),
+    },
+    { additionalProperties: false },
+  ),
   "system.shutdown": Type.Object({}, { additionalProperties: false }),
   "session.open": SessionSnapshotSchema,
   "session.openPath": SessionSnapshotSchema,
@@ -62,27 +103,50 @@ export const ResultSchemas = {
   "provider.verify": ProviderOperationResultSchema,
   "model.refresh": ModelCatalogRefreshResultSchema,
   "operation.cancel": Type.Object({ cancelled: Type.Boolean() }, { additionalProperties: false }),
+  "provider.startOAuthLogin": ProviderOperationResultSchema,
+  "provider.respondOAuthPrompt": Type.Object({ accepted: Type.Boolean() }, { additionalProperties: false }),
 } as const;
 
-export const HostEventSchema = Type.Object({
-  protocolVersion: Type.Literal(PROTOCOL_VERSION),
-  type: Type.Literal("session.event"),
-  sequence: Type.Integer({ minimum: 1 }),
-  payload: ApplePiSessionEventSchema,
-}, { additionalProperties: false });
+export const HostEventSchema = Type.Union([
+  Type.Object(
+    {
+      protocolVersion: Type.Literal(PROTOCOL_VERSION),
+      type: Type.Literal("session.event"),
+      sequence: Type.Integer({ minimum: 1 }),
+      payload: ApplePiSessionEventSchema,
+    },
+    { additionalProperties: false },
+  ),
+  // Pushed while a `provider.startOAuthLogin` operation is in flight: relays
+  // Pi's `AuthInteraction` notify()/prompt() calls for that operationId. Not
+  // sequenced like session events — the desktop only ever needs the latest
+  // interaction step for a given login, not a durable ordered log of them.
+  Type.Object(
+    {
+      protocolVersion: Type.Literal(PROTOCOL_VERSION),
+      type: Type.Literal("provider.authEvent"),
+      operationId: Type.String({ minLength: 1 }),
+      payload: ProviderAuthEventSchema,
+    },
+    { additionalProperties: false },
+  ),
+]);
 
-export const HostErrorResponseSchema = Type.Object({
-  protocolVersion: Type.Literal(PROTOCOL_VERSION),
-  requestId: Type.String(),
-  ok: Type.Literal(false),
-  error: Type.String(),
-}, { additionalProperties: false });
+export const HostErrorResponseSchema = Type.Object(
+  {
+    protocolVersion: Type.Literal(PROTOCOL_VERSION),
+    requestId: Type.String(),
+    ok: Type.Literal(false),
+    error: Type.String(),
+  },
+  { additionalProperties: false },
+);
 
 export type HostCommandType = keyof typeof Payloads;
 export type HostCommandPayloads = { [Command in HostCommandType]: import("typebox").Static<(typeof Payloads)[Command]> };
 export type HostCommandResults = { [Command in HostCommandType]: import("typebox").Static<(typeof ResultSchemas)[Command]> };
 export type HostMessage<Command extends HostCommandType = HostCommandType> = {
-  [Current in Command]: { protocolVersion: 1; requestId: string; type: Current; payload: HostCommandPayloads[Current] }
+  [Current in Command]: { protocolVersion: 1; requestId: string; type: Current; payload: HostCommandPayloads[Current] };
 }[Command];
 export type HostSuccessResponse<Command extends HostCommandType = HostCommandType> = {
   protocolVersion: 1;
@@ -92,7 +156,9 @@ export type HostSuccessResponse<Command extends HostCommandType = HostCommandTyp
 };
 export type HostErrorResponse = { protocolVersion: 1; requestId: string; ok: false; error: string };
 export type HostResponse<Command extends HostCommandType = HostCommandType> = HostSuccessResponse<Command> | HostErrorResponse;
-export type HostEvent = { protocolVersion: 1; type: "session.event"; sequence: number; payload: ApplePiSessionEvent };
+export type HostEvent =
+  | { protocolVersion: 1; type: "session.event"; sequence: number; payload: ApplePiSessionEvent }
+  | { protocolVersion: 1; type: "provider.authEvent"; operationId: string; payload: ProviderAuthEvent };
 
 export function decodeHostMessage(value: unknown): HostMessage {
   if (!value || typeof value !== "object" || (value as { protocolVersion?: unknown }).protocolVersion !== 1) {
@@ -101,8 +167,12 @@ export function decodeHostMessage(value: unknown): HostMessage {
   if (!isJsonSerializable(value)) throw new Error("Invalid host message payload");
   const record = value as Record<string, unknown>;
   const keys = Object.keys(record);
-  if (keys.some((key) => !["protocolVersion", "requestId", "type", "payload"].includes(key)) ||
-      typeof record.requestId !== "string" || typeof record.type !== "string" || !(record.type in Payloads)) {
+  if (
+    keys.some((key) => !["protocolVersion", "requestId", "type", "payload"].includes(key)) ||
+    typeof record.requestId !== "string" ||
+    typeof record.type !== "string" ||
+    !(record.type in Payloads)
+  ) {
     throw new Error("Invalid host message");
   }
   const schema = Payloads[record.type as HostCommandType];
@@ -131,19 +201,24 @@ export function decodeHostRecord<Command extends HostCommandType>(value: unknown
     return value as unknown as HostResponse<Command>;
   }
   if (record.ok === true && command) {
-    const schema = Type.Object({
-      protocolVersion: Type.Literal(PROTOCOL_VERSION),
-      requestId: Type.String(),
-      ok: Type.Literal(true),
-      result: ResultSchemas[command],
-    }, { additionalProperties: false });
+    const schema = Type.Object(
+      {
+        protocolVersion: Type.Literal(PROTOCOL_VERSION),
+        requestId: Type.String(),
+        ok: Type.Literal(true),
+        result: ResultSchemas[command],
+      },
+      { additionalProperties: false },
+    );
     if (!Value.Check(schema, value)) throw new Error(`Invalid host success response for ${command}`);
     return value as unknown as HostResponse<Command>;
   }
   throw new Error("Invalid host record");
 }
 
-export function encodeRecord(value: unknown): string { return `${JSON.stringify(value)}\n`; }
+export function encodeRecord(value: unknown): string {
+  return `${JSON.stringify(value)}\n`;
+}
 
 export class JsonlDecoder {
   private buffered = "";

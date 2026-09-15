@@ -32,21 +32,27 @@ export class AgentHostSupervisor extends EventEmitter {
   private stopping?: { child: ChildProcessWithoutNullStreams; promise: Promise<void> };
   private readonly exitWaiters = new WeakMap<ChildProcessWithoutNullStreams, () => void>();
   private readonly ignoredResponses = new Map<string, HostCommandType>();
-  private readonly pending = new Map<string, {
-    type: HostCommandType;
-    resolve: (value: unknown) => void;
-    reject: (error: Error) => void;
-  }>();
+  private readonly pending = new Map<
+    string,
+    {
+      type: HostCommandType;
+      resolve: (value: unknown) => void;
+      reject: (error: Error) => void;
+    }
+  >();
 
-  constructor(private readonly options: AgentHostSupervisorOptions) { super(); }
+  constructor(private readonly options: AgentHostSupervisorOptions) {
+    super();
+  }
 
   async start(): Promise<void> {
     if (this.stopping) await this.stopping.promise;
     if (this.child) await this.stop();
     this.ready = false;
     const hostPath = this.options.hostPath();
-    const child = this.options.spawnHost?.(hostPath)
-      ?? spawn(process.execPath, [hostPath], { stdio: ["pipe", "pipe", "pipe"], env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" } });
+    const child =
+      this.options.spawnHost?.(hostPath) ??
+      spawn(process.execPath, [hostPath], { stdio: ["pipe", "pipe", "pipe"], env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" } });
     this.child = child;
     const decoder = new JsonlDecoder();
     child.stdout.setEncoding("utf8");
@@ -120,10 +126,7 @@ export class AgentHostSupervisor extends EventEmitter {
     const timedOut = new Promise<void>((resolve) => {
       timer = setTimeout(resolve, this.options.shutdownTimeoutMs ?? 1_000);
     });
-    const exitedGracefully = await Promise.race([
-      exited.then(() => true),
-      timedOut.then(() => false),
-    ]);
+    const exitedGracefully = await Promise.race([exited.then(() => true), timedOut.then(() => false)]);
     if (timer) clearTimeout(timer);
     if (!exitedGracefully) {
       child.kill("SIGKILL");
@@ -132,9 +135,7 @@ export class AgentHostSupervisor extends EventEmitter {
   }
 
   private onRecord(child: ChildProcessWithoutNullStreams, record: unknown): void {
-    const requestId = typeof (record as { requestId?: unknown })?.requestId === "string"
-      ? (record as { requestId: string }).requestId
-      : undefined;
+    const requestId = typeof (record as { requestId?: unknown })?.requestId === "string" ? (record as { requestId: string }).requestId : undefined;
     const pending = requestId ? this.pending.get(requestId) : undefined;
     const ignoredType = requestId ? this.ignoredResponses.get(requestId) : undefined;
     let decoded;
@@ -145,7 +146,13 @@ export class AgentHostSupervisor extends EventEmitter {
       this.failProtocol(child, pending ? requestId : undefined);
       return;
     }
-    if ("type" in decoded) { this.emit("session.event", decoded); return; }
+    // `decoded.type` is a `HostEvent` discriminant ("session.event" today,
+    // "provider.authEvent" for an in-flight OAuth login): emitting under that
+    // name lets each event kind get its own listener without new plumbing here.
+    if ("type" in decoded) {
+      this.emit(decoded.type, decoded);
+      return;
+    }
     if (requestId && ignoredType) {
       this.ignoredResponses.delete(requestId);
       return;
@@ -163,9 +170,7 @@ export class AgentHostSupervisor extends EventEmitter {
 
   private failProtocol(child: ChildProcessWithoutNullStreams, requestId?: string): void {
     if (this.child !== child) return;
-    const message = requestId
-      ? `Agent host protocol fault for request ${requestId}`
-      : "Agent host protocol fault";
+    const message = requestId ? `Agent host protocol fault for request ${requestId}` : "Agent host protocol fault";
     const fault: AgentHostProtocolFault = {
       code: "INVALID_HOST_RECORD",
       message,

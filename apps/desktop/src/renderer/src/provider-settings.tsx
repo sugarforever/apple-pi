@@ -1,8 +1,20 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { AlertCircle, Check, CircleDashed, KeyRound, Search } from "lucide-react";
-import type { ModelItem, ProviderDiagnostic, ProviderItem, ProviderOperationResult } from "@apple-pi/protocol";
+import type { HostEvent, ModelItem, ProviderAuthEvent, ProviderDiagnostic, ProviderItem, ProviderOperationResult } from "@apple-pi/protocol";
 
 export type ProviderActivity = "idle" | "checking";
+
+// Bridges the OAuth sign-in flow: `start` kicks off `provider.startOAuthLogin`
+// and returns its operationId immediately (before the login itself completes)
+// so a `subscribe`d `provider.authEvent` can be correlated to it, `respond`
+// answers a pending prompt, and `cancel` aborts the operation the same way
+// `operation.cancel` cancels any other provider operation.
+export interface ProviderOAuthBridge {
+  start(providerId: string): { operationId: string; result: Promise<ProviderOperationResult> };
+  respond(operationId: string, promptId: string, value: string): Promise<{ accepted: boolean }>;
+  cancel(operationId: string): Promise<unknown>;
+  subscribe(listener: (event: HostEvent) => void): () => void;
+}
 
 export interface ProviderSettingsProps {
   providers: ProviderItem[];
@@ -13,6 +25,14 @@ export interface ProviderSettingsProps {
   onVerify(providerId: string): Promise<ProviderOperationResult>;
   onRefresh(providerId: string): Promise<void>;
   onDefaultModel(model: { provider: string; modelId: string }): Promise<void>;
+  oauth: ProviderOAuthBridge;
+}
+
+interface OAuthLoginState {
+  providerId: string;
+  operationId: string;
+  latest?: ProviderAuthEvent;
+  promptValue: string;
 }
 
 const sourceLabels: Record<ProviderItem["credentialSource"], string> = {
@@ -36,17 +56,144 @@ export function modelUnavailable(models: ModelItem[], ref: { provider: string; m
   return Boolean(ref) && models.length > 0 && !models.some((model) => model.provider === ref!.provider && model.modelId === ref!.modelId);
 }
 
+// openai-codex has no `api_key` auth method at all, so it never satisfied the
+// existing `canManage` check above — there was no way to start signing in to
+// it from Settings before this. A provider with both auth methods is free to
+// show a "Sign in" button alongside "Connect" once it is disconnected.
+export function canStartOAuthLogin(provider: ProviderItem): boolean {
+  return provider.authMethods.includes("oauth") && provider.status !== "connected";
+}
+
+function OAuthLoginPanel(props: {
+  state: OAuthLoginState;
+  onCancel: () => void;
+  onSubmit: (value: string) => void;
+  onPromptValueChange: (value: string) => void;
+}) {
+  const { latest } = props.state;
+  return (
+    <div className="oauth-login-panel" role="status" aria-live="polite">
+      {!latest && <p>Starting sign-in…</p>}
+      {latest?.type === "info" && (
+        <div>
+          <p>{latest.message}</p>
+          {latest.links?.map((link) => (
+            <a key={link.url} href={link.url} target="_blank" rel="noreferrer">
+              {link.label ?? link.url}
+            </a>
+          ))}
+        </div>
+      )}
+      {latest?.type === "auth_url" && (
+        <div>
+          <p>{latest.instructions ?? "Continue in your browser to finish signing in."}</p>
+          <a href={latest.url} target="_blank" rel="noreferrer">
+            Open sign-in page
+          </a>
+        </div>
+      )}
+      {latest?.type === "device_code" && (
+        <div>
+          <p>Enter this code at {latest.verificationUri}:</p>
+          <code className="oauth-device-code">{latest.userCode}</code>
+        </div>
+      )}
+      {latest?.type === "progress" && <p>{latest.message}</p>}
+      {latest?.type === "prompt" && latest.prompt.type === "select" && (
+        <div className="oauth-prompt-options">
+          <p>{latest.prompt.message}</p>
+          {latest.prompt.options.map((option) => (
+            <button key={option.id} type="button" onClick={() => props.onSubmit(option.id)}>
+              {option.label}
+            </button>
+          ))}
+        </div>
+      )}
+      {latest?.type === "prompt" && latest.prompt.type !== "select" && (
+        <form
+          className="oauth-prompt-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            props.onSubmit(props.state.promptValue);
+          }}
+        >
+          <label htmlFor={`oauth-prompt-${latest.prompt.promptId}`}>{latest.prompt.message}</label>
+          <div>
+            <input
+              id={`oauth-prompt-${latest.prompt.promptId}`}
+              type={latest.prompt.type === "secret" ? "password" : "text"}
+              autoComplete="off"
+              spellCheck={false}
+              placeholder={latest.prompt.placeholder}
+              value={props.state.promptValue}
+              onChange={(event) => props.onPromptValueChange(event.target.value)}
+              autoFocus
+            />
+            <button type="submit" disabled={!props.state.promptValue.trim()}>
+              Continue
+            </button>
+          </div>
+        </form>
+      )}
+      <button type="button" className="secondary" onClick={props.onCancel}>
+        Cancel sign-in
+      </button>
+    </div>
+  );
+}
+
 export function ProviderSettings(props: ProviderSettingsProps) {
   const [query, setQuery] = useState("");
   const [editing, setEditing] = useState<string | null>(null);
   const [apiKeys, setApiKeys] = useState<Record<string, string>>({});
   const [activity, setActivity] = useState<Record<string, ProviderActivity>>({});
   const [feedback, setFeedback] = useState<Record<string, ProviderDiagnostic | undefined>>({});
+  const [oauthLogin, setOauthLogin] = useState<OAuthLoginState | null>(null);
 
   const visible = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase();
     return needle ? props.providers.filter((provider) => `${provider.name} ${provider.id}`.toLocaleLowerCase().includes(needle)) : props.providers;
   }, [props.providers, query]);
+
+  useEffect(() => {
+    return props.oauth.subscribe((event) => {
+      if (event.type !== "provider.authEvent") return;
+      setOauthLogin((current) => (current && current.operationId === event.operationId ? { ...current, latest: event.payload, promptValue: "" } : current));
+    });
+  }, [props.oauth]);
+
+  const startOAuthLogin = (provider: ProviderItem): void => {
+    const { operationId, result } = props.oauth.start(provider.id);
+    setOauthLogin({ providerId: provider.id, operationId, promptValue: "" });
+    setActivity((current) => ({ ...current, [provider.id]: "checking" }));
+    setFeedback((current) => ({ ...current, [provider.id]: undefined }));
+    result
+      .then((outcome) => {
+        const diagnostic = firstActionableDiagnostic(outcome);
+        setFeedback((current) => ({ ...current, [provider.id]: diagnostic }));
+        if (!diagnostic || diagnostic.severity !== "error") void props.onRefresh(provider.id);
+      })
+      .catch(() =>
+        setFeedback((current) => ({
+          ...current,
+          [provider.id]: { code: "authentication_failed", severity: "error", message: "Apple Pi could not complete sign-in. Try again.", action: "retry" },
+        })),
+      )
+      .finally(() => {
+        setActivity((current) => ({ ...current, [provider.id]: "idle" }));
+        setOauthLogin((current) => (current?.operationId === operationId ? null : current));
+      });
+  };
+
+  const cancelOAuthLogin = (): void => {
+    if (oauthLogin) void props.oauth.cancel(oauthLogin.operationId);
+  };
+
+  const submitOAuthPrompt = (value: string): void => {
+    if (!oauthLogin?.latest || oauthLogin.latest.type !== "prompt" || !value) return;
+    void props.oauth.respond(oauthLogin.operationId, oauthLogin.latest.prompt.promptId, value);
+    setOauthLogin((current) => (current ? { ...current, promptValue: "" } : current));
+  };
 
   const run = async (providerId: string, operation: () => Promise<ProviderOperationResult>, refresh = false): Promise<boolean> => {
     setActivity((current) => ({ ...current, [providerId]: "checking" }));
@@ -115,6 +262,7 @@ export function ProviderSettings(props: ProviderSettingsProps) {
             const canManage =
               provider.authMethods.includes("api_key") && (provider.credentialSource === "apple_pi" || provider.credentialSource === "unavailable");
             const isEditing = editing === provider.id;
+            const isOAuthActive = oauthLogin?.providerId === provider.id;
             return (
               <article className={`provider-card status-${checking ? "checking" : provider.status}`} key={provider.id} aria-busy={checking}>
                 <div className="provider-summary">
@@ -162,6 +310,14 @@ export function ProviderSettings(props: ProviderSettingsProps) {
                   <p className={`provider-diagnostic ${diagnostic.severity}`} role={diagnostic.severity === "error" ? "alert" : "status"}>
                     {diagnostic.message}
                   </p>
+                )}
+                {isOAuthActive && oauthLogin && (
+                  <OAuthLoginPanel
+                    state={oauthLogin}
+                    onCancel={cancelOAuthLogin}
+                    onSubmit={submitOAuthPrompt}
+                    onPromptValueChange={(value) => setOauthLogin((current) => (current ? { ...current, promptValue: value } : current))}
+                  />
                 )}
                 {isEditing && canManage && (
                   <form
@@ -237,6 +393,11 @@ export function ProviderSettings(props: ProviderSettingsProps) {
                       disabled={checking}
                     >
                       {provider.status === "connected" ? "Replace key" : "Connect"}
+                    </button>
+                  )}
+                  {canStartOAuthLogin(provider) && !isOAuthActive && (
+                    <button type="button" onClick={() => startOAuthLogin(provider)} disabled={checking}>
+                      Sign in
                     </button>
                   )}
                   {provider.status === "connected" && (

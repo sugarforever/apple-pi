@@ -2,23 +2,23 @@ import {
   decodeApplePiMessage,
   decodeApplePiSessionEvent,
   decodeModelItem,
+  decodeProviderAuthEvent,
   decodeSessionItem,
   type ApplePiContentPart,
   type ApplePiMessage,
   type ApplePiSessionEvent,
   type JsonValue,
   type ModelItem,
+  type ProviderAuthEvent,
   type SessionItem,
   type ToolOutputPart,
 } from "@apple-pi/protocol";
 
 const record = (value: unknown): Record<string, unknown> | undefined =>
-  value !== null && typeof value === "object" ? value as Record<string, unknown> : undefined;
+  value !== null && typeof value === "object" ? (value as Record<string, unknown>) : undefined;
 
 const printable = (value: unknown): string =>
-  typeof value === "string" || typeof value === "number" || typeof value === "boolean" || typeof value === "bigint"
-    ? String(value)
-    : "unknown";
+  typeof value === "string" || typeof value === "number" || typeof value === "boolean" || typeof value === "bigint" ? String(value) : "unknown";
 
 const nonEmptyString = (value: unknown): value is string => typeof value === "string" && value.length > 0;
 
@@ -88,7 +88,14 @@ export function mapPiMessages(value: unknown): ApplePiMessage[] {
     if (item?.role === "user") return [decodeApplePiMessage({ role: "user", content: contentParts(item.content, "user") })];
     if (item?.role === "assistant") return [decodeApplePiMessage({ role: "assistant", content: contentParts(item.content, "assistant") })];
     if (item?.role === "toolResult" && nonEmptyString(item.toolCallId) && nonEmptyString(item.toolName)) {
-      return [decodeApplePiMessage({ role: "tool", content: [{ type: "tool_result", toolCallId: item.toolCallId, name: item.toolName, output: outputParts(item.content), isError: item.isError === true }] })];
+      return [
+        decodeApplePiMessage({
+          role: "tool",
+          content: [
+            { type: "tool_result", toolCallId: item.toolCallId, name: item.toolName, output: outputParts(item.content), isError: item.isError === true },
+          ],
+        }),
+      ];
     }
     return [];
   });
@@ -98,16 +105,22 @@ export function mapPiEvent(value: unknown): ApplePiSessionEvent {
   const event = record(value);
   let mapped: ApplePiSessionEvent;
   switch (event?.type) {
-    case "agent_start": mapped = { type: "lifecycle", phase: "started" }; break;
+    case "agent_start":
+      mapped = { type: "lifecycle", phase: "started" };
+      break;
     case "agent_end": {
       if (event.willRetry === true) {
         mapped = { type: "resync_required", reason: "Pi agent scheduled a retry" };
         break;
       }
       const messages = Array.isArray(event.messages) ? event.messages : [];
-      const assistant = [...messages].reverse().map(record).find((message) => message?.role === "assistant");
+      const assistant = [...messages]
+        .reverse()
+        .map(record)
+        .find((message) => message?.role === "assistant");
       if (assistant?.stopReason === "aborted") mapped = { type: "lifecycle", phase: "cancelled" };
-      else if (assistant?.stopReason === "error") mapped = { type: "lifecycle", phase: "failed", ...(typeof assistant.errorMessage === "string" ? { message: assistant.errorMessage } : {}) };
+      else if (assistant?.stopReason === "error")
+        mapped = { type: "lifecycle", phase: "failed", ...(typeof assistant.errorMessage === "string" ? { message: assistant.errorMessage } : {}) };
       else mapped = { type: "lifecycle", phase: "completed" };
       break;
     }
@@ -117,15 +130,16 @@ export function mapPiEvent(value: unknown): ApplePiSessionEvent {
       else if (update?.type === "thinking_delta" && typeof update.delta === "string") mapped = { type: "thinking_delta", text: update.delta };
       else if (update?.type === "toolcall_start" || update?.type === "toolcall_delta" || update?.type === "toolcall_end") {
         const toolCall = streamedToolCall(update);
-        mapped = nonEmptyString(toolCall?.id) && nonEmptyString(toolCall.name)
-          ? {
-              type: "tool_call",
-              phase: update.type === "toolcall_start" ? "started" : update.type === "toolcall_delta" ? "updated" : "completed",
-              id: toolCall.id,
-              name: toolCall.name,
-              arguments: jsonObject(toolCall.arguments),
-            }
-          : { type: "resync_required", reason: `Malformed Pi message update: ${update.type}` };
+        mapped =
+          nonEmptyString(toolCall?.id) && nonEmptyString(toolCall.name)
+            ? {
+                type: "tool_call",
+                phase: update.type === "toolcall_start" ? "started" : update.type === "toolcall_delta" ? "updated" : "completed",
+                id: toolCall.id,
+                name: toolCall.name,
+                arguments: jsonObject(toolCall.arguments),
+              }
+            : { type: "resync_required", reason: `Malformed Pi message update: ${update.type}` };
       } else mapped = { type: "resync_required", reason: `Unsupported Pi message update: ${printable(update?.type)}` };
       break;
     }
@@ -137,9 +151,10 @@ export function mapPiEvent(value: unknown): ApplePiSessionEvent {
       break;
     case "tool_execution_end": {
       const result = record(event.result);
-      mapped = nonEmptyString(event.toolCallId) && nonEmptyString(event.toolName)
-        ? { type: "tool_result", id: event.toolCallId, name: event.toolName, output: outputParts(result?.content), isError: event.isError === true }
-        : { type: "resync_required", reason: "Malformed Pi event: tool_execution_end" };
+      mapped =
+        nonEmptyString(event.toolCallId) && nonEmptyString(event.toolName)
+          ? { type: "tool_result", id: event.toolCallId, name: event.toolName, output: outputParts(result?.content), isError: event.isError === true }
+          : { type: "resync_required", reason: "Malformed Pi event: tool_execution_end" };
       break;
     }
     case "queue_update":
@@ -176,16 +191,18 @@ export function mapPiEvent(value: unknown): ApplePiSessionEvent {
       };
       break;
     case "summarization_retry_attempt_start":
-      mapped = event.source === "compaction"
-        ? { type: "resync_required", reason: `Pi compaction summarization retry started (${printable(event.reason)})` }
-        : event.source === "branchSummary"
-          ? { type: "resync_required", reason: "Pi branch summary retry started" }
-          : { type: "resync_required", reason: "Pi summarization retry started" };
+      mapped =
+        event.source === "compaction"
+          ? { type: "resync_required", reason: `Pi compaction summarization retry started (${printable(event.reason)})` }
+          : event.source === "branchSummary"
+            ? { type: "resync_required", reason: "Pi branch summary retry started" }
+            : { type: "resync_required", reason: "Pi summarization retry started" };
       break;
     case "summarization_retry_finished":
       mapped = { type: "resync_required", reason: "Pi summarization retry finished" };
       break;
-    default: mapped = { type: "resync_required", reason: `Unsupported Pi event: ${printable(event?.type)}` };
+    default:
+      mapped = { type: "resync_required", reason: `Unsupported Pi event: ${printable(event?.type)}` };
   }
   return decodeApplePiSessionEvent(mapped);
 }
@@ -193,6 +210,82 @@ export function mapPiEvent(value: unknown): ApplePiSessionEvent {
 export function mapPiModel(value: unknown): ModelItem {
   const item = record(value);
   return decodeModelItem({ provider: item?.provider, modelId: item?.id, name: item?.name || item?.id });
+}
+
+// Maps a Pi `AuthEvent` (from `AuthInteraction.notify()`) to Apple Pi's wire
+// shape. Never carries a token: `auth_url`/`device_code` are public onboarding
+// artifacts by construction (see `@earendil-works/pi-ai`'s `AuthEvent`).
+export function mapPiAuthEvent(value: unknown): ProviderAuthEvent {
+  const event = record(value);
+  switch (event?.type) {
+    case "info":
+      return decodeProviderAuthEvent({
+        type: "info",
+        message: printable(event.message),
+        ...(Array.isArray(event.links) ? { links: authLinks(event.links) } : {}),
+      });
+    case "auth_url":
+      return decodeProviderAuthEvent({
+        type: "auth_url",
+        url: printable(event.url),
+        ...(nonEmptyString(event.instructions) ? { instructions: event.instructions } : {}),
+      });
+    case "device_code":
+      return decodeProviderAuthEvent({
+        type: "device_code",
+        userCode: printable(event.userCode),
+        verificationUri: printable(event.verificationUri),
+        ...(typeof event.intervalSeconds === "number" ? { intervalSeconds: event.intervalSeconds } : {}),
+        ...(typeof event.expiresInSeconds === "number" ? { expiresInSeconds: event.expiresInSeconds } : {}),
+      });
+    case "progress":
+      return decodeProviderAuthEvent({ type: "progress", message: printable(event.message) });
+    default:
+      return decodeProviderAuthEvent({ type: "progress", message: `Unsupported Pi auth event: ${printable(event?.type)}` });
+  }
+}
+
+function authLinks(value: unknown[]): Array<{ url: string; label?: string }> {
+  return value.flatMap((link) => {
+    const item = record(link);
+    return nonEmptyString(item?.url) ? [{ url: item.url, ...(nonEmptyString(item.label) ? { label: item.label } : {}) }] : [];
+  });
+}
+
+// Maps a Pi `AuthPrompt` (from `AuthInteraction.prompt()`) to a `provider.authEvent`
+// of type "prompt". `promptId` is Apple Pi's own correlation id (the real
+// `AuthPrompt` has no id, only a non-serializable per-prompt `AbortSignal`);
+// `provider.respondOAuthPrompt` answers a specific prompt by this id.
+export function mapPiAuthPrompt(promptId: string, value: unknown): ProviderAuthEvent {
+  const prompt = record(value);
+  const placeholder = nonEmptyString(prompt?.placeholder) ? { placeholder: prompt.placeholder } : {};
+  switch (prompt?.type) {
+    case "secret":
+      return decodeProviderAuthEvent({ type: "prompt", prompt: { type: "secret", promptId, message: printable(prompt.message), ...placeholder } });
+    case "select":
+      return decodeProviderAuthEvent({
+        type: "prompt",
+        prompt: { type: "select", promptId, message: printable(prompt.message), options: authSelectOptions(prompt.options) },
+      });
+    case "manual_code":
+      return decodeProviderAuthEvent({ type: "prompt", prompt: { type: "manual_code", promptId, message: printable(prompt.message), ...placeholder } });
+    case "text":
+    default:
+      return decodeProviderAuthEvent({
+        type: "prompt",
+        prompt: { type: "text", promptId, message: printable(prompt?.message ?? "Provide a value to continue signing in."), ...placeholder },
+      });
+  }
+}
+
+function authSelectOptions(value: unknown): Array<{ id: string; label: string; description?: string }> {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((option) => {
+    const item = record(option);
+    return nonEmptyString(item?.id) && nonEmptyString(item.label)
+      ? [{ id: item.id, label: item.label, ...(nonEmptyString(item.description) ? { description: item.description } : {}) }]
+      : [];
+  });
 }
 
 export function mapPiSessionItem(value: unknown): SessionItem {

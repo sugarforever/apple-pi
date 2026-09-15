@@ -1,4 +1,4 @@
-import { app, BrowserWindow, crashReporter, dialog, ipcMain, safeStorage, session, type IpcMainInvokeEvent } from "electron";
+import { app, BrowserWindow, crashReporter, dialog, ipcMain, safeStorage, session, shell, type IpcMainInvokeEvent } from "electron";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { AgentHostSupervisor } from "./agent-host-supervisor.js";
@@ -131,6 +131,14 @@ async function bootstrap(): Promise<void> {
   await host.start();
   providerCredentials = new ProviderCredentialController(credentials, host);
   host.on("session.event", (event) => mainWindow?.webContents.send("session:event", event));
+  // The agent host is a plain Node process with no Electron APIs (see the
+  // process boundary in `docs/architecture`), so opening the system browser for
+  // an `auth_url` interaction step is Main's job, not `PiProviderService`'s.
+  host.on("provider.authEvent", (event) => {
+    if (event.payload.type === "auth_url")
+      void shell.openExternal(event.payload.url).catch((error) => log.warn("failed to open system browser for sign-in", { error }));
+    mainWindow?.webContents.send("provider:authEvent", event);
+  });
   createWindow();
   log.info("Apple Pi ready");
 }
@@ -235,6 +243,14 @@ handle("operation:cancel", (_event, operationId: unknown) => {
   if (typeof operationId !== "string" || !operationId) throw new Error("Invalid operation");
   return host.request("operation.cancel", { operationId });
 });
+handle("provider:startOAuthLogin", async (_event, value: unknown) => {
+  const input = oauthLoginOperation(value);
+  return providerCredentials.startOAuthLogin(input);
+});
+handle("provider:respondOAuthPrompt", async (_event, value: unknown) => {
+  const input = oauthPromptResponse(value);
+  return providerCredentials.respondOAuthPrompt(input);
+});
 
 function validModel(value: unknown): ModelRef {
   if (!value || typeof value !== "object" || typeof (value as ModelRef).provider !== "string" || typeof (value as ModelRef).modelId !== "string")
@@ -271,6 +287,27 @@ function providerOperation(value: unknown, withApiKey = false): { providerId: st
   if (typeof providerId !== "string" || !providerId) throw new Error("Invalid provider");
   if (withApiKey && (typeof apiKey !== "string" || !apiKey)) throw new Error("Invalid API key");
   return { providerId, ...base, ...(withApiKey ? { apiKey: apiKey as string } : {}) };
+}
+
+// An interactive OAuth login waits on the user, so it needs a much longer
+// budget than `operation()`'s 30-second cap on every other bounded provider
+// command; the ceiling matches `provider.startOAuthLogin`'s protocol schema.
+function oauthLoginOperation(value: unknown): { providerId: string; operationId: string; timeoutMs: number } {
+  if (!value || typeof value !== "object") throw new Error("Invalid operation");
+  const { providerId, operationId, timeoutMs } = value as { providerId?: unknown; operationId?: unknown; timeoutMs?: unknown };
+  if (typeof providerId !== "string" || !providerId) throw new Error("Invalid provider");
+  if (typeof operationId !== "string" || !operationId || !Number.isInteger(timeoutMs) || (timeoutMs as number) < 100 || (timeoutMs as number) > 1_200_000)
+    throw new Error("Invalid operation");
+  return { providerId, operationId, timeoutMs: timeoutMs as number };
+}
+
+function oauthPromptResponse(value: unknown): { operationId: string; promptId: string; value: string } {
+  if (!value || typeof value !== "object") throw new Error("Invalid operation");
+  const { operationId, promptId, value: response } = value as { operationId?: unknown; promptId?: unknown; value?: unknown };
+  if (typeof operationId !== "string" || !operationId) throw new Error("Invalid operation");
+  if (typeof promptId !== "string" || !promptId) throw new Error("Invalid prompt");
+  if (typeof response !== "string") throw new Error("Invalid response");
+  return { operationId, promptId, value: response };
 }
 
 async function createSession(): Promise<SessionSnapshot> {

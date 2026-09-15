@@ -2,7 +2,7 @@ import { copyFile, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { createAgentSession, ModelRuntime, readStoredCredential, SessionManager } from "@earendil-works/pi-coding-agent";
-import { afterEach, describe, expect, expectTypeOf, it } from "vitest";
+import { afterEach, describe, expect, expectTypeOf, it, vi } from "vitest";
 import { PI_VERSION, mapPiEvent, mapPiMessages, mapPiModel, mapPiSessionItem, PiProviderService } from "./index.js";
 
 const fixtureUrl = (name: string) => new URL(`../test/fixtures/pi-0.84.2/${name}`, import.meta.url);
@@ -236,5 +236,66 @@ describe("Pi 0.84.2 shared-profile credential reuse compatibility", () => {
 
     expect(refreshed.providers.find((provider) => provider.id === "anthropic")).toMatchObject({ status: "connected", credentialSource: "shared_pi_profile" });
     expect(JSON.parse(await readFile(authPath, "utf8"))).toEqual({ anthropic: { type: "api_key", key: "sk-from-cli-login" } });
+  });
+});
+
+// Grounds issue #28 (OAuth sign-in) against the real SDK. `ModelRuntime.login()`
+// persists the resulting credential itself, into the very auth.json a `pi auth
+// login` run from a terminal would write to (see `Models.login()` in
+// `@earendil-works/pi-ai`'s `models.ts`, which calls `this.credentials.modify()`
+// unconditionally) — there is no separate, Apple-Pi-owned OAuth credential store
+// in this SDK version, and no runtime-only OAuth overlay analogous to
+// `setRuntimeApiKey()`. So an Apple-Pi-initiated openai-codex sign-in and a CLI
+// `pi auth login` are, once complete, byte-for-byte the same auth.json entry.
+describe("Pi 0.84.2 OAuth sign-in compatibility (issue #28)", () => {
+  it("recognizes an existing CLI-created openai-codex OAuth credential as connected, without any Apple Pi involvement", async () => {
+    const root = await temporaryDirectory();
+    const authPath = join(root, "auth.json");
+    const fakeAccessToken = [
+      Buffer.from(JSON.stringify({ alg: "none" })).toString("base64url"),
+      Buffer.from(JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: "acct_123" } })).toString("base64url"),
+      "sig",
+    ].join(".");
+    await writeFile(
+      authPath,
+      JSON.stringify({
+        "openai-codex": { type: "oauth", access: fakeAccessToken, refresh: "refresh-token-xyz", expires: Date.now() + 3_600_000, accountId: "acct_123" },
+      }),
+    );
+
+    const runtime = await ModelRuntime.create({ authPath, modelsPath: null, allowModelNetwork: false, refreshOnCreate: true });
+    const service = new PiProviderService(async () => runtime);
+
+    const providers = await service.list();
+    const codex = providers.find((provider) => provider.id === "openai-codex");
+
+    expect(codex).toMatchObject({ status: "connected", credentialSource: "oauth", authMethods: ["oauth"] });
+    expect(codex?.availableModelCount).toBeGreaterThan(0);
+    expect(codex?.diagnostics).toEqual([]);
+  });
+
+  it("cancelling an in-flight openai-codex sign-in returns to a safe, retryable state without any network call completing", async () => {
+    const root = await temporaryDirectory();
+    const authPath = join(root, "auth.json");
+    const runtime = await ModelRuntime.create({ authPath, modelsPath: null, allowModelNetwork: false, refreshOnCreate: true });
+    const service = new PiProviderService(async () => runtime);
+    const events: unknown[] = [];
+
+    const login = service.oauthLogin("openai-codex", "oauth-cancel-real", 30_000, (event) => events.push(event));
+    // `openaiCodexOAuth.login()` (see the real SDK's `auth/oauth/openai-codex.ts`)
+    // first prompts a "select" (browser vs. device-code login) before any network
+    // call, so receiving that prompt event is confirmation the real login flow
+    // actually started before we cancel it.
+    await vi.waitFor(() => expect(events).toEqual([{ type: "prompt", prompt: expect.objectContaining({ type: "select" }) }]), { timeout: 5_000 });
+
+    expect(service.cancel("oauth-cancel-real")).toBe(true);
+    const result = await login;
+
+    expect(result.diagnostics).toMatchObject([{ code: "operation_cancelled" }]);
+    // Cancelling before the interaction resolved a credential means
+    // `Models.login()` never reached its `credentials.modify()` persistence step:
+    // auth.json stays exactly as `ModelRuntime.create()` initialized it, with no
+    // openai-codex entry.
+    expect(JSON.parse(await readFile(authPath, "utf8"))).toEqual({});
   });
 });

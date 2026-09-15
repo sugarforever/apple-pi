@@ -116,4 +116,98 @@ describe("HostServer", () => {
     expect(response).toEqual({ protocolVersion: 1, requestId: "providers", ok: false, error: "Provider operation failed" });
     expect(JSON.stringify(response)).not.toContain("sk-private");
   });
+
+  it("pushes provider auth events for an in-flight OAuth login under that operation's id", async () => {
+    const events: unknown[] = [];
+    const server = new HostServer((event) => events.push(event));
+    const service = (
+      server as unknown as {
+        pi: { providers: { oauthLogin: (providerId: string, operationId: string, timeoutMs: number, onEvent: (event: unknown) => void) => Promise<unknown> } };
+      }
+    ).pi.providers;
+    service.oauthLogin = vi.fn(async (_providerId, _operationId, _timeoutMs, onEvent) => {
+      onEvent({ type: "auth_url", url: "https://auth.openai.com/oauth/authorize" });
+      onEvent({ type: "progress", message: "Waiting for authentication..." });
+      return { diagnostics: [] };
+    });
+
+    const response = await server.handle({
+      protocolVersion: 1,
+      requestId: "oauth-start",
+      type: "provider.startOAuthLogin",
+      payload: { providerId: "openai-codex", operationId: "op-1", timeoutMs: 60_000 },
+    });
+
+    expect(response).toEqual({ protocolVersion: 1, requestId: "oauth-start", ok: true, result: { diagnostics: [] } });
+    expect(events).toEqual([
+      { protocolVersion: 1, type: "provider.authEvent", operationId: "op-1", payload: { type: "auth_url", url: "https://auth.openai.com/oauth/authorize" } },
+      { protocolVersion: 1, type: "provider.authEvent", operationId: "op-1", payload: { type: "progress", message: "Waiting for authentication..." } },
+    ]);
+  });
+
+  it("routes a prompt response to the provider service and reports whether it was accepted", async () => {
+    const server = new HostServer();
+    const service = (
+      server as unknown as {
+        pi: { providers: { respondOAuthPrompt: (operationId: string, promptId: string, value: string) => boolean } };
+      }
+    ).pi.providers;
+    service.respondOAuthPrompt = vi.fn(() => true);
+
+    const response = await server.handle({
+      protocolVersion: 1,
+      requestId: "oauth-respond",
+      type: "provider.respondOAuthPrompt",
+      payload: { operationId: "op-1", promptId: "prompt-1", value: "browser" },
+    });
+
+    expect(response).toEqual({ protocolVersion: 1, requestId: "oauth-respond", ok: true, result: { accepted: true } });
+    expect(service.respondOAuthPrompt).toHaveBeenCalledWith("op-1", "prompt-1", "browser");
+  });
+
+  it("sanitizes an OAuth login failure the same way as other provider operations", async () => {
+    const server = new HostServer();
+    const service = (server as unknown as { pi: { providers: { oauthLogin: () => Promise<unknown> } } }).pi.providers;
+    service.oauthLogin = vi.fn(async () => {
+      throw new Error("sk-private oauth failure");
+    });
+
+    const response = await server.handle({
+      protocolVersion: 1,
+      requestId: "oauth-fail",
+      type: "provider.startOAuthLogin",
+      payload: { providerId: "openai-codex", operationId: "op-1", timeoutMs: 60_000 },
+    });
+
+    expect(response).toEqual({ protocolVersion: 1, requestId: "oauth-fail", ok: false, error: "Provider operation failed" });
+    expect(JSON.stringify(response)).not.toContain("sk-private");
+  });
+
+  it("never lets a malformed auth event reach the JSONL writer, sanitizing it like any other provider failure", async () => {
+    // Unlike a session event (pushed from a detached subscription outside any
+    // request's call stack), an auth event is pushed synchronously from within
+    // this `provider.startOAuthLogin` request, so its `HostProtocolFault` is
+    // caught by the same try/catch as any other provider operation failure.
+    const events: unknown[] = [];
+    const server = new HostServer((event) => events.push(event));
+    const service = (
+      server as unknown as {
+        pi: { providers: { oauthLogin: (providerId: string, operationId: string, timeoutMs: number, onEvent: (event: unknown) => void) => Promise<unknown> } };
+      }
+    ).pi.providers;
+    service.oauthLogin = vi.fn(async (_providerId, _operationId, _timeoutMs, onEvent) => {
+      onEvent({ type: "unknown_event_kind" });
+      return { diagnostics: [] };
+    });
+
+    const response = await server.handle({
+      protocolVersion: 1,
+      requestId: "oauth-bad-event",
+      type: "provider.startOAuthLogin",
+      payload: { providerId: "openai-codex", operationId: "op-1", timeoutMs: 60_000 },
+    });
+
+    expect(response).toEqual({ protocolVersion: 1, requestId: "oauth-bad-event", ok: false, error: "Provider operation failed" });
+    expect(events).toEqual([]);
+  });
 });
