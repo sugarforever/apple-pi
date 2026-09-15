@@ -172,6 +172,19 @@ describe("renderer model recovery contract", () => {
   });
 });
 
+describe("renderer credential reuse contract", () => {
+  it("reloads provider and model state whenever Settings is opened, to reflect external CLI credential and models.json changes", () => {
+    expect(source).toContain("if (!settingsOpen) return;");
+    expect(source).toContain("window.applePi.provider\n      .refreshModels()");
+    expect(source).toContain("}, [settingsOpen]);");
+  });
+
+  it("labels a shell-command-backed credential distinctly from a stored key or environment variable", () => {
+    const providers = readFileSync(new URL("./src/provider-settings.tsx", import.meta.url), "utf8");
+    expect(providers).toContain('command: "Shell command",');
+  });
+});
+
 describe("renderer feedback contract", () => {
   it("resyncs only after the reducer marks a gap or explicit resync event", () => {
     expect(source).toContain('if (state.sync.status !== "resyncing") return;');

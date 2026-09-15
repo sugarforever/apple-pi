@@ -1,9 +1,9 @@
-import { copyFile, mkdtemp, readFile, rm } from "node:fs/promises";
+import { copyFile, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
-import { createAgentSession, ModelRuntime, SessionManager } from "@earendil-works/pi-coding-agent";
+import { createAgentSession, ModelRuntime, readStoredCredential, SessionManager } from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, expectTypeOf, it } from "vitest";
-import { PI_VERSION, mapPiEvent, mapPiMessages, mapPiModel, mapPiSessionItem } from "./index.js";
+import { PI_VERSION, mapPiEvent, mapPiMessages, mapPiModel, mapPiSessionItem, PiProviderService } from "./index.js";
 
 const fixtureUrl = (name: string) => new URL(`../test/fixtures/pi-0.84.2/${name}`, import.meta.url);
 const temporaryDirectories: string[] = [];
@@ -172,5 +172,69 @@ describe("Pi 0.84.2 public SDK compatibility", () => {
         ],
       },
     ]);
+  });
+});
+
+// Grounds the credential-reuse behavior (issue #29) against the real SDK rather than
+// a hand-written double: `ModelRuntime.getProviderAuthStatus()` reports an auth.json
+// entry as "configured" purely because it exists, even when its `$VARIABLE` cannot
+// resolve in this process, and `readStoredCredential()` is the only public, side-effect-
+// free way to see the raw value behind that status.
+describe("Pi 0.84.2 shared-profile credential reuse compatibility", () => {
+  it("names the unresolved environment variable behind a Pi CLI auth.json entry instead of reporting a generic disconnect", async () => {
+    const root = await temporaryDirectory();
+    const authPath = join(root, "auth.json");
+    await writeFile(authPath, JSON.stringify({ anthropic: { type: "api_key", key: "$APPLE_PI_TEST_UNSET_VAR" } }));
+    delete process.env.APPLE_PI_TEST_UNSET_VAR;
+    const runtime = await ModelRuntime.create({ authPath, modelsPath: null, allowModelNetwork: false, refreshOnCreate: true });
+    // A real caller only relies on PiProviderService's default reader when it also lets
+    // ModelRuntime pick its own default auth.json (see PiSessionService). This fixture
+    // uses a temp authPath instead, so it points the reader at the same file explicitly.
+    const service = new PiProviderService(
+      async () => runtime,
+      fetch,
+      (providerId) => readStoredCredential(providerId, authPath),
+    );
+
+    const providers = await service.list();
+    const anthropic = providers.find((provider) => provider.id === "anthropic");
+
+    expect(anthropic).toMatchObject({ status: "disconnected", credentialSource: "unavailable" });
+    expect(anthropic?.diagnostics).toMatchObject([{ code: "credential_unresolved", action: "check_environment" }]);
+    expect(anthropic?.diagnostics[0]?.message).toContain("APPLE_PI_TEST_UNSET_VAR");
+  });
+
+  it("reuses a Pi CLI credential once its environment variable is inherited, without editing auth.json", async () => {
+    const root = await temporaryDirectory();
+    const authPath = join(root, "auth.json");
+    await writeFile(authPath, JSON.stringify({ anthropic: { type: "api_key", key: "$APPLE_PI_TEST_SET_VAR" } }));
+    process.env.APPLE_PI_TEST_SET_VAR = "sk-from-shell-profile";
+    try {
+      const runtime = await ModelRuntime.create({ authPath, modelsPath: null, allowModelNetwork: false, refreshOnCreate: true });
+      const service = new PiProviderService(async () => runtime);
+
+      const providers = await service.list();
+
+      expect(providers.find((provider) => provider.id === "anthropic")).toMatchObject({ status: "connected", credentialSource: "shared_pi_profile" });
+    } finally {
+      delete process.env.APPLE_PI_TEST_SET_VAR;
+    }
+    expect(JSON.parse(await readFile(authPath, "utf8"))).toEqual({ anthropic: { type: "api_key", key: "$APPLE_PI_TEST_SET_VAR" } });
+  });
+
+  it("reflects a CLI login made after startup once explicitly refreshed, without corrupting auth.json", async () => {
+    const root = await temporaryDirectory();
+    const authPath = join(root, "auth.json");
+    await writeFile(authPath, "{}");
+    const runtime = await ModelRuntime.create({ authPath, modelsPath: null, allowModelNetwork: false, refreshOnCreate: true });
+    const service = new PiProviderService(async () => runtime);
+    expect((await service.list()).find((provider) => provider.id === "anthropic")).toMatchObject({ status: "disconnected" });
+
+    // Simulates `pi auth login` running in a terminal while Apple Pi stays open.
+    await writeFile(authPath, JSON.stringify({ anthropic: { type: "api_key", key: "sk-from-cli-login" } }));
+    const refreshed = await service.refresh(undefined, "reload-after-cli-login", 5_000);
+
+    expect(refreshed.providers.find((provider) => provider.id === "anthropic")).toMatchObject({ status: "connected", credentialSource: "shared_pi_profile" });
+    expect(JSON.parse(await readFile(authPath, "utf8"))).toEqual({ anthropic: { type: "api_key", key: "sk-from-cli-login" } });
   });
 });

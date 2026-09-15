@@ -131,6 +131,7 @@ export const CredentialSourceSchema = Type.Union([
   Type.Literal("apple_pi"),
   Type.Literal("shared_pi_profile"),
   Type.Literal("environment"),
+  Type.Literal("command"),
   Type.Literal("oauth"),
   Type.Literal("unavailable"),
 ]);
@@ -145,6 +146,7 @@ export const ProviderDiagnosticSchema = closedObject({
     Type.Literal("operation_timed_out"),
     Type.Literal("model_refresh_failed"),
     Type.Literal("secure_storage_unavailable"),
+    Type.Literal("credential_unresolved"),
   ]),
   severity: Type.Union([Type.Literal("info"), Type.Literal("warning"), Type.Literal("error")]),
   message: Type.String({ minLength: 1, maxLength: 240 }),

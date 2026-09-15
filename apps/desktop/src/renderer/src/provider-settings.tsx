@@ -19,6 +19,7 @@ const sourceLabels: Record<ProviderItem["credentialSource"], string> = {
   apple_pi: "Apple Pi secure storage",
   shared_pi_profile: "Shared Pi profile",
   environment: "Environment variable",
+  command: "Shell command",
   oauth: "OAuth",
   unavailable: "No credential",
 };

@@ -1,4 +1,6 @@
+import { join } from "node:path";
 import type { CredentialSource, ModelCatalogRefreshResult, ModelItem, ProviderDiagnostic, ProviderItem, ProviderOperationResult } from "@apple-pi/protocol";
+import { getAgentDir, readStoredCredential } from "@earendil-works/pi-coding-agent";
 import { mapPiModel } from "./mappers.js";
 
 interface RuntimeProvider {
@@ -7,11 +9,22 @@ interface RuntimeProvider {
   auth: { apiKey?: unknown; oauth?: unknown };
 }
 
+// Mirrors the "source" values a real ModelRuntime.getProviderAuthStatus() reports:
+// "stored" (auth.json), "runtime" (an Apple-Pi-injected key), "environment" (a
+// resolved ambient/`$VAR` reference), "fallback" (an SDK-registered extension key,
+// unused by Apple Pi today), and the two models.json-configured shapes below.
+type RuntimeAuthSource = "stored" | "runtime" | "environment" | "fallback" | "models_json_key" | "models_json_command";
+
 interface RuntimeLike {
   getProviders(): readonly RuntimeProvider[];
   getProvider(providerId: string): RuntimeProvider | undefined;
   getAvailableSnapshot(): readonly unknown[];
-  getProviderAuthStatus(providerId: string): { configured: boolean; source?: string };
+  getProviderAuthStatus(providerId: string): { configured: boolean; source?: RuntimeAuthSource | string };
+  // Whether auth for this provider actually resolves to a usable value right now.
+  // `getProviderAuthStatus().configured` can be true purely because an auth.json
+  // entry exists, even when its value is a `$VARIABLE` reference this process
+  // cannot resolve — this is the authoritative "does it actually work" check.
+  hasConfiguredAuth(providerId: string): boolean;
   listCredentials(options?: { signal?: AbortSignal }): Promise<readonly { providerId: string; type: "api_key" | "oauth" }[]>;
   checkAuth(providerId: string, options?: { signal?: AbortSignal }): Promise<{ source?: string; type: "api_key" | "oauth" } | undefined>;
   getAuth(providerId: string, options?: { signal?: AbortSignal }): Promise<{ auth: { apiKey?: string } } | undefined>;
@@ -28,6 +41,13 @@ interface RuntimeLike {
 
 type OperationOutcome<T> = { state: "completed"; value: T } | { state: "cancelled" | "timed_out" | "failed" };
 
+// Non-secret shape of an auth.json entry, read without resolving `$VARIABLE`
+// references or executing `!command` values. See `readStoredCredential`.
+interface RawCredential {
+  type: "api_key" | "oauth";
+  key?: string;
+}
+
 export class PiProviderService {
   private readonly operations = new Map<string, AbortController>();
   private inFlightRefresh?: Promise<ModelCatalogRefreshResult>;
@@ -35,6 +55,12 @@ export class PiProviderService {
   constructor(
     private readonly runtime: () => Promise<RuntimeLike>,
     private readonly request: typeof fetch = fetch,
+    // Reads the Pi CLI's own auth.json directly, bypassing ModelRuntime's cached,
+    // resolved view. Mirrors the same default path `ModelRuntime.create()` uses when
+    // `PiSessionService` calls it with no options. Injectable so callers or tests
+    // pointed at a non-default agent directory (or a temp fixture) stay consistent.
+    private readonly rawCredential: (providerId: string) => RawCredential | undefined = (providerId) =>
+      readStoredCredential(providerId, join(getAgentDir(), "auth.json")),
   ) {}
 
   async list(signal?: AbortSignal): Promise<ProviderItem[]> {
@@ -217,26 +243,71 @@ export class PiProviderService {
   private describe(runtime: RuntimeLike, provider: RuntimeProvider, stored: Map<string, "api_key" | "oauth">, counts: Map<string, number>): ProviderItem {
     const status = runtime.getProviderAuthStatus(provider.id);
     const storedType = stored.get(provider.id);
-    const credentialSource = source(status.source, storedType);
-    const connected = status.configured || storedType !== undefined;
+    // An auth.json entry can be "configured" by Pi's own reckoning while still not
+    // actually resolving (a `$VARIABLE` reference this GUI process cannot see).
+    // hasConfiguredAuth() is the authoritative check; cross-referencing it against
+    // the raw, unresolved credential is what lets us name the missing variable.
+    const unresolved = status.source === "stored" && !runtime.hasConfiguredAuth(provider.id) ? this.unresolvedCredentialDiagnostic(provider) : undefined;
+    const connected = !unresolved && (status.configured || storedType !== undefined);
     return {
       id: provider.id,
       name: provider.name,
       authMethods: [...(provider.auth.apiKey ? ["api_key" as const] : []), ...(provider.auth.oauth ? ["oauth" as const] : [])],
       status: connected ? "connected" : "disconnected",
-      credentialSource: connected ? credentialSource : "unavailable",
+      credentialSource: connected ? source(status.source, storedType) : "unavailable",
       availableModelCount: counts.get(provider.id) ?? 0,
-      diagnostics: connected ? [] : [diagnostic("authentication_required", "Connect this provider to make its models available.", "connect")],
+      diagnostics: connected ? [] : [unresolved ?? diagnostic("authentication_required", "Connect this provider to make its models available.", "connect")],
     };
+  }
+
+  // GUI apps do not inherit the environment variables set up in a user's shell
+  // profile, so a `pi auth login`-written `$VARIABLE` reference that works fine in
+  // a terminal can silently stop working once Apple Pi launches it. Naming the
+  // missing variable turns a confusing "disconnected" into an actionable fix.
+  private unresolvedCredentialDiagnostic(provider: RuntimeProvider): ProviderDiagnostic | undefined {
+    const raw = this.rawCredential(provider.id);
+    if (!raw || raw.type !== "api_key" || !raw.key || isCommandReference(raw.key)) return undefined;
+    const missing = unresolvedEnvironmentVariableNames(raw.key);
+    if (missing.length === 0) return undefined;
+    return diagnostic(
+      "credential_unresolved",
+      `The Pi CLI credential for ${provider.name} reads ${missing.join(", ")}, which is not set in Apple Pi. Launch Apple Pi from a terminal to inherit shell variables, or connect a key here instead.`,
+      "check_environment",
+    );
   }
 }
 
-function source(runtimeSource: string | undefined, storedType: "api_key" | "oauth" | undefined): CredentialSource {
+function source(runtimeSource: RuntimeAuthSource | string | undefined, storedType: "api_key" | "oauth" | undefined): CredentialSource {
+  // Apple Pi's own runtime-injected key always takes precedence: a real ModelRuntime
+  // types it identically to a genuine auth.json entry in listCredentials() ("api_key"),
+  // so `storedType` alone cannot tell them apart once both exist for the same provider.
+  if (runtimeSource === "runtime") return "apple_pi";
   if (storedType === "oauth") return "oauth";
   if (storedType === "api_key" || runtimeSource === "stored") return "shared_pi_profile";
-  if (runtimeSource === "runtime") return "apple_pi";
-  if (runtimeSource) return "environment";
+  if (runtimeSource === "models_json_command") return "command";
+  // A literal key written directly into models.json (or, unreachable for Apple Pi
+  // today, an SDK-registered extension key) is still a CLI-managed literal secret.
+  if (runtimeSource === "models_json_key" || runtimeSource === "fallback") return "shared_pi_profile";
+  if (runtimeSource === "environment") return "environment";
   return "unavailable";
+}
+
+const ENV_VAR_REFERENCE = /\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?/g;
+
+function isCommandReference(rawKey: string): boolean {
+  return rawKey.startsWith("!");
+}
+
+// A minimal reimplementation of Pi's own `$VAR`/`${VAR}` template scan
+// (`getConfigValueEnvVarNames` in `resolve-config-value.ts`), which is an internal,
+// unexported helper. Good enough to name the common case without executing anything.
+function unresolvedEnvironmentVariableNames(rawKey: string): string[] {
+  const names = new Set<string>();
+  for (const match of rawKey.matchAll(ENV_VAR_REFERENCE)) {
+    const name = match[1];
+    if (name && process.env[name] === undefined) names.add(name);
+  }
+  return [...names];
 }
 
 function diagnostic(code: ProviderDiagnostic["code"], message: string, action?: ProviderDiagnostic["action"]): ProviderDiagnostic {

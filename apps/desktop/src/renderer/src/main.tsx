@@ -133,6 +133,23 @@ function App() {
     return window.applePi.session.subscribe((event) => dispatch({ type: "event", sequence: event.sequence, payload: event.payload }));
   }, []);
 
+  // Reusing compatible Pi CLI credentials means a `pi auth login`/`logout` or a
+  // models.json edit made in a terminal, while this app stayed open, should not
+  // require a restart to notice. Opening Settings is the moment a user wants that
+  // reflected, so it runs the same live refresh a manual "Refresh" already performs.
+  useEffect(() => {
+    if (!settingsOpen) return;
+    const token = ++modelsRefreshToken.current;
+    void window.applePi.provider
+      .refreshModels()
+      .then((refreshed) => {
+        if (modelsRefreshToken.current !== token) return;
+        setProviders(refreshed.providers);
+        setModels(refreshed.models);
+      })
+      .catch(() => undefined);
+  }, [settingsOpen]);
+
   // Runs after any authoritative model list load (startup, or a live refresh
   // below), so a default model whose provider was disconnected or removed
   // never keeps showing as selected once Apple Pi has evidence it is gone.
