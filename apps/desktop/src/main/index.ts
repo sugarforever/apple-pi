@@ -128,6 +128,7 @@ function validModel(value: unknown): ModelRef {
 }
 ipcMain.handle("model:setSession", async (_event, value: unknown) => { const model = validModel(value); await providerCredentials.provide(model.provider); return host.request("model.set", { provider: model.provider, modelId: model.modelId }); });
 ipcMain.handle("model:setDefault", async (_event, value: unknown) => { const model = validModel(value); await catalog.setDefaultModel(model); return catalog.snapshot(); });
+ipcMain.handle("model:clearDefault", async () => { await catalog.clearDefaultModel(); return catalog.snapshot(); });
 
 function operation(value: unknown): { operationId: string; timeoutMs: number } {
   if (!value || typeof value !== "object") throw new Error("Invalid operation");

@@ -27,6 +27,15 @@ describe("renderer accessibility contract", () => {
     expect(source).toContain('aria-label="Send message"');
   });
 
+  it("provides an accessible provider onboarding flow", () => {
+    const providers = readFileSync(new URL("./src/provider-settings.tsx", import.meta.url), "utf8");
+    expect(providers).toContain('type="password"');
+    expect(providers).toContain('type="search"');
+    expect(providers).toContain('aria-busy={checking}');
+    expect(providers).toContain('role={diagnostic.severity === "error" ? "alert" : "status"}');
+    expect(source).toContain('<a href="#providers-title">Connect a provider</a>');
+  });
+
   it("announces conversation updates and errors", () => {
     expect(source).toContain('role="log"');
     expect(source).toContain('aria-live="polite"');

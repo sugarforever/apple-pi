@@ -16,7 +16,7 @@ contextBridge.exposeInMainWorld("applePi", {
       return () => ipcRenderer.removeListener("session:event", handler);
     },
   },
-  model: { list: () => ipcRenderer.invoke("model:list"), setSession: (model: unknown) => ipcRenderer.invoke("model:setSession", model), setDefault: (model: unknown) => ipcRenderer.invoke("model:setDefault", model) },
+  model: { list: () => ipcRenderer.invoke("model:list"), setSession: (model: unknown) => ipcRenderer.invoke("model:setSession", model), setDefault: (model: unknown) => ipcRenderer.invoke("model:setDefault", model), clearDefault: () => ipcRenderer.invoke("model:clearDefault") },
   provider: {
     list: () => ipcRenderer.invoke("provider:list"),
     connectApiKey: (providerId: string, apiKey: string, options?: ProviderOperationOptions) => invokeOperation("provider:connectApiKey", { providerId, apiKey }, options),

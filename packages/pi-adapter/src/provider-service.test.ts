@@ -10,6 +10,7 @@ function runtimeDouble() {
     getProviderAuthStatus: (providerId: string) => ({ configured: configured.has(providerId), ...(configured.has(providerId) ? { source: "runtime" } : {}) }),
     listCredentials: vi.fn(async () => []),
     checkAuth: vi.fn(async (providerId: string, _options?: { signal?: AbortSignal }) => configured.has(providerId) ? { source: "runtime", type: "api_key" as const } : undefined),
+    getAuth: vi.fn(async (providerId: string) => configured.has(providerId) ? { auth: { apiKey: "runtime-secret" } } : undefined),
     setRuntimeApiKey: vi.fn(async (providerId: string, _apiKey: string, options?: { signal?: AbortSignal }) => { options?.signal?.throwIfAborted(); configured.add(providerId); }),
     removeRuntimeApiKey: vi.fn(async (providerId: string) => { configured.delete(providerId); }),
     logout: vi.fn(async (providerId: string) => { configured.delete(providerId); }),
@@ -80,5 +81,28 @@ describe("PiProviderService", () => {
     const result = await service.refresh(undefined, "refresh", 100);
 
     expect(result.diagnostics).toMatchObject([{ code: "operation_timed_out" }]);
+  });
+
+  it("verifies DeepSeek remotely and rolls back a rejected key", async () => {
+    const runtime = runtimeDouble();
+    runtime.getProviders = () => [{ id: "deepseek", name: "DeepSeek", auth: { apiKey: {} } }];
+    const request = vi.fn(async () => new Response("unauthorized sk-secret", { status: 401 }));
+    const service = new PiProviderService(async () => runtime, request);
+
+    const result = await service.connectApiKey("deepseek", "sk-rejected", "connect-deepseek", 1_000);
+
+    expect(result).toMatchObject({ diagnostics: [{ code: "authentication_failed", action: "reconnect" }] });
+    expect(runtime.removeRuntimeApiKey).toHaveBeenCalledWith("deepseek", expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    expect(JSON.stringify(result)).not.toContain("sk-rejected");
+  });
+
+  it("accepts a verified DeepSeek key without sending model traffic", async () => {
+    const runtime = runtimeDouble();
+    runtime.getProviders = () => [{ id: "deepseek", name: "DeepSeek", auth: { apiKey: {} } }];
+    const request = vi.fn(async () => new Response('{"is_available":true}', { status: 200 }));
+    const service = new PiProviderService(async () => runtime, request);
+
+    await expect(service.connectApiKey("deepseek", "sk-valid", "connect-deepseek", 1_000)).resolves.toMatchObject({ diagnostics: [] });
+    expect(request).toHaveBeenCalledWith("https://api.deepseek.com/user/balance", expect.objectContaining({ method: "GET", signal: expect.any(AbortSignal) }));
   });
 });

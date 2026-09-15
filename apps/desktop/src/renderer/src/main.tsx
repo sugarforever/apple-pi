@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useReducer, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { AlertCircle, Check, ChevronDown, CircleDashed, Folder, FolderInput, MessageSquare, Plus, Send, Settings2, Sparkles, Square, Terminal, X } from "lucide-react";
-import type { SessionSnapshot } from "@apple-pi/protocol";
+import type { ProviderItem, SessionSnapshot } from "@apple-pi/protocol";
 import { runSessionResync } from "../session-resync.js";
 import { initialSessionState, reduceSession } from "../session-state.js";
 import { toTimelineItems, type ToolItem } from "../tool-activity.js";
 import type { Catalog, ModelItem, ModelRef, SessionItem, WorkspaceOpenResult } from "../global.js";
+import { ProviderSettings } from "./provider-settings.js";
 import "./styles.css";
 
 type UiSessionItem = SessionItem & { persisted: boolean };
@@ -67,6 +68,7 @@ function App() {
   const [workspacePath, setWorkspacePath] = useState("");
   const [sessions, setSessions] = useState<UiSessionItem[]>([]);
   const [models, setModels] = useState<ModelItem[]>([]);
+  const [providers, setProviders] = useState<ProviderItem[]>([]);
   const [draft, setDraft] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [activeSessionId, setActiveSessionId] = useState("");
@@ -111,6 +113,7 @@ function App() {
   useEffect(() => {
     void window.applePi.workspace.list().then(setCatalog);
     void window.applePi.model.list().then(setModels).catch(() => setModels([]));
+    void window.applePi.provider.list().then(setProviders).catch(() => setProviders([]));
     return window.applePi.session.subscribe((event) => dispatch({ type: "event", sequence: event.sequence, payload: event.payload }));
   }, []);
 
@@ -300,8 +303,23 @@ function App() {
             <div className="settings-intro"><div><h1>Make Apple Pi Yours</h1><p>Choose how new sessions begin. Changes are saved automatically.</p></div></div>
             <div className="settings-card">
               <div><h2>Default Model</h2><p>Used when you create a workspace or begin a new session. You can still switch models from the composer.</p></div>
-              <div className="settings-control"><label htmlFor="default-model">Model</label><ModelSelect id="default-model" models={groupedModels} value={catalog.defaultModel ? modelKey(catalog.defaultModel) : ""} onChange={(value) => void changeDefaultModel(value)} emptyLabel="Use pi default" /></div>
+              {models.length === 0 ? <div className="model-empty"><strong>No usable models yet.</strong><span><a href="#providers-title">Connect a provider</a> to choose a default model.</span></div> : <div className="settings-control"><label htmlFor="default-model">Model</label><ModelSelect id="default-model" models={groupedModels} value={catalog.defaultModel ? modelKey(catalog.defaultModel) : ""} onChange={(value) => void changeDefaultModel(value)} emptyLabel="Use pi default" /></div>}
             </div>
+            <ProviderSettings
+              providers={providers}
+              models={models}
+              defaultModel={catalog.defaultModel}
+              onConnect={(providerId, apiKey) => window.applePi.provider.connectApiKey(providerId, apiKey)}
+              onDisconnect={(providerId) => window.applePi.provider.disconnect(providerId)}
+              onVerify={(providerId) => window.applePi.provider.verify(providerId)}
+              onRefresh={async (providerId) => {
+                const refreshed = await window.applePi.provider.refreshModels([providerId]);
+                setProviders(refreshed.providers);
+                setModels(refreshed.models);
+                if (catalog.defaultModel && !refreshed.models.some((model) => model.provider === catalog.defaultModel?.provider && model.modelId === catalog.defaultModel?.modelId)) setCatalog(await window.applePi.model.clearDefault());
+              }}
+              onDefaultModel={async (model) => { setCatalog(await window.applePi.model.setDefault(model)); setNotice("Default model saved"); }}
+            />
           </section>
         ) : (
           <>

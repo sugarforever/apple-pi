@@ -21,6 +21,7 @@ interface RuntimeLike {
   getProviderAuthStatus(providerId: string): { configured: boolean; source?: string };
   listCredentials(options?: { signal?: AbortSignal }): Promise<readonly { providerId: string; type: "api_key" | "oauth" }[]>;
   checkAuth(providerId: string, options?: { signal?: AbortSignal }): Promise<{ source?: string; type: "api_key" | "oauth" } | undefined>;
+  getAuth(providerId: string, options?: { signal?: AbortSignal }): Promise<{ auth: { apiKey?: string } } | undefined>;
   setRuntimeApiKey(providerId: string, apiKey: string, options?: { signal?: AbortSignal }): Promise<void>;
   removeRuntimeApiKey(providerId: string, options?: { signal?: AbortSignal }): Promise<void>;
   logout(providerId: string, options?: { signal?: AbortSignal }): Promise<void>;
@@ -32,7 +33,10 @@ type OperationOutcome<T> = { state: "completed"; value: T } | { state: "cancelle
 export class PiProviderService {
   private readonly operations = new Map<string, AbortController>();
 
-  constructor(private readonly runtime: () => Promise<RuntimeLike>) {}
+  constructor(
+    private readonly runtime: () => Promise<RuntimeLike>,
+    private readonly request: typeof fetch = fetch,
+  ) {}
 
   async list(signal?: AbortSignal): Promise<ProviderItem[]> {
     const runtime = await this.runtime();
@@ -51,6 +55,11 @@ export class PiProviderService {
       if (!provider) return providerNotFound();
       if (!provider.auth.apiKey) return { diagnostics: [diagnostic("authentication_failed", "This provider does not support API-key authentication.", "connect")] };
       await runtime.setRuntimeApiKey(providerId, apiKey, { signal });
+      const verification = await this.verifyCredential(runtime, providerId, signal);
+      if (verification) {
+        await runtime.removeRuntimeApiKey(providerId, { signal }).catch(() => undefined);
+        return { diagnostics: [verification] };
+      }
       return { diagnostics: [] };
     });
   }
@@ -70,10 +79,32 @@ export class PiProviderService {
     return this.providerOperation(providerId, operationId, timeoutMs, async (runtime, signal) => {
       if (!runtime.getProvider(providerId)) return providerNotFound();
       const auth = await runtime.checkAuth(providerId, { signal });
-      return auth
-        ? { diagnostics: [] }
-        : { diagnostics: [diagnostic("authentication_required", "No usable credential is configured for this provider.", "connect")] };
+      if (!auth) return { diagnostics: [diagnostic("authentication_required", "No usable credential is configured for this provider.", "connect")] };
+      const verification = await this.verifyCredential(runtime, providerId, signal);
+      return { diagnostics: verification ? [verification] : [] };
     });
+  }
+
+  private async verifyCredential(runtime: RuntimeLike, providerId: string, signal: AbortSignal): Promise<ProviderDiagnostic | undefined> {
+    // Pi's built-in auth check verifies configuration, not remote acceptance. DeepSeek
+    // provides a read-only balance endpoint, so its acceptance path can verify without
+    // consuming model tokens or exposing the key outside the isolated host.
+    if (providerId !== "deepseek") return undefined;
+    const apiKey = (await runtime.getAuth(providerId, { signal }))?.auth.apiKey;
+    if (!apiKey) return diagnostic("authentication_required", "Enter a DeepSeek API key to connect.", "connect");
+    try {
+      const response = await this.request("https://api.deepseek.com/user/balance", {
+        method: "GET",
+        headers: { Authorization: `Bearer ${apiKey}`, Accept: "application/json" },
+        signal,
+      });
+      if (response.ok) return undefined;
+      if (response.status === 401 || response.status === 403) return diagnostic("authentication_failed", "DeepSeek rejected this API key. Check the key and try again.", "reconnect");
+      return diagnostic("authentication_failed", "DeepSeek could not verify this API key. Try again in a moment.", "retry");
+    } catch {
+      if (signal.aborted) throw new DOMException("Operation aborted", "AbortError");
+      return diagnostic("authentication_failed", "Apple Pi could not reach DeepSeek to verify the key. Check your connection and try again.", "retry");
+    }
   }
 
   async refresh(providerIds: string[] | undefined, operationId: string, timeoutMs: number): Promise<ModelCatalogRefreshResult> {
