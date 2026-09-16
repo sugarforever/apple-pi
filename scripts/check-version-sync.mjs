@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { HOST_SOURCE, MANIFESTS, readHostVersion, readManifestVersion } from "./version-declarations.mjs";
+import { findVersionFailures, MANIFESTS, readAllVersions } from "./version-declarations.mjs";
 
 /**
  * Asserts that every version declaration in the repository agrees.
@@ -28,23 +28,10 @@ function readTagArgument() {
   return tag;
 }
 
-const failures = [];
-const versions = new Map();
-for (const manifest of MANIFESTS) versions.set(manifest, await readManifestVersion(ROOT, manifest));
+const { versions, hostVersion } = await readAllVersions(ROOT);
+const failures = findVersionFailures({ versions, hostVersion });
 
 const [[canonicalManifest, canonicalVersion]] = versions;
-for (const [manifest, version] of versions) {
-  if (version !== canonicalVersion) {
-    failures.push(`${manifest} is ${version}, but ${canonicalManifest} is ${canonicalVersion}`);
-  }
-}
-
-const hostVersion = await readHostVersion(ROOT);
-const hostManifestVersion = versions.get("apps/agent-host/package.json");
-if (hostVersion !== hostManifestVersion) {
-  failures.push(`HOST_VERSION in ${HOST_SOURCE} is ${hostVersion}, but apps/agent-host/package.json is ${hostManifestVersion}`);
-}
-
 const tag = readTagArgument();
 const expectedTag = `v${canonicalVersion}`;
 if (tag !== undefined && tag !== expectedTag) {

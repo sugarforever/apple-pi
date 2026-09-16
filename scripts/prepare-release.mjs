@@ -4,7 +4,7 @@ import { dirname, resolve } from "node:path";
 import { execFile } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
-import { HOST_SOURCE, MANIFESTS, readHostVersion, readManifestVersion, rewriteHostVersion, rewriteManifestVersion } from "./version-declarations.mjs";
+import { findVersionFailures, HOST_SOURCE, MANIFESTS, readAllVersions, rewriteHostVersion, rewriteManifestVersion } from "./version-declarations.mjs";
 
 /**
  * Writes a release version into every declaration at once.
@@ -45,7 +45,7 @@ export function compareVersions(left, right) {
  * @param current the version currently declared in the repository
  */
 export function resolveTarget(args, current) {
-  const target = args.find((argument) => !argument.startsWith("--") && argument !== "true");
+  const target = args.find((argument) => !argument.startsWith("--"));
   const bumpFlag = args.find((argument) => argument in BUMP_KINDS);
   if (target && bumpFlag) throw new Error(`give either a version or a bump flag, not both. ${usage}`);
   if (!target && !bumpFlag) throw new Error(`no version given. ${usage}`);
@@ -100,28 +100,44 @@ async function commitsSince(root, exec, tag) {
  *          the commits the release would cover
  */
 export async function prepareRelease({ root, args, dryRun = false, exec = run }) {
-  const current = await readManifestVersion(root, "package.json");
+  const { versions, hostVersion } = await readAllVersions(root);
+  const failures = findVersionFailures({ versions, hostVersion });
+  if (failures.length > 0) {
+    throw new Error(`version declarations disagree; run pnpm versions:check:\n${failures.map((failure) => `  ${failure}`).join("\n")}`);
+  }
+
+  const current = versions.get("package.json");
   const target = resolveTarget(args, current);
 
   if (await tagExists(root, exec, `v${target}`)) {
     throw new Error(`tag v${target} already exists; release a later version`);
   }
 
-  const hostVersion = await readHostVersion(root);
-  if (hostVersion !== (await readManifestVersion(root, "apps/agent-host/package.json"))) {
-    throw new Error(`${HOST_SOURCE} disagrees with apps/agent-host/package.json; run pnpm versions:check`);
-  }
-
   const writes = [];
   for (const manifest of MANIFESTS) {
     const path = resolve(root, manifest);
-    const contents = await readFile(path, "utf8");
-    writes.push({ path, contents: rewriteManifestVersion(contents, target) });
+    const original = await readFile(path, "utf8");
+    writes.push({ path, original, contents: rewriteManifestVersion(original, target) });
   }
   const hostPath = resolve(root, HOST_SOURCE);
-  writes.push({ path: hostPath, contents: rewriteHostVersion(await readFile(hostPath, "utf8"), target) });
+  const hostOriginal = await readFile(hostPath, "utf8");
+  writes.push({ path: hostPath, original: hostOriginal, contents: rewriteHostVersion(hostOriginal, target) });
 
-  if (!dryRun) for (const write of writes) await writeFile(write.path, write.contents, "utf8");
+  if (!dryRun) {
+    // Six files, one release: a write that fails partway through must not leave
+    // some declarations at the new version and others at the old one, so undo
+    // whatever already landed before surfacing the error.
+    const applied = [];
+    try {
+      for (const write of writes) {
+        await writeFile(write.path, write.contents, "utf8");
+        applied.push(write);
+      }
+    } catch (error) {
+      for (const write of applied.reverse()) await writeFile(write.path, write.original, "utf8").catch(() => {});
+      throw error;
+    }
+  }
 
   const tag = await lastTag(root, exec);
   return { current, target, tag, commits: await commitsSince(root, exec, tag), files: writes.map((write) => write.path) };

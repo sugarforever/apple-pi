@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { beforeEach, describe, it } from "node:test";
@@ -41,6 +41,12 @@ describe("resolveTarget", () => {
     assert.throws(() => resolveTarget(["0.6"], "0.5.0"), /not a version/);
     assert.throws(() => resolveTarget([], "0.5.0"), /no version given/);
     assert.throws(() => resolveTarget(["0.6.0", "--minor"], "0.5.0"), /not both/);
+  });
+
+  it("treats a stray positional argument as a version, not something to ignore", () => {
+    // No parser here special-cases "true" or any other literal; an unexpected
+    // extra argument should surface as a clear conflict, not vanish silently.
+    assert.throws(() => resolveTarget(["--minor", "true"], "0.5.0"), /not both/);
   });
 });
 
@@ -112,9 +118,32 @@ describe("prepareRelease", () => {
     assert.equal(await readManifestVersion(root, "package.json"), "0.5.0");
   });
 
-  it("refuses to run against an already inconsistent tree", async () => {
+  it("refuses to run when HOST_VERSION disagrees with its manifest", async () => {
     await writeFile(join(root, HOST_SOURCE), 'export const HOST_VERSION = "0.4.0" as const;\n', "utf8");
-    await assert.rejects(prepareRelease({ root, args: ["0.6.0"], exec: fakeGit() }), /disagrees/);
+    await assert.rejects(prepareRelease({ root, args: ["0.6.0"], exec: fakeGit() }), /version declarations disagree/);
+    assert.equal(await readManifestVersion(root, "package.json"), "0.5.0");
+  });
+
+  it("refuses to run when two manifests disagree, not just HOST_VERSION", async () => {
+    // prepareRelease used to only check HOST_VERSION against the agent-host
+    // manifest; a manifest drifted from the rest of the tree slipped through and
+    // got silently overwritten to the new target instead of being refused.
+    await writeFile(join(root, "packages/protocol/package.json"), '{\n  "name": "fixture",\n  "version": "0.4.0"\n}\n', "utf8");
+    await assert.rejects(prepareRelease({ root, args: ["0.6.0"], exec: fakeGit() }), /version declarations disagree/);
+    assert.equal(await readManifestVersion(root, "package.json"), "0.5.0");
+    assert.equal(await readManifestVersion(root, "packages/protocol/package.json"), "0.4.0");
+  });
+
+  it("rolls back every already-written file when a later write fails", async () => {
+    const protocolManifest = join(root, "packages/protocol/package.json");
+    await chmod(protocolManifest, 0o444);
+    try {
+      await assert.rejects(prepareRelease({ root, args: ["0.6.0"], exec: fakeGit() }));
+    } finally {
+      await chmod(protocolManifest, 0o644);
+    }
+    for (const manifest of MANIFESTS) assert.equal(await readManifestVersion(root, manifest), "0.5.0");
+    assert.equal(await readHostVersion(root), "0.5.0");
   });
 
   it("still works when the repository has no tags yet", async () => {

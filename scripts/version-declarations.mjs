@@ -40,6 +40,35 @@ export async function readHostVersion(root) {
   return match[1];
 }
 
+/** Every manifest version plus HOST_VERSION, read together so a caller can check them as one tree. */
+export async function readAllVersions(root) {
+  const versions = new Map();
+  for (const manifest of MANIFESTS) versions.set(manifest, await readManifestVersion(root, manifest));
+  return { versions, hostVersion: await readHostVersion(root) };
+}
+
+/**
+ * Every disagreement in the version tree: a manifest that does not match the
+ * canonical (first) manifest, and HOST_VERSION disagreeing with the agent-host
+ * manifest. Collects every failure instead of stopping at the first, so both
+ * check-version-sync.mjs and prepare-release.mjs report a tangled tree in full.
+ */
+export function findVersionFailures({ versions, hostVersion }) {
+  const failures = [];
+  const [[canonicalManifest, canonicalVersion]] = versions;
+  for (const [manifest, version] of versions) {
+    if (version !== canonicalVersion) {
+      failures.push(`${manifest} is ${version}, but ${canonicalManifest} is ${canonicalVersion}`);
+    }
+  }
+
+  const hostManifestVersion = versions.get("apps/agent-host/package.json");
+  if (hostVersion !== hostManifestVersion) {
+    failures.push(`HOST_VERSION in ${HOST_SOURCE} is ${hostVersion}, but apps/agent-host/package.json is ${hostManifestVersion}`);
+  }
+  return failures;
+}
+
 /**
  * Rewrites the version in a manifest, preserving key order and the two-space
  * JSON formatting Prettier expects, so `format:check` stays green.
