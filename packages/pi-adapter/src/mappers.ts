@@ -4,6 +4,8 @@ import {
   decodeModelItem,
   decodeProviderAuthEvent,
   decodeSessionItem,
+  decodeSkillDiagnostic,
+  decodeSkillItem,
   type ApplePiContentPart,
   type ApplePiMessage,
   type ApplePiSessionEvent,
@@ -11,8 +13,11 @@ import {
   type ModelItem,
   type ProviderAuthEvent,
   type SessionItem,
+  type SkillDiagnostic,
+  type SkillItem,
   type ToolOutputPart,
 } from "@apple-pi/protocol";
+import type { ResourceDiagnostic, Skill } from "@earendil-works/pi-coding-agent";
 
 const record = (value: unknown): Record<string, unknown> | undefined =>
   value !== null && typeof value === "object" ? (value as Record<string, unknown>) : undefined;
@@ -297,5 +302,47 @@ export function mapPiSessionItem(value: unknown): SessionItem {
     created: item?.created instanceof Date ? item.created.toISOString() : item?.created,
     modified: item?.modified instanceof Date ? item.modified.toISOString() : item?.modified,
     messageCount: item?.messageCount,
+  });
+}
+
+// Apple Pi's DefaultResourceLoader is always constructed without
+// additionalSkillPaths (see skill-service.ts), so Pi's third `SourceScope`
+// value, "temporary" (CLI-only extra directories), is unreachable here;
+// anything but "user" is conservatively treated as project-scoped rather
+// than crashing the whole catalog.
+export function mapPiSkill(skill: Skill): SkillItem {
+  return decodeSkillItem({
+    name: skill.name,
+    description: skill.description,
+    scope: skill.sourceInfo.scope === "user" ? "user" : "project",
+    path: skill.filePath,
+    disableModelInvocation: skill.disableModelInvocation,
+    // "auto" means Pi discovered it by scanning the standard managed skills
+    // root; "local" (a settings.json skills-array entry) and package-provided
+    // skills point elsewhere on disk and are never Apple-Pi-managed.
+    managed: skill.sourceInfo.source === "auto",
+  });
+}
+
+export function mapPiSkillDiagnostic(diagnostic: ResourceDiagnostic): SkillDiagnostic {
+  return decodeSkillDiagnostic({
+    type: diagnostic.type,
+    message: diagnostic.message,
+    ...(nonEmptyString(diagnostic.path) ? { path: diagnostic.path } : {}),
+    ...(diagnostic.collision
+      ? {
+          // Sourced from ResourceLoader.getSkills().diagnostics, so this collision
+          // is always about a skill; the literal is forced rather than trusted from
+          // Pi's broader resourceType union to match our closed schema exactly.
+          collision: {
+            resourceType: "skill" as const,
+            name: diagnostic.collision.name,
+            winnerPath: diagnostic.collision.winnerPath,
+            loserPath: diagnostic.collision.loserPath,
+            ...(nonEmptyString(diagnostic.collision.winnerSource) ? { winnerSource: diagnostic.collision.winnerSource } : {}),
+            ...(nonEmptyString(diagnostic.collision.loserSource) ? { loserSource: diagnostic.collision.loserSource } : {}),
+          },
+        }
+      : {}),
   });
 }

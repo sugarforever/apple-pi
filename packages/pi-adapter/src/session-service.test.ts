@@ -9,7 +9,14 @@ const pi = vi.hoisted(() => ({
     getAvailableSnapshot: () => [],
     getModel: (): { provider: string; id: string; name: string } | undefined => undefined,
   })),
+  reloadResourceLoader: vi.fn(async () => {}),
 }));
+
+const DefaultResourceLoaderMock = vi.hoisted(() =>
+  vi.fn(function (this: unknown, options: { cwd: string; agentDir: string }) {
+    return { options, reload: pi.reloadResourceLoader, getSkills: () => ({ skills: [], diagnostics: [] }) };
+  }),
+);
 
 vi.mock("@earendil-works/pi-coding-agent", () => ({
   createAgentSession: pi.createAgentSession,
@@ -19,6 +26,8 @@ vi.mock("@earendil-works/pi-coding-agent", () => ({
     open: pi.openManager,
   },
   ModelRuntime: { create: pi.createRuntime },
+  DefaultResourceLoader: DefaultResourceLoaderMock,
+  getAgentDir: () => "/fake/agent-dir",
 }));
 
 import { PiSessionService } from "./index.js";
