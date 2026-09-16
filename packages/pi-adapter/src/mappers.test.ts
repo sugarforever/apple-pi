@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mapPiEvent, mapPiMessages, mapPiModel, mapPiSessionItem } from "./mappers.js";
+import { mapPiEvent, mapPiMessages, mapPiModel, mapPiSessionItem, mapPiSkill, mapPiSkillDiagnostic } from "./mappers.js";
 
 describe("Pi boundary mappers", () => {
   it("maps Pi messages without exposing Pi fields", () => {
@@ -373,5 +373,115 @@ describe("Pi boundary mappers", () => {
         { role: "toolResult", toolCallId: "call-1", toolName: "image", content: [{ type: "image", data: "aW1hZ2U=", mimeType: "" }], isError: false },
       ]),
     ).toEqual([{ role: "tool", content: [{ type: "tool_result", toolCallId: "call-1", name: "image", output: fallback, isError: false }] }]);
+  });
+});
+
+describe("Pi skill mappers", () => {
+  it("maps an auto-discovered user-scope skill as Apple-Pi-managed", () => {
+    expect(
+      mapPiSkill({
+        name: "pdf-forms",
+        description: "Fill and flatten PDF forms.",
+        filePath: "/home/jane/.pi/agent/skills/pdf-forms/SKILL.md",
+        baseDir: "/home/jane/.pi/agent/skills/pdf-forms",
+        sourceInfo: { path: "/home/jane/.pi/agent/skills/pdf-forms", source: "auto", scope: "user", origin: "top-level" },
+        disableModelInvocation: false,
+      }),
+    ).toEqual({
+      name: "pdf-forms",
+      description: "Fill and flatten PDF forms.",
+      scope: "user",
+      path: "/home/jane/.pi/agent/skills/pdf-forms/SKILL.md",
+      disableModelInvocation: false,
+      managed: true,
+    });
+  });
+
+  it("maps an auto-discovered project-scope skill", () => {
+    expect(
+      mapPiSkill({
+        name: "release-notes",
+        description: "Draft release notes from recent commits.",
+        filePath: "/repo/.pi/skills/release-notes/SKILL.md",
+        baseDir: "/repo/.pi/skills/release-notes",
+        sourceInfo: { path: "/repo/.pi/skills/release-notes", source: "auto", scope: "project", origin: "top-level" },
+        disableModelInvocation: true,
+      }),
+    ).toEqual({
+      name: "release-notes",
+      description: "Draft release notes from recent commits.",
+      scope: "project",
+      path: "/repo/.pi/skills/release-notes/SKILL.md",
+      disableModelInvocation: true,
+      managed: true,
+    });
+  });
+
+  it("marks a skill added via settings.json's skills array as not Apple-Pi-managed", () => {
+    expect(
+      mapPiSkill({
+        name: "custom-linter",
+        description: "Runs the team's custom linter.",
+        filePath: "/opt/shared-skills/custom-linter/SKILL.md",
+        baseDir: "/opt/shared-skills/custom-linter",
+        sourceInfo: { path: "/opt/shared-skills/custom-linter", source: "local", scope: "project", origin: "top-level" },
+        disableModelInvocation: false,
+      }),
+    ).toMatchObject({ managed: false });
+  });
+
+  it("marks a package-provided skill as not Apple-Pi-managed", () => {
+    expect(
+      mapPiSkill({
+        name: "bundled-helper",
+        description: "Ships with an installed extension package.",
+        filePath: "/repo/node_modules/some-pi-extension/skills/bundled-helper/SKILL.md",
+        baseDir: "/repo/node_modules/some-pi-extension/skills/bundled-helper",
+        sourceInfo: { path: "some-pi-extension", source: "package:some-pi-extension", scope: "project", origin: "package" },
+        disableModelInvocation: false,
+      }),
+    ).toMatchObject({ managed: false });
+  });
+
+  it("maps a warning diagnostic without a collision", () => {
+    expect(
+      mapPiSkillDiagnostic({
+        type: "warning",
+        message: "Skill 'legacy-helper' is missing a description and was skipped.",
+        path: "/repo/.pi/skills/legacy-helper/SKILL.md",
+      }),
+    ).toEqual({
+      type: "warning",
+      message: "Skill 'legacy-helper' is missing a description and was skipped.",
+      path: "/repo/.pi/skills/legacy-helper/SKILL.md",
+    });
+  });
+
+  it("maps a name-collision diagnostic, forcing the collision's resourceType to skill", () => {
+    expect(
+      mapPiSkillDiagnostic({
+        type: "collision",
+        message: "Skill 'pdf-forms' is defined in two locations; the project copy wins.",
+        collision: {
+          resourceType: "skill",
+          name: "pdf-forms",
+          winnerPath: "/repo/.pi/skills/pdf-forms/SKILL.md",
+          loserPath: "/home/jane/.pi/agent/skills/pdf-forms/SKILL.md",
+          winnerSource: "project",
+          loserSource: "user",
+        },
+      }),
+    ).toEqual({
+      type: "collision",
+      message: "Skill 'pdf-forms' is defined in two locations; the project copy wins.",
+      collision: {
+        resourceType: "skill",
+        name: "pdf-forms",
+        winnerPath: "/repo/.pi/skills/pdf-forms/SKILL.md",
+        loserPath: "/home/jane/.pi/agent/skills/pdf-forms/SKILL.md",
+        winnerSource: "project",
+        loserSource: "user",
+      },
+    });
   });
 });

@@ -2,11 +2,13 @@ import { createAgentSession, ModelRuntime, SessionManager, type AgentSession, ty
 import { decodeSessionSnapshot, type ApplePiSessionEvent, type ModelItem, type SessionItem, type SessionSnapshot } from "@apple-pi/protocol";
 import { mapPiEvent, mapPiMessages, mapPiModel, mapPiSessionItem } from "./mappers.js";
 import { PiProviderService } from "./provider-service.js";
+import { createSkillResourceLoader, PiSkillService, type SkillResourceLoader } from "./skill-service.js";
 import adapterPackage from "../package.json" with { type: "json" };
 
-export { mapPiEvent, mapPiMessages, mapPiModel, mapPiSessionItem } from "./mappers.js";
+export { mapPiEvent, mapPiMessages, mapPiModel, mapPiSessionItem, mapPiSkill, mapPiSkillDiagnostic } from "./mappers.js";
 export { PiProviderService } from "./provider-service.js";
 export { CustomProviderStore, validateCustomProviderDefinition, type CustomProviderRepository } from "./custom-provider-store.js";
+export { createSkillResourceLoader, PiSkillService, type SkillResourceLoader } from "./skill-service.js";
 
 export type PiEventListener = (event: ApplePiSessionEvent) => void;
 
@@ -14,6 +16,8 @@ export const PI_VERSION = adapterPackage.dependencies["@earendil-works/pi-coding
 
 interface SessionOwner {
   session: AgentSession;
+  cwd: string;
+  loader: SkillResourceLoader;
   unsubscribe?: () => void;
 }
 
@@ -23,6 +27,7 @@ export class PiSessionService {
   private runtime?: ModelRuntime;
   private lifecycle: Promise<void> = Promise.resolve();
   readonly providers = new PiProviderService(() => this.getRuntime());
+  readonly skills = new PiSkillService();
 
   onEvent(listener: PiEventListener): void {
     this.listener = listener;
@@ -49,8 +54,11 @@ export class PiSessionService {
       const manager = selectedPath ? SessionManager.open(selectedPath, undefined, cwd) : SessionManager.create(cwd);
       const runtime = await this.getRuntime();
       const model = modelRef?.provider && modelRef.modelId ? runtime.getModel(modelRef.provider, modelRef.modelId) : undefined;
-      const result = await createAgentSession({ cwd, sessionManager: manager, modelRuntime: runtime, ...(model ? { model } : {}) });
-      const nextOwner: SessionOwner = { session: result.session };
+      // Explicit and shared with PiSkillService, so skill.list never runs a second,
+      // potentially-diverging scan for this session's cwd (see skill-service.ts).
+      const loader = await createSkillResourceLoader(cwd);
+      const result = await createAgentSession({ cwd, sessionManager: manager, modelRuntime: runtime, resourceLoader: loader, ...(model ? { model } : {}) });
+      const nextOwner: SessionOwner = { session: result.session, cwd, loader };
       try {
         nextOwner.unsubscribe = result.session.subscribe((event: AgentSessionEvent) => {
           if (this.owner === nextOwner) this.listener?.(mapPiEvent(event));
@@ -61,6 +69,7 @@ export class PiSessionService {
       }
       const previousOwner = this.owner;
       this.owner = nextOwner;
+      this.skills.setActiveLoader({ cwd, loader });
       if (previousOwner) await this.release(previousOwner, false);
       return this.snapshot();
     });
@@ -103,6 +112,7 @@ export class PiSessionService {
       const owner = this.owner;
       if (!owner) return;
       this.owner = undefined;
+      this.skills.setActiveLoader(undefined);
       await this.release(owner);
     });
   }
