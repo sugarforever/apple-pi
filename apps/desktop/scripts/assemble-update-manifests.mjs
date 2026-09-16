@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { pathToFileURL } from "node:url";
 
 /**
  * Turns the per-build update manifests into the one file each platform's updater
@@ -170,8 +170,6 @@ function serialize(manifest) {
   if (manifest.releaseDate) lines.push(`releaseDate: '${manifest.releaseDate}'`);
   return `${lines.join("\n")}\n`;
 }
-
-const scriptPath = fileURLToPath(import.meta.url);
 
 if (process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url) {
   const argument = (name) => {
