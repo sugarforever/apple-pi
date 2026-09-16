@@ -14,6 +14,8 @@ test("collects only expected packages and writes portable SHA-256 sidecars", asy
   await mkdir(path.join(releaseDir, "mac-arm64"), { recursive: true });
   await writeFile(path.join(releaseDir, "apple-pi-0.1.0-mac-arm64.dmg"), "dmg");
   await writeFile(path.join(releaseDir, "apple-pi-0.1.0-mac-arm64.zip"), "zip");
+  await writeFile(path.join(releaseDir, "apple-pi-0.1.0-mac-arm64.zip.blockmap"), "blockmap");
+  await writeFile(path.join(releaseDir, "latest-mac.yml"), "version: 0.1.0\n");
   await writeFile(path.join(releaseDir, "builder-debug.yml"), "ignored");
 
   const outputDir = await collectPackageArtifacts({
@@ -31,7 +33,9 @@ test("collects only expected packages and writes portable SHA-256 sidecars", asy
     "apple-pi-0.1.0-mac-arm64.dmg",
     "apple-pi-0.1.0-mac-arm64.dmg.sha256",
     "apple-pi-0.1.0-mac-arm64.zip",
+    "apple-pi-0.1.0-mac-arm64.zip.blockmap",
     "apple-pi-0.1.0-mac-arm64.zip.sha256",
+    "update-mac-arm64.yml",
   ]);
   assert.equal(
     await readFile(path.join(outputDir, "apple-pi-0.1.0-mac-arm64.dmg.sha256"), "utf8"),
@@ -67,6 +71,7 @@ test("collects distinct installer targets that share an extension", async (t) =>
   await mkdir(releaseDir);
   await writeFile(path.join(releaseDir, "apple-pi-0.1.0-win-x64-setup.exe"), "setup");
   await writeFile(path.join(releaseDir, "apple-pi-0.1.0-win-x64-portable.exe"), "portable");
+  await writeFile(path.join(releaseDir, "latest.yml"), "version: 0.1.0\n");
 
   const outputDir = await collectPackageArtifacts({
     releaseDir,
@@ -80,7 +85,31 @@ test("collects distinct installer targets that share an extension", async (t) =>
 
   assert.deepEqual(
     (await readdir(outputDir)).filter((file) => !file.endsWith(".sha256")),
-    ["apple-pi-0.1.0-win-x64-portable.exe", "apple-pi-0.1.0-win-x64-setup.exe"],
+    ["apple-pi-0.1.0-win-x64-portable.exe", "apple-pi-0.1.0-win-x64-setup.exe", "update-win-x64.yml"],
+  );
+});
+
+test("rejects a release directory whose update manifest is missing", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "apple-pi-artifacts-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const releaseDir = path.join(root, "release");
+  await mkdir(releaseDir);
+  await writeFile(path.join(releaseDir, "apple-pi-0.1.0-linux-x64.AppImage"), "appimage");
+  await writeFile(path.join(releaseDir, "apple-pi-0.1.0-linux-x64.deb"), "deb");
+
+  // Without a manifest the release would publish with no update feed at all, and
+  // nothing else in the pipeline would notice.
+  await assert.rejects(
+    collectPackageArtifacts({
+      releaseDir,
+      outputRoot: path.join(root, "artifacts"),
+      version: "0.1.0",
+      osName: "linux",
+      artifactOs: "linux",
+      arch: "x64",
+      requiredSuffixes: [".AppImage", ".deb"],
+    }),
+    /Expected exactly one update manifest/,
   );
 });
 

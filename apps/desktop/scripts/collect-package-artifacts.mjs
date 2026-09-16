@@ -5,10 +5,24 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 export async function collectPackageArtifacts({ releaseDir, outputRoot, version, osName, artifactOs, arch, requiredSuffixes }) {
   const prefix = `apple-pi-${version}-${artifactOs}-${arch}`;
-  const available = new Set((await readdir(releaseDir, { withFileTypes: true })).filter((entry) => entry.isFile()).map((entry) => entry.name));
+  const entries = (await readdir(releaseDir, { withFileTypes: true })).filter((entry) => entry.isFile()).map((entry) => entry.name);
+  const available = new Set(entries);
   const files = requiredSuffixes.map((suffix) => `${prefix}${suffix}`).sort();
   const missing = files.filter((file) => !available.has(file));
   if (missing.length > 0) throw new Error(`Missing packaged artifacts: ${missing.join(", ")}`);
+
+  // electron-builder names the update feed after the platform rather than the
+  // build, so both macOS jobs write latest-mac.yml and would clobber each other
+  // when they upload. Stage it under a build-specific name instead;
+  // assemble-update-manifests.mjs writes the canonical file once every platform
+  // has been collected.
+  const manifests = entries.filter((entry) => /^latest.*\.yml$/.test(entry)).sort();
+  if (manifests.length !== 1) {
+    throw new Error(`Expected exactly one update manifest in ${releaseDir}, found ${manifests.length === 0 ? "none" : manifests.join(", ")}`);
+  }
+  // Block maps carry the archive name, so theirs already include the arch and do
+  // not collide. They enable differential downloads.
+  const blockmaps = entries.filter((entry) => entry.endsWith(".blockmap"));
 
   const outputDir = path.join(outputRoot, `apple-pi-${version}-${osName}-${arch}`);
   await rm(outputDir, { recursive: true, force: true });
@@ -22,6 +36,8 @@ export async function collectPackageArtifacts({ releaseDir, outputRoot, version,
       .digest("hex");
     await writeFile(`${destination}.sha256`, `${digest}  ${file}\n`);
   }
+  await copyFile(path.join(releaseDir, manifests[0]), path.join(outputDir, `update-${artifactOs}-${arch}.yml`));
+  for (const blockmap of blockmaps) await copyFile(path.join(releaseDir, blockmap), path.join(outputDir, blockmap));
   return outputDir;
 }
 

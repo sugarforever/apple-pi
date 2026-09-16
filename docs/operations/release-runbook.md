@@ -35,6 +35,59 @@ so a tag created by a workflow would produce no artifacts and no error — the p
 triggers on `push: tags`, and only a personal access token, an app token, or a `workflow_dispatch`
 bridge would cascade. The manual tag push is the trigger, not ceremony.
 
+## The update feed
+
+Each build publishes an electron-updater manifest next to its artifacts, and installed apps
+read it to find the next release:
+
+| Platform | Manifest | Notes |
+| --- | --- | --- |
+| macOS | `latest-mac.yml` | **Both architectures in one file** — electron-builder adds no arch suffix here, so the two macOS jobs each write a file with the same name and the feeds must be merged |
+| Windows | `latest.yml` | one architecture, so nothing to merge |
+| Linux | `latest-linux.yml` | `x64` has no arch suffix; an `arm64` build would add `-arm64` |
+
+`collect-package-artifacts.mjs` carries the manifest and the `.blockmap` files (which enable
+differential downloads) into the uploaded artifact set, staging the manifest under a
+build-specific name. `assemble-update-manifests.mjs` merges the staged files into the canonical
+names in `publish-release`, **before** the release is published. Without that merge the second
+macOS job to finish would overwrite the first job's manifest, and half the users would silently
+never update.
+
+The step is a hard gate by design: if a platform's manifest is missing, or one cannot be parsed,
+the release is **not published**. A tag whose workflow fails this way leaves an unpublished
+draft — fix the cause and re-run, because the release is still a draft and the retry is
+idempotent.
+
+### Behaviour in the app
+
+An update downloads in the background and installs when Apple Pi quits. There is no prompt and no
+update UI. Downgrades are refused (`allowDowngrade = false`), so a published version cannot be
+replaced by an older one.
+
+| Environment variable | Effect |
+| --- | --- |
+| `APPLE_PI_DISABLE_UPDATES=1` | never check |
+| `APPLE_PI_FORCE_UPDATES=1` | allow a dev build to check, for testing a feed |
+| `APPLE_PI_UPDATE_CHANNEL=beta` | follow the beta channel instead of stable — **not yet usable**: this workflow only ever publishes the stable feed, so a beta check never finds a manifest |
+
+Two requirements come from macOS, not from this repository:
+
+- **The update must carry the same code signature.** On macOS the updater hands the archive to
+  Squirrel.Mac, which enforces this; nothing in this repository verifies it itself.
+- **The bundle identifier must not change between releases.** Squirrel treats a different
+  identifier as a different application. That is why `appId` is worth treating as permanent —
+  see the [credential storage policy](../architecture/credential-storage-keychain-policy.md),
+  which records the same constraint from the keychain's point of view.
+
+### The feed starts with the release that ships it
+
+`app-update.yml` is baked into the package at build time, so **no build created before the
+publisher config existed can update itself** — including every release up to this point. Those
+installs need one manual download. The feed then describes each *next* release, so verifying it
+end to end takes two releases: install one, publish the next, and confirm the app logs
+`update downloaded; it will install when Apple Pi quits`, then reports the new version after a
+restart.
+
 ## Immutable releases are enabled
 
 **Settings → General → Releases → Immutable releases** is on. This is free for public
