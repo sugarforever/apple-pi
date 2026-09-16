@@ -312,7 +312,7 @@ jobs:
           gh release download "$TAG_NAME" --pattern 'update-*.yml' --dir "$feed"
           node apps/desktop/scripts/assemble-update-manifests.mjs \
             --input "$feed" --output "$feed" --expect "$APPLE_PI_RELEASE_PLATFORMS"
-          gh release upload "$TAG_NAME" "$feed"/latest-mac.yml "$feed"/latest.yml "$feed"/latest-linux.yml
+          gh release upload "$TAG_NAME" "$feed"/latest*.yml --clobber
           for staged in "$feed"/update-*.yml; do
             gh release delete-asset "$TAG_NAME" "$(basename "$staged")" --yes
           done

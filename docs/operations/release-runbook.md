@@ -50,7 +50,7 @@ replaced by an older one.
 | --- | --- |
 | `APPLE_PI_DISABLE_UPDATES=1` | never check |
 | `APPLE_PI_FORCE_UPDATES=1` | allow a dev build to check, for testing a feed |
-| `APPLE_PI_UPDATE_CHANNEL=beta` | follow the beta channel instead of stable |
+| `APPLE_PI_UPDATE_CHANNEL=beta` | follow the beta channel instead of stable — **not yet usable**: this workflow only ever publishes the stable feed, so a beta check never finds a manifest |
 
 Two requirements come from macOS, not from this repository:
 
