@@ -28,6 +28,55 @@ const CANONICAL_NAMES = {
 /** `update-<platform>-<arch>.yml`, the name the collector stages. */
 const STAGED_PATTERN = /^update-([a-z]+)-([a-z0-9]+)\.yml$/;
 
+function unquote(value) {
+  return value.length > 1 && value.startsWith("'") && value.endsWith("'") ? value.slice(1, -1) : value;
+}
+
+/**
+ * electron-builder writes the feed as YAML, every field flat and machine
+ * generated, and this runs in the publish job where nothing is installed — so it
+ * is parsed here rather than with a dependency.
+ *
+ * Anything unrecognised throws. A format change upstream has to fail the
+ * release, rather than quietly parse into a feed listing no archives, which is
+ * the failure this whole script exists to prevent. The error names the line, so
+ * extending the parser is mechanical.
+ */
+export function parseManifest(contents) {
+  const document = {};
+  const files = [];
+  let current;
+
+  for (const [index, raw] of contents.split("\n").entries()) {
+    const line = raw.replace(/\r$/, "");
+    if (line.trim() === "" || line === "files:") continue;
+
+    const archive = line.match(/^ {2}- url: (.+)$/);
+    if (archive) {
+      current = { url: unquote(archive[1]) };
+      files.push(current);
+      continue;
+    }
+
+    const archiveField = line.match(/^ {4}(sha512|size): (.+)$/);
+    if (archiveField && current) {
+      current[archiveField[1]] = archiveField[1] === "size" ? Number(archiveField[2]) : unquote(archiveField[2]);
+      continue;
+    }
+
+    const scalar = line.match(/^(version|path|sha512|releaseDate): (.+)$/);
+    if (scalar) {
+      document[scalar[1]] = unquote(scalar[2]);
+      continue;
+    }
+
+    throw new Error(`unsupported line ${index + 1} in update manifest: ${line}`);
+  }
+
+  if (typeof document.version !== "string" || files.length === 0) throw new Error("update manifest lists no version or no files");
+  return { ...document, files };
+}
+
 export function parseStagedName(name) {
   const match = name.match(STAGED_PATTERN);
   if (!match) return undefined;
@@ -88,7 +137,7 @@ export async function assembleUpdateManifests({ inputDir, outputDir, platforms, 
     const { platform } = parseStagedName(name);
     if (!(platform in canonicalNames)) throw new Error(`unexpected staged manifest ${name}; expected one of ${platforms.join(", ")}`);
     const documents = byPlatform.get(platform) ?? [];
-    documents.push({ name, document: JSON.parse(await readFile(path.join(inputDir, name), "utf8")) });
+    documents.push({ name, document: parseManifest(await readFile(path.join(inputDir, name), "utf8")) });
     byPlatform.set(platform, documents);
   }
 
