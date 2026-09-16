@@ -57,7 +57,7 @@ describe("HostServer", () => {
           modelSelection: true,
           providerManagement: true,
           cancellableProviderOperations: true,
-          skillManagement: false,
+          skillManagement: true,
         },
         pid: process.pid,
       },
@@ -293,5 +293,146 @@ describe("HostServer", () => {
 
     expect(response).toEqual({ protocolVersion: 1, requestId: "add-custom-fail", ok: false, error: "Provider operation failed" });
     expect(JSON.stringify(response)).not.toContain("sk-private");
+  });
+
+  const sampleSkill = {
+    name: "my-skill",
+    description: "Does something useful.",
+    scope: "project" as const,
+    path: "/workspace/.pi/skills/my-skill/SKILL.md",
+    disableModelInvocation: false,
+    managed: true,
+  };
+
+  it("lists skills from the skill service", async () => {
+    const server = new HostServer();
+    const service = (server as unknown as { pi: { skills: { list: (cwd: string) => Promise<unknown> } } }).pi.skills;
+    service.list = vi.fn(async () => ({ skills: [sampleSkill], diagnostics: [] }));
+
+    const response = await server.handle({ protocolVersion: 1, requestId: "skill-list", type: "skill.list", payload: { cwd: "/workspace" } });
+
+    expect(response).toEqual({ protocolVersion: 1, requestId: "skill-list", ok: true, result: { skills: [sampleSkill], diagnostics: [] } });
+    expect(service.list).toHaveBeenCalledWith("/workspace");
+  });
+
+  it("rejects a malformed skill.list payload before it reaches the skill service", async () => {
+    const server = new HostServer();
+    const service = (server as unknown as { pi: { skills: { list: (cwd: string) => Promise<unknown> } } }).pi.skills;
+    service.list = vi.fn(async () => ({ skills: [], diagnostics: [] }));
+
+    const response = await server.handle({ protocolVersion: 1, requestId: "skill-list-bad", type: "skill.list", payload: {} });
+
+    expect(response).toMatchObject({ ok: false });
+    expect(service.list).not.toHaveBeenCalled();
+  });
+
+  it("routes skill install requests to the skill service", async () => {
+    const server = new HostServer();
+    const service = (server as unknown as { pi: { skills: { install: (sourcePath: string, scope: string, cwd: string) => Promise<unknown> } } }).pi.skills;
+    service.install = vi.fn(async () => ({ skill: sampleSkill, diagnostics: [] }));
+
+    const response = await server.handle({
+      protocolVersion: 1,
+      requestId: "skill-install",
+      type: "skill.install",
+      payload: { cwd: "/workspace", scope: "project", sourcePath: "/tmp/candidate-skill" },
+    });
+
+    expect(response).toEqual({ protocolVersion: 1, requestId: "skill-install", ok: true, result: { skill: sampleSkill, diagnostics: [] } });
+    expect(service.install).toHaveBeenCalledWith("/tmp/candidate-skill", "project", "/workspace");
+  });
+
+  it("rejects a malformed skill.install payload before it reaches the skill service", async () => {
+    const server = new HostServer();
+    const service = (server as unknown as { pi: { skills: { install: () => Promise<unknown> } } }).pi.skills;
+    service.install = vi.fn(async () => ({ diagnostics: [] }));
+
+    const response = await server.handle({
+      protocolVersion: 1,
+      requestId: "skill-install-bad",
+      type: "skill.install",
+      payload: { cwd: "/workspace", scope: "admin", sourcePath: "/tmp/candidate-skill" },
+    });
+
+    expect(response).toMatchObject({ ok: false });
+    expect(service.install).not.toHaveBeenCalled();
+  });
+
+  it("routes skill setEnabled requests to the skill service", async () => {
+    const server = new HostServer();
+    const service = (server as unknown as { pi: { skills: { setEnabled: (name: string, scope: string, cwd: string, enabled: boolean) => Promise<unknown> } } })
+      .pi.skills;
+    service.setEnabled = vi.fn(async () => ({ skill: sampleSkill, diagnostics: [] }));
+
+    const response = await server.handle({
+      protocolVersion: 1,
+      requestId: "skill-set-enabled",
+      type: "skill.setEnabled",
+      payload: { cwd: "/workspace", scope: "project", name: "my-skill", enabled: false },
+    });
+
+    expect(response).toEqual({ protocolVersion: 1, requestId: "skill-set-enabled", ok: true, result: { skill: sampleSkill, diagnostics: [] } });
+    expect(service.setEnabled).toHaveBeenCalledWith("my-skill", "project", "/workspace", false);
+  });
+
+  it("rejects a malformed skill.setEnabled payload before it reaches the skill service", async () => {
+    const server = new HostServer();
+    const service = (server as unknown as { pi: { skills: { setEnabled: () => Promise<unknown> } } }).pi.skills;
+    service.setEnabled = vi.fn(async () => ({ diagnostics: [] }));
+
+    const response = await server.handle({
+      protocolVersion: 1,
+      requestId: "skill-set-enabled-bad",
+      type: "skill.setEnabled",
+      payload: { cwd: "/workspace", scope: "project", name: "my-skill", enabled: "false" },
+    });
+
+    expect(response).toMatchObject({ ok: false });
+    expect(service.setEnabled).not.toHaveBeenCalled();
+  });
+
+  it("routes skill remove requests to the skill service", async () => {
+    const server = new HostServer();
+    const service = (server as unknown as { pi: { skills: { remove: (name: string, scope: string, cwd: string) => Promise<unknown> } } }).pi.skills;
+    service.remove = vi.fn(async () => ({ skill: sampleSkill, diagnostics: [] }));
+
+    const response = await server.handle({
+      protocolVersion: 1,
+      requestId: "skill-remove",
+      type: "skill.remove",
+      payload: { cwd: "/workspace", scope: "project", name: "my-skill" },
+    });
+
+    expect(response).toEqual({ protocolVersion: 1, requestId: "skill-remove", ok: true, result: { skill: sampleSkill, diagnostics: [] } });
+    expect(service.remove).toHaveBeenCalledWith("my-skill", "project", "/workspace");
+  });
+
+  it("rejects a malformed skill.remove payload before it reaches the skill service", async () => {
+    const server = new HostServer();
+    const service = (server as unknown as { pi: { skills: { remove: () => Promise<unknown> } } }).pi.skills;
+    service.remove = vi.fn(async () => ({ diagnostics: [] }));
+
+    const response = await server.handle({
+      protocolVersion: 1,
+      requestId: "skill-remove-bad",
+      type: "skill.remove",
+      payload: { cwd: "/workspace", scope: "project" },
+    });
+
+    expect(response).toMatchObject({ ok: false });
+    expect(service.remove).not.toHaveBeenCalled();
+  });
+
+  it("sanitizes skill operation failures before they cross the host boundary", async () => {
+    const server = new HostServer();
+    const service = (server as unknown as { pi: { skills: { list: () => Promise<unknown> } } }).pi.skills;
+    service.list = vi.fn(async () => {
+      throw new Error("/Users/private-user/secret-project/.pi/skills failure");
+    });
+
+    const response = await server.handle({ protocolVersion: 1, requestId: "skill-list-fail", type: "skill.list", payload: { cwd: "/workspace" } });
+
+    expect(response).toEqual({ protocolVersion: 1, requestId: "skill-list-fail", ok: false, error: "Skill operation failed" });
+    expect(JSON.stringify(response)).not.toContain("private-user");
   });
 });

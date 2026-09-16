@@ -14,7 +14,7 @@ const compatibleHandshake = {
     modelSelection: true,
     providerManagement: true,
     cancellableProviderOperations: true,
-    skillManagement: false,
+    skillManagement: true,
   },
   pid: 42,
 } as const;
@@ -84,7 +84,7 @@ describe("agent host supervisor handshake", () => {
     );
   });
 
-  it.each(["sessionEvents", "modelSelection", "providerManagement", "cancellableProviderOperations"] as const)(
+  it.each(["sessionEvents", "modelSelection", "providerManagement", "cancellableProviderOperations", "skillManagement"] as const)(
     "rejects missing required capability %s before readiness",
     (capability) => {
       expect(() =>
