@@ -273,6 +273,26 @@ handle("provider:removeCustom", async (_event, value: unknown) => {
   return providerCredentials.removeCustomProvider(input);
 });
 
+// Skill commands are simple pass-throughs (see `apps/desktop/src/preload/index.ts`):
+// unlike the `provider.*` mutations above, their protocol payloads carry no
+// `operationId`/`timeoutMs`, so there is nothing here to bound or cancel.
+handle("skill:list", () => (workspacePath ? host.request("skill.list", { cwd: workspacePath }) : { skills: [], diagnostics: [] }));
+handle("skill:install", (_event, value: unknown) => {
+  if (!workspacePath) throw new Error("Select a workspace first");
+  const { scope, sourcePath } = skillInstallInput(value);
+  return host.request("skill.install", { cwd: workspacePath, scope, sourcePath });
+});
+handle("skill:setEnabled", (_event, value: unknown) => {
+  if (!workspacePath) throw new Error("Select a workspace first");
+  const { name, scope, enabled } = skillSetEnabledInput(value);
+  return host.request("skill.setEnabled", { cwd: workspacePath, name, scope, enabled });
+});
+handle("skill:remove", (_event, value: unknown) => {
+  if (!workspacePath) throw new Error("Select a workspace first");
+  const { name, scope } = skillNameInput(value);
+  return host.request("skill.remove", { cwd: workspacePath, name, scope });
+});
+
 function validModel(value: unknown): ModelRef {
   if (!value || typeof value !== "object" || typeof (value as ModelRef).provider !== "string" || typeof (value as ModelRef).modelId !== "string")
     throw new Error("Invalid model");
@@ -308,6 +328,32 @@ function providerOperation(value: unknown, withApiKey = false): { providerId: st
   if (typeof providerId !== "string" || !providerId) throw new Error("Invalid provider");
   if (withApiKey && (typeof apiKey !== "string" || !apiKey)) throw new Error("Invalid API key");
   return { providerId, ...base, ...(withApiKey ? { apiKey: apiKey as string } : {}) };
+}
+
+function skillScope(value: unknown): "user" | "project" {
+  if (value !== "user" && value !== "project") throw new Error("Invalid skill scope");
+  return value;
+}
+
+function skillNameInput(value: unknown): { name: string; scope: "user" | "project" } {
+  if (!value || typeof value !== "object") throw new Error("Invalid skill request");
+  const { name, scope } = value as { name?: unknown; scope?: unknown };
+  if (typeof name !== "string" || !name) throw new Error("Invalid skill name");
+  return { name, scope: skillScope(scope) };
+}
+
+function skillInstallInput(value: unknown): { scope: "user" | "project"; sourcePath: string } {
+  if (!value || typeof value !== "object") throw new Error("Invalid skill install request");
+  const { scope, sourcePath } = value as { scope?: unknown; sourcePath?: unknown };
+  if (typeof sourcePath !== "string" || !sourcePath) throw new Error("Invalid skill source path");
+  return { scope: skillScope(scope), sourcePath };
+}
+
+function skillSetEnabledInput(value: unknown): { name: string; scope: "user" | "project"; enabled: boolean } {
+  const base = skillNameInput(value);
+  const { enabled } = (value ?? {}) as { enabled?: unknown };
+  if (typeof enabled !== "boolean") throw new Error("Invalid skill enabled flag");
+  return { ...base, enabled };
 }
 
 // An interactive OAuth login waits on the user, so it needs a much longer

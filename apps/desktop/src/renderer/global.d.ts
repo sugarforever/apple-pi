@@ -7,6 +7,9 @@ import type {
   ProviderOperationResult,
   SessionItem as ProtocolSessionItem,
   SessionSnapshot,
+  SkillCatalog,
+  SkillOperationResult,
+  SkillScope,
 } from "@apple-pi/protocol";
 declare global {
   interface Window {
@@ -43,6 +46,12 @@ declare global {
         subscribeAuthEvent(listener: (event: HostEvent) => void): () => void;
       };
       operation: { cancel(operationId: string): Promise<{ cancelled: boolean }> };
+      skill: {
+        list(): Promise<SkillCatalog>;
+        install(scope: SkillScope, sourcePath: string): Promise<SkillOperationResult>;
+        setEnabled(name: string, scope: SkillScope, enabled: boolean): Promise<SkillOperationResult>;
+        remove(name: string, scope: SkillScope): Promise<SkillOperationResult>;
+      };
     };
   }
 }
