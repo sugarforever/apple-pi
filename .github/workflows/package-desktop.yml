@@ -19,6 +19,12 @@ on:
 permissions:
   contents: read
 
+env:
+  # Platforms the package matrix must upload an update manifest for.
+  # assemble-update-manifests.mjs refuses to build a feed when one is missing, so
+  # adding or removing a matrix entry means updating this list too.
+  APPLE_PI_RELEASE_PLATFORMS: mac,win,linux
+
 concurrency:
   group: package-desktop-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
@@ -281,6 +287,36 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22.22.1
+
+      # The updater on each platform reads one canonical manifest, but
+      # electron-builder names the manifest after the platform rather than the
+      # build — so both macOS jobs uploaded a file called latest-mac.yml, each
+      # listing only its own archive. Merge them here: after every platform has
+      # uploaded, and before the release becomes immutable and unpublishable.
+      - name: Assemble the update feed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG_NAME: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          feed="$(mktemp -d)"
+          gh release download "$TAG_NAME" --pattern 'update-*.yml' --dir "$feed"
+          node apps/desktop/scripts/assemble-update-manifests.mjs \
+            --input "$feed" --output "$feed" --expect "$APPLE_PI_RELEASE_PLATFORMS"
+          gh release upload "$TAG_NAME" "$feed"/latest-mac.yml "$feed"/latest.yml "$feed"/latest-linux.yml
+          for staged in "$feed"/update-*.yml; do
+            gh release delete-asset "$TAG_NAME" "$(basename "$staged")" --yes
+          done
+
       - name: Publish the completed release
         env:
           GH_TOKEN: ${{ github.token }}
