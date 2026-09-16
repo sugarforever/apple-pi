@@ -68,8 +68,7 @@ export class HostServer {
               modelSelection: true,
               providerManagement: true,
               cancellableProviderOperations: true,
-              // Wired in a later task once PiSkillService lands (see skill.* cases below).
-              skillManagement: false,
+              skillManagement: true,
             },
             pid: process.pid,
           });
@@ -161,16 +160,25 @@ export class HostServer {
             message.requestId,
             await this.pi.providers.removeCustomProvider(message.payload.id, message.payload.operationId, message.payload.timeoutMs),
           );
-        // Protocol-level schemas land in this task; PiSkillService and the real
-        // handlers are wired in a later task in the skill management epic.
         case "skill.list":
+          return success("skill.list", message.requestId, await this.pi.skills.list(message.payload.cwd));
         case "skill.install":
+          return success(
+            "skill.install",
+            message.requestId,
+            await this.pi.skills.install(message.payload.sourcePath, message.payload.scope, message.payload.cwd),
+          );
         case "skill.setEnabled":
+          return success(
+            "skill.setEnabled",
+            message.requestId,
+            await this.pi.skills.setEnabled(message.payload.name, message.payload.scope, message.payload.cwd, message.payload.enabled),
+          );
         case "skill.remove":
-          return failure(message.requestId, new Error("Skill management is not yet available"));
+          return success("skill.remove", message.requestId, await this.pi.skills.remove(message.payload.name, message.payload.scope, message.payload.cwd));
       }
     } catch (error) {
-      return failure(message.requestId, isProviderCommand(message.type) ? new Error("Provider operation failed") : error);
+      return failure(message.requestId, sanitizedCommandError(message.type, error));
     }
   }
 
@@ -202,4 +210,19 @@ class HostProtocolFault extends Error {
 
 function isProviderCommand(type: HostCommandType): boolean {
   return type.startsWith("provider.") || type === "model.refresh" || type === "operation.cancel";
+}
+
+function isSkillCommand(type: HostCommandType): boolean {
+  return type.startsWith("skill.");
+}
+
+// Local filesystem paths (skill source/install paths) can be as sensitive as
+// provider secrets, so an unexpected thrown error from a skill command is
+// sanitized the same way an unexpected provider error already is above.
+// Expected failure modes (bad path, name collision, etc.) never reach here —
+// PiSkillService reports those as diagnostics on its normal return value.
+function sanitizedCommandError(type: HostCommandType, error: unknown): unknown {
+  if (isProviderCommand(type)) return new Error("Provider operation failed");
+  if (isSkillCommand(type)) return new Error("Skill operation failed");
+  return error;
 }

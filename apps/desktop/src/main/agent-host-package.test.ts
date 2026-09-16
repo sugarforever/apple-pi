@@ -34,7 +34,7 @@ it("contains the agent-host layout and completes the compatibility handshake", a
         modelSelection: true,
         providerManagement: true,
         cancellableProviderOperations: true,
-        skillManagement: false,
+        skillManagement: true,
       },
       pid: expect.any(Number),
     }),
