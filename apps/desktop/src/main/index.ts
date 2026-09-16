@@ -9,6 +9,7 @@ import { CredentialBroker, CredentialFile } from "./credential-broker.js";
 import { ProviderCredentialController } from "./provider-credential-controller.js";
 import { attachFileLogging, log } from "./logger.js";
 import { applyProcessHardening, applySessionPolicy, applyWindowPolicy } from "./security.js";
+import { startAutoUpdater, type AutoUpdateHandle } from "./updater.js";
 import type { CustomProviderDefinition, SessionSnapshot } from "@apple-pi/protocol";
 
 // Must run before `app.whenReady()` resolves.
@@ -37,6 +38,7 @@ let workspacePath: string | undefined;
 let catalog: AppCatalog;
 let credentials: CredentialBroker;
 let providerCredentials: ProviderCredentialController;
+let updates: AutoUpdateHandle | undefined;
 
 /**
  * The renderer is the only legitimate caller of the IPC surface, and only from
@@ -140,6 +142,9 @@ async function bootstrap(): Promise<void> {
     mainWindow?.webContents.send("provider:authEvent", event);
   });
   createWindow();
+  // Started after the window exists so a slow update check cannot delay it, and
+  // so an update that is already downloaded is reported in a live session.
+  updates = startAutoUpdater();
   log.info("Apple Pi ready");
 }
 
@@ -175,6 +180,9 @@ if (!app.requestSingleInstanceLock()) {
 }
 
 installGracefulShutdown(app, host);
+// Downloads install on quit, which electron-updater arranges itself; this only
+// releases the listeners and the pending check.
+app.on("will-quit", () => updates?.dispose());
 
 process.on("unhandledRejection", (reason) => log.error("unhandled promise rejection", { reason }));
 process.on("uncaughtException", (error) => log.error("uncaught exception", { error }));
