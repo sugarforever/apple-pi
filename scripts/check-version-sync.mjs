@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-import { readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { findVersionFailures, MANIFESTS, readAllVersions } from "./version-declarations.mjs";
 
 /**
  * Asserts that every version declaration in the repository agrees.
@@ -20,33 +20,6 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
-/** Every workspace package ships together and nothing is published, so one version covers the repository. */
-const MANIFESTS = [
-  "package.json",
-  "apps/agent-host/package.json",
-  "apps/desktop/package.json",
-  "packages/pi-adapter/package.json",
-  "packages/protocol/package.json",
-];
-
-const HOST_SOURCE = "apps/agent-host/src/server.ts";
-const HOST_VERSION_PATTERN = /export const HOST_VERSION = "([^"]+)"/;
-
-async function readManifestVersion(relativePath) {
-  const manifest = JSON.parse(await readFile(resolve(ROOT, relativePath), "utf8"));
-  if (typeof manifest.version !== "string" || manifest.version.length === 0) {
-    throw new Error(`${relativePath} does not declare a version`);
-  }
-  return manifest.version;
-}
-
-async function readHostVersion() {
-  const source = await readFile(resolve(ROOT, HOST_SOURCE), "utf8");
-  const match = source.match(HOST_VERSION_PATTERN);
-  if (!match) throw new Error(`${HOST_SOURCE} does not declare HOST_VERSION`);
-  return match[1];
-}
-
 function readTagArgument() {
   const index = process.argv.indexOf("--tag");
   if (index === -1) return undefined;
@@ -55,23 +28,10 @@ function readTagArgument() {
   return tag;
 }
 
-const failures = [];
-const versions = new Map();
-for (const manifest of MANIFESTS) versions.set(manifest, await readManifestVersion(manifest));
+const { versions, hostVersion } = await readAllVersions(ROOT);
+const failures = findVersionFailures({ versions, hostVersion });
 
 const [[canonicalManifest, canonicalVersion]] = versions;
-for (const [manifest, version] of versions) {
-  if (version !== canonicalVersion) {
-    failures.push(`${manifest} is ${version}, but ${canonicalManifest} is ${canonicalVersion}`);
-  }
-}
-
-const hostVersion = await readHostVersion();
-const hostManifestVersion = versions.get("apps/agent-host/package.json");
-if (hostVersion !== hostManifestVersion) {
-  failures.push(`HOST_VERSION in ${HOST_SOURCE} is ${hostVersion}, but apps/agent-host/package.json is ${hostManifestVersion}`);
-}
-
 const tag = readTagArgument();
 const expectedTag = `v${canonicalVersion}`;
 if (tag !== undefined && tag !== expectedTag) {

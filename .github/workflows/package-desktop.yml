@@ -111,6 +111,9 @@ jobs:
       - name: Check version declarations
         run: pnpm versions:check
 
+      - name: Test release scripts
+        run: pnpm test:scripts
+
       - name: Build Electron app
         run: pnpm build
 

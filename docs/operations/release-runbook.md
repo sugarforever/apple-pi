@@ -7,7 +7,6 @@ recover from each. For what the artifacts are and which secrets they need, see t
 ## The pipeline
 
 A `v*` tag starts the [Package desktop workflow](../../.github/workflows/package-desktop.yml):
-
 1. **`prepare-release`** verifies the tag matches the committed version
    (`scripts/check-version-sync.mjs --tag`), then creates the release as a **draft** — or
    reuses the draft that already exists.
@@ -16,6 +15,25 @@ A `v*` tag starts the [Package desktop workflow](../../.github/workflows/package
 3. **`publish-release`** flips the draft to published, and only then.
 
 Nothing is public until step 3, and step 3 only runs when every platform in step 2 succeeded.
+
+## Cutting a release
+
+Release the version by hand, deliberately:
+
+```bash
+corepack pnpm release:prepare --minor --dry-run   # preview
+corepack pnpm release:prepare --minor             # write every declaration
+corepack pnpm verify                              # versions:check must pass
+```
+
+Then commit as `chore: prepare vX.Y.Z release`, open a pull request, and **push the tag yourself**
+after it merges. The script prints the Conventional Commits since the last tag, ready to paste as
+the pull request body, and refuses a version that does not advance or that already has a tag.
+
+**Do not automate the tag.** GitHub does not run workflows for events caused by `GITHUB_TOKEN`,
+so a tag created by a workflow would produce no artifacts and no error — the package workflow
+triggers on `push: tags`, and only a personal access token, an app token, or a `workflow_dispatch`
+bridge would cascade. The manual tag push is the trigger, not ceremony.
 
 ## The update feed
 
