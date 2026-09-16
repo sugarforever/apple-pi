@@ -121,6 +121,7 @@ export const HostCapabilitiesSchema = closedObject({
   modelSelection: Type.Boolean(),
   providerManagement: Type.Boolean(),
   cancellableProviderOperations: Type.Boolean(),
+  skillManagement: Type.Boolean(),
 });
 export type HostCapabilities = Static<typeof HostCapabilitiesSchema>;
 
@@ -318,6 +319,54 @@ export const ApplePiSessionEventSchema = Type.Union([
 ]);
 export type ApplePiSessionEvent = Static<typeof ApplePiSessionEventSchema>;
 
+export const SkillScopeSchema = Type.Union([Type.Literal("user"), Type.Literal("project")]);
+export type SkillScope = Static<typeof SkillScopeSchema>;
+
+// Apple-Pi-owned mirror of Pi's `ResourceCollision` (see `@earendil-works/pi-coding-agent`'s
+// `core/diagnostics.ts`), narrowed to the "skill" resource type since this collision shape
+// only ever appears nested inside a `SkillDiagnostic`.
+export const SkillCollisionSchema = closedObject({
+  resourceType: Type.Literal("skill"),
+  name: Type.String({ minLength: 1 }),
+  winnerPath: Type.String({ minLength: 1 }),
+  loserPath: Type.String({ minLength: 1 }),
+  winnerSource: Type.Optional(Type.String({ minLength: 1 })),
+  loserSource: Type.Optional(Type.String({ minLength: 1 })),
+});
+export type SkillCollision = Static<typeof SkillCollisionSchema>;
+
+// Apple-Pi-owned mirror of Pi's `ResourceDiagnostic` public shape
+// (`{ type, message, path?, collision? }`), closed so no Pi-internal field leaks through.
+export const SkillDiagnosticSchema = closedObject({
+  type: Type.Union([Type.Literal("warning"), Type.Literal("error"), Type.Literal("collision")]),
+  message: Type.String({ minLength: 1 }),
+  path: Type.Optional(Type.String({ minLength: 1 })),
+  collision: Type.Optional(SkillCollisionSchema),
+});
+export type SkillDiagnostic = Static<typeof SkillDiagnosticSchema>;
+
+export const SkillItemSchema = closedObject({
+  name: Type.String({ minLength: 1 }),
+  description: Type.String({ minLength: 1 }),
+  scope: SkillScopeSchema,
+  path: Type.String({ minLength: 1 }),
+  disableModelInvocation: Type.Boolean(),
+  managed: Type.Boolean(),
+});
+export type SkillItem = Static<typeof SkillItemSchema>;
+
+export const SkillCatalogSchema = closedObject({
+  skills: Type.Array(SkillItemSchema),
+  diagnostics: Type.Array(SkillDiagnosticSchema),
+});
+export type SkillCatalog = Static<typeof SkillCatalogSchema>;
+
+export const SkillOperationResultSchema = closedObject({
+  skill: Type.Optional(SkillItemSchema),
+  diagnostics: Type.Array(SkillDiagnosticSchema),
+});
+export type SkillOperationResult = Static<typeof SkillOperationResultSchema>;
+
 function decode<TSchemaType extends TSchema>(schema: TSchemaType, value: unknown, label: string): Static<TSchemaType> {
   if (!isJsonSerializable(value) || !Value.Check(schema, value)) throw new Error(`Invalid ${label}`);
   return value as Static<TSchemaType>;
@@ -338,3 +387,7 @@ export const decodeCustomProviderDefinition = (value: unknown): CustomProviderDe
   decode(CustomProviderDefinitionSchema, value, "custom provider definition");
 export const decodeSessionItem = (value: unknown): SessionItem => decode(SessionItemSchema, value, "session item");
 export const decodeSessionSnapshot = (value: unknown): SessionSnapshot => decode(SessionSnapshotSchema, value, "session snapshot");
+export const decodeSkillItem = (value: unknown): SkillItem => decode(SkillItemSchema, value, "skill item");
+export const decodeSkillDiagnostic = (value: unknown): SkillDiagnostic => decode(SkillDiagnosticSchema, value, "skill diagnostic");
+export const decodeSkillCatalog = (value: unknown): SkillCatalog => decode(SkillCatalogSchema, value, "skill catalog");
+export const decodeSkillOperationResult = (value: unknown): SkillOperationResult => decode(SkillOperationResultSchema, value, "skill operation result");

@@ -29,7 +29,13 @@ it("contains the agent-host layout and completes the compatibility handshake", a
     expect.objectContaining({
       protocolVersion: 1,
       hostVersion: hostPackage.version,
-      capabilities: { sessionEvents: true, modelSelection: true, providerManagement: true, cancellableProviderOperations: true },
+      capabilities: {
+        sessionEvents: true,
+        modelSelection: true,
+        providerManagement: true,
+        cancellableProviderOperations: true,
+        skillManagement: false,
+      },
       pid: expect.any(Number),
     }),
   );

@@ -63,7 +63,14 @@ export class HostServer {
             protocolVersion: PROTOCOL_VERSION,
             hostVersion: HOST_VERSION,
             piVersion: PI_VERSION,
-            capabilities: { sessionEvents: true, modelSelection: true, providerManagement: true, cancellableProviderOperations: true },
+            capabilities: {
+              sessionEvents: true,
+              modelSelection: true,
+              providerManagement: true,
+              cancellableProviderOperations: true,
+              // Wired in a later task once PiSkillService lands (see skill.* cases below).
+              skillManagement: false,
+            },
             pid: process.pid,
           });
         case "system.shutdown":
@@ -154,6 +161,13 @@ export class HostServer {
             message.requestId,
             await this.pi.providers.removeCustomProvider(message.payload.id, message.payload.operationId, message.payload.timeoutMs),
           );
+        // Protocol-level schemas land in this task; PiSkillService and the real
+        // handlers are wired in a later task in the skill management epic.
+        case "skill.list":
+        case "skill.install":
+        case "skill.setEnabled":
+        case "skill.remove":
+          return failure(message.requestId, new Error("Skill management is not yet available"));
       }
     } catch (error) {
       return failure(message.requestId, isProviderCommand(message.type) ? new Error("Provider operation failed") : error);

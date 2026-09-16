@@ -9,7 +9,13 @@ const compatibleHandshake = {
   protocolVersion: 1,
   hostVersion: "0.1.0",
   piVersion: "0.84.2",
-  capabilities: { sessionEvents: true, modelSelection: true, providerManagement: true, cancellableProviderOperations: true },
+  capabilities: {
+    sessionEvents: true,
+    modelSelection: true,
+    providerManagement: true,
+    cancellableProviderOperations: true,
+    skillManagement: false,
+  },
   pid: 42,
 } as const;
 
