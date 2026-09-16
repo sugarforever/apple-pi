@@ -43,21 +43,32 @@ jobs:
           TAG_NAME: ${{ github.ref_name }}
         run: node scripts/check-version-sync.mjs --tag "$TAG_NAME"
 
-      - name: Create the tag release
+      # Published releases are immutable, so GitHub itself now refuses to accept
+      # assets for one. This guard is therefore not what protects those assets:
+      # it makes the outcome early and legible. Without it, re-running an
+      # already-published version would sign and notarize every platform before
+      # failing at upload time.
+      - name: Reuse the draft release, or stop before building
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           TAG_NAME: ${{ github.ref_name }}
         shell: bash
         run: |
-          if gh release view "$TAG_NAME" >/dev/null 2>&1; then
-            [[ "$(gh release view "$TAG_NAME" --json isDraft --jq .isDraft)" == "true" ]] || {
-              echo "Release $TAG_NAME is already published; refusing to replace public assets" >&2
-              exit 1
-            }
-          else
+          if ! gh release view "$TAG_NAME" >/dev/null 2>&1; then
             gh release create "$TAG_NAME" --draft --verify-tag --generate-notes --title "$TAG_NAME"
+            exit 0
           fi
+
+          [[ "$(gh release view "$TAG_NAME" --json isDraft --jq .isDraft)" == "true" ]] || {
+            echo "$TAG_NAME is already published, and published releases are immutable:" >&2
+            echo "assets cannot be added, replaced, or deleted, and the tag cannot be moved or" >&2
+            echo "deleted while the release exists. Nothing this run builds could be attached." >&2
+            echo "Publish a new patch version instead; see docs/operations/release-runbook.md." >&2
+            exit 1
+          }
+
+          echo "Reusing the existing draft release $TAG_NAME"
 
   pr-check:
     name: Test and build Electron app
