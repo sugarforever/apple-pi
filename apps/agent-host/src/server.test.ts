@@ -52,7 +52,13 @@ describe("HostServer", () => {
         protocolVersion: 1,
         hostVersion: HOST_VERSION,
         piVersion: "0.84.2",
-        capabilities: { sessionEvents: true, modelSelection: true, providerManagement: true, cancellableProviderOperations: true },
+        capabilities: {
+          sessionEvents: true,
+          modelSelection: true,
+          providerManagement: true,
+          cancellableProviderOperations: true,
+          skillManagement: false,
+        },
         pid: process.pid,
       },
     });
