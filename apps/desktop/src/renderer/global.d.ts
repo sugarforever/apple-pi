@@ -51,6 +51,7 @@ declare global {
         install(scope: SkillScope, sourcePath: string): Promise<SkillOperationResult>;
         setEnabled(name: string, scope: SkillScope, enabled: boolean): Promise<SkillOperationResult>;
         remove(name: string, scope: SkillScope): Promise<SkillOperationResult>;
+        pickDirectory(): Promise<string | null>;
       };
     };
   }

@@ -292,6 +292,15 @@ handle("skill:remove", (_event, value: unknown) => {
   const { name, scope } = skillNameInput(value);
   return host.request("skill.remove", { cwd: workspacePath, name, scope });
 });
+// Mirrors only the dialog portion of `workspace:pick` above: this never sets
+// `workspacePath`, touches the workspace catalog, or opens a session -- it
+// exists purely so the Skills settings panel can let the user browse to a
+// skill's source directory before calling `skill:install`.
+handle("skill:pickDirectory", async () => {
+  const result = await dialog.showOpenDialog(mainWindow!, { properties: ["openDirectory"] });
+  if (result.canceled || !result.filePaths[0]) return null;
+  return import("node:fs/promises").then(({ realpath }) => realpath(result.filePaths[0]!));
+});
 
 function validModel(value: unknown): ModelRef {
   if (!value || typeof value !== "object" || typeof (value as ModelRef).provider !== "string" || typeof (value as ModelRef).modelId !== "string")

@@ -257,6 +257,56 @@ describe("renderer custom provider contract", () => {
   });
 });
 
+describe("renderer skills settings contract", () => {
+  const skills = readFileSync(new URL("./src/skill-settings.tsx", import.meta.url), "utf8");
+
+  it("provides an accessible, searchable skills list with per-item busy state", () => {
+    expect(skills).toContain('<section className="skill-settings" aria-labelledby="skills-title">');
+    expect(skills).toContain('type="search"');
+    expect(skills).toContain("aria-busy={checking}");
+  });
+
+  it("surfaces per-skill and catalog-level diagnostics with an accessible role, adapted from type instead of severity", () => {
+    expect(skills).toContain('export function diagnosticRole(type: SkillDiagnostic["type"]): "alert" | "status" {');
+    expect(skills).toContain("role={diagnosticRole(diagnostic.type)}");
+    expect(skills).toContain("props.diagnostics.map(");
+  });
+
+  it("offers a labelled install control that drives a native directory picker with a scope choice", () => {
+    expect(skills).toContain('aria-label="Install skill"');
+    expect(skills).toContain("onClick={() => void pickDirectory()}");
+    expect(skills).toContain("props.onPickDirectory()");
+    expect(skills).toContain("props.canInstallToProject &&");
+  });
+
+  it("offers a per-skill enable/disable toggle wired to onSetEnabled", () => {
+    expect(skills).toContain("aria-pressed={enabled}");
+    expect(skills).toContain("onClick={() => toggleEnabled(skill)}");
+    expect(skills).toContain("props.onSetEnabled(skill.name, skill.scope, !isSkillEnabled(skill))");
+  });
+
+  it("requires a confirmation step before removing a skill", () => {
+    expect(skills).toContain("onClick={() => setConfirmingRemove((current) => ({ ...current, [key]: true }))}");
+    expect(skills).toContain("onClick={() => removeSkill(skill)}");
+    expect(skills).toContain('role="status"');
+  });
+
+  it("disables mutating controls for a skill Apple Pi does not manage, with an explanatory title", () => {
+    expect(skills).toContain("disabled={checking || !skill.managed}");
+    expect(skills).toContain("NOT_MANAGED_TITLE");
+  });
+});
+
+describe("renderer skills settings mounting contract", () => {
+  it("mounts SkillSettings alongside ProviderSettings, wired to window.applePi.skill and refreshed with Settings", () => {
+    expect(source).toContain("<SkillSettings");
+    expect(source).toContain("window.applePi.skill.list()");
+    expect(source).toContain("onInstall={async (scope, sourcePath) => {");
+    expect(source).toContain("onPickDirectory={() => window.applePi.skill.pickDirectory()}");
+    expect(source).toContain("canInstallToProject={Boolean(workspacePath)}");
+  });
+});
+
 describe("renderer feedback contract", () => {
   it("resyncs only after the reducer marks a gap or explicit resync event", () => {
     expect(source).toContain('if (state.sync.status !== "resyncing") return;');
