@@ -26,8 +26,8 @@ vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => {
   return { ...actual, DefaultResourceLoader: DefaultResourceLoaderMock, getAgentDir: pi.getAgentDir };
 });
 
-import { loadSkillsFromDir } from "@earendil-works/pi-coding-agent";
-import { createSkillResourceLoader, PiSkillService } from "./skill-service.js";
+import { loadSkillsFromDir, type ResourceDiagnostic, type Skill } from "@earendil-works/pi-coding-agent";
+import { createSkillResourceLoader, PiSkillService, type SkillResourceLoader } from "./skill-service.js";
 
 describe("createSkillResourceLoader", () => {
   beforeEach(() => {
@@ -137,7 +137,7 @@ describe("PiSkillService", () => {
   });
 
   it("reuses the active session's loader instance for a matching cwd instead of scanning again", async () => {
-    const activeLoader = { getSkills: vi.fn(() => ({ skills: [userSkill], diagnostics: [] })) };
+    const activeLoader = { getSkills: vi.fn(() => ({ skills: [userSkill], diagnostics: [] })), reload: vi.fn(async () => {}) };
     const service = new PiSkillService();
     service.setActiveLoader({ cwd: "/workspace", loader: activeLoader });
 
@@ -151,7 +151,7 @@ describe("PiSkillService", () => {
   });
 
   it("falls back to a fresh loader when the requested cwd does not match the active session", async () => {
-    const activeLoader = { getSkills: vi.fn(() => ({ skills: [userSkill], diagnostics: [] })) };
+    const activeLoader = { getSkills: vi.fn(() => ({ skills: [userSkill], diagnostics: [] })), reload: vi.fn(async () => {}) };
     const service = new PiSkillService();
     service.setActiveLoader({ cwd: "/workspace-a", loader: activeLoader });
 
@@ -162,7 +162,7 @@ describe("PiSkillService", () => {
   });
 
   it("falls back to a fresh loader once the active session is cleared", async () => {
-    const activeLoader = { getSkills: vi.fn(() => ({ skills: [], diagnostics: [] })) };
+    const activeLoader = { getSkills: vi.fn(() => ({ skills: [], diagnostics: [] })), reload: vi.fn(async () => {}) };
     const service = new PiSkillService();
     service.setActiveLoader({ cwd: "/workspace", loader: activeLoader });
     service.setActiveLoader(undefined);
@@ -379,6 +379,84 @@ describe("PiSkillService lifecycle", () => {
       expect(result.skill).toBeUndefined();
       expect(result.diagnostics.length).toBeGreaterThan(0);
       expect(existsSync(join(unmanagedDir, "SKILL.md"))).toBe(true);
+    });
+  });
+
+  describe("active session loader freshness", () => {
+    // DefaultResourceLoader.getSkills() is a pure cached getter (see the real
+    // SDK's core/resource-loader.ts: `getSkills() { return { skills: this.skills,
+    // diagnostics: this.skillDiagnostics }; }`) — it never re-scans on its own,
+    // only reload() does. Every other test above never attaches an active loader,
+    // so list() always takes the "no active session" path in createSkillResourceLoader
+    // and gets a brand new, freshly-reloaded loader on every call, masking this: with a
+    // real open session, a mutation must reload that session's own cached loader, or
+    // both the next list() and the mutation methods' own catalog-based lookups (which
+    // call list() internally, see disable()/remove() above) keep reporting pre-mutation
+    // state — exactly what made a disable click look like it did nothing, then fail
+    // outright on a second click with "something already exists at the destination".
+    function statefulLoader(): SkillResourceLoader & { reload: ReturnType<typeof vi.fn> } {
+      const scan = (): { skills: Skill[]; diagnostics: ResourceDiagnostic[] } => {
+        const user = loadSkillsFromDir({ dir: managedRoot("user"), source: "auto" });
+        const project = loadSkillsFromDir({ dir: managedRoot("project"), source: "auto" });
+        return {
+          skills: [
+            ...user.skills.map((skill) => ({ ...skill, sourceInfo: { ...skill.sourceInfo, scope: "user" as const } })),
+            ...project.skills.map((skill) => ({ ...skill, sourceInfo: { ...skill.sourceInfo, scope: "project" as const } })),
+          ],
+          diagnostics: [...user.diagnostics, ...project.diagnostics],
+        };
+      };
+      let snapshot = scan();
+      return {
+        getSkills: () => snapshot,
+        reload: vi.fn(async () => {
+          snapshot = scan();
+        }),
+      };
+    }
+
+    it("reloads the active session's loader after setEnabled, so a repeat toggle sees the change instead of colliding with it", async () => {
+      await writeSkillFixture(join(managedRoot("user"), "pdf-forms"), { name: "pdf-forms", description: "Fill and flatten PDF forms." });
+      const loader = statefulLoader();
+      const service = new PiSkillService();
+      service.setActiveLoader({ cwd, loader });
+
+      const disableResult = await service.setEnabled("pdf-forms", "user", cwd, false);
+      expect(disableResult.diagnostics).toEqual([]);
+      expect(loader.reload).toHaveBeenCalled();
+
+      // Before the fix, this still returned "pdf-forms" (the loader's stale
+      // cached snapshot), which is exactly what the desktop UI re-fetches to
+      // refresh itself after a mutation — the visible "nothing happened" bug.
+      const afterDisable = await service.list(cwd);
+      expect(afterDisable.skills.map((skill) => skill.name)).toEqual([]);
+
+      // Before the fix, the stale list() above made the UI think a second
+      // click was still needed; it sent the same setEnabled(..., false) again
+      // and that collided with the now-already-moved directory ("Apple Pi
+      // could not move \"pdf-forms\": something already exists at the
+      // destination") instead of a clean, expected "not found" — the skill
+      // genuinely isn't in the discoverable/enabled set anymore, so this is
+      // the correct outcome now, not a bug: the crash-like collision message
+      // is what's fixed, not this diagnostic itself.
+      const repeatDisable = await service.setEnabled("pdf-forms", "user", cwd, false);
+      expect(repeatDisable.diagnostics).toEqual([{ type: "error", message: 'No skill named "pdf-forms" was found in the user scope.' }]);
+    });
+
+    it("reloads the active session's loader after install and remove too", async () => {
+      const source = join(root, "candidate");
+      await writeSkillFixture(source, { name: "release-notes", description: "Draft release notes." });
+      const loader = statefulLoader();
+      const service = new PiSkillService();
+      service.setActiveLoader({ cwd, loader });
+
+      const installResult = await service.install(source, "project", cwd);
+      expect(installResult.diagnostics).toEqual([]);
+      expect((await service.list(cwd)).skills.map((skill) => skill.name)).toEqual(["release-notes"]);
+
+      const removeResult = await service.remove("release-notes", "project", cwd);
+      expect(removeResult.diagnostics).toEqual([]);
+      expect((await service.list(cwd)).skills.map((skill) => skill.name)).toEqual([]);
     });
   });
 });
