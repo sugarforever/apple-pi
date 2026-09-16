@@ -40,6 +40,13 @@
   },
   "build": {
     "appId": "verysmallwoods.applepi",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "sugarforever",
+        "repo": "apple-pi"
+      }
+    ],
     "directories": {
       "output": "release"
     },
