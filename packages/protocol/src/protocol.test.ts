@@ -109,7 +109,7 @@ describe("host protocol", () => {
       // not track the application version, or every release has to edit it.
       hostVersion: "0.0.0-fixture",
       piVersion: "0.84.2",
-      capabilities: { sessionEvents: true, modelSelection: true, providerManagement: true, cancellableProviderOperations: true },
+      capabilities: { sessionEvents: true, modelSelection: true, providerManagement: true, cancellableProviderOperations: true, skillManagement: true },
       pid: 42,
     } as const;
 

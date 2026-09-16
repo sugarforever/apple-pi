@@ -11,6 +11,9 @@ import {
   ProviderOperationResultSchema,
   SessionItemSchema,
   SessionSnapshotSchema,
+  SkillCatalogSchema,
+  SkillOperationResultSchema,
+  SkillScopeSchema,
   type ApplePiSessionEvent,
   type ProviderAuthEvent,
 } from "./domain.js";
@@ -97,6 +100,19 @@ export const Payloads = {
     { id: Type.String({ minLength: 1 }), operationId: Type.String({ minLength: 1 }), timeoutMs: Type.Integer({ minimum: 100, maximum: 30_000 }) },
     { additionalProperties: false },
   ),
+  "skill.list": Type.Object({ cwd: Type.String({ minLength: 1 }) }, { additionalProperties: false }),
+  "skill.install": Type.Object(
+    { cwd: Type.String({ minLength: 1 }), scope: SkillScopeSchema, sourcePath: Type.String({ minLength: 1 }) },
+    { additionalProperties: false },
+  ),
+  "skill.setEnabled": Type.Object(
+    { cwd: Type.String({ minLength: 1 }), scope: SkillScopeSchema, name: Type.String({ minLength: 1 }), enabled: Type.Boolean() },
+    { additionalProperties: false },
+  ),
+  "skill.remove": Type.Object(
+    { cwd: Type.String({ minLength: 1 }), scope: SkillScopeSchema, name: Type.String({ minLength: 1 }) },
+    { additionalProperties: false },
+  ),
 } as const;
 
 export const ResultSchemas = {
@@ -132,6 +148,10 @@ export const ResultSchemas = {
   "provider.addCustom": ProviderOperationResultSchema,
   "provider.updateCustom": ProviderOperationResultSchema,
   "provider.removeCustom": ProviderOperationResultSchema,
+  "skill.list": SkillCatalogSchema,
+  "skill.install": SkillOperationResultSchema,
+  "skill.setEnabled": SkillOperationResultSchema,
+  "skill.remove": SkillOperationResultSchema,
 } as const;
 
 export const HostEventSchema = Type.Union([

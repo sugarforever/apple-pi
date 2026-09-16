@@ -9,6 +9,8 @@ import {
   decodeProviderAuthEvent,
   decodeSessionItem,
   decodeSessionSnapshot,
+  decodeSkillCatalog,
+  decodeSkillItem,
 } from "./domain.js";
 
 describe("Apple Pi domain decoders", () => {
@@ -49,7 +51,13 @@ describe("Apple Pi domain decoders", () => {
       messageCount: 3,
     };
     const model = { provider: "openai", modelId: "gpt-5", name: "GPT-5" };
-    const capabilities = { sessionEvents: true, modelSelection: true, providerManagement: true, cancellableProviderOperations: true };
+    const capabilities = {
+      sessionEvents: true,
+      modelSelection: true,
+      providerManagement: true,
+      cancellableProviderOperations: true,
+      skillManagement: true,
+    };
 
     expect(decodeSessionItem(session)).toEqual(session);
     expect(decodeModelItem(model)).toEqual(model);
@@ -169,5 +177,67 @@ describe("custom provider definitions", () => {
   it("rejects a non-positive contextWindow or maxTokens", () => {
     expect(() => decodeCustomProviderDefinition({ ...definition, models: [{ id: "m1", contextWindow: 0 }] })).toThrow("Invalid custom provider definition");
     expect(() => decodeCustomProviderDefinition({ ...definition, models: [{ id: "m1", maxTokens: -1 }] })).toThrow("Invalid custom provider definition");
+  });
+});
+
+describe("skill catalog", () => {
+  const skills = [
+    {
+      name: "pdf-forms",
+      description: "Fill and flatten PDF forms.",
+      scope: "user",
+      path: "/home/jane/.pi/skills/pdf-forms/SKILL.md",
+      disableModelInvocation: false,
+      managed: true,
+    },
+    {
+      name: "release-notes",
+      description: "Draft release notes from recent commits.",
+      scope: "project",
+      path: "/repo/.pi/skills/release-notes/SKILL.md",
+      disableModelInvocation: true,
+      managed: false,
+    },
+  ];
+  const diagnostics = [
+    {
+      type: "warning",
+      message: "Skill 'legacy-helper' is missing a description and was skipped.",
+      path: "/repo/.pi/skills/legacy-helper/SKILL.md",
+    },
+    {
+      type: "collision",
+      message: "Skill 'pdf-forms' is defined in two locations; the project copy wins.",
+      collision: {
+        resourceType: "skill",
+        name: "pdf-forms",
+        winnerPath: "/repo/.pi/skills/pdf-forms/SKILL.md",
+        loserPath: "/home/jane/.pi/skills/pdf-forms/SKILL.md",
+        winnerSource: "project",
+        loserSource: "user",
+      },
+    },
+  ];
+  const catalog = { skills, diagnostics };
+
+  it("decodes a valid skill catalog fixture", () => {
+    expect(decodeSkillCatalog(catalog)).toEqual(catalog);
+    expect(decodeSkillItem(skills[0])).toEqual(skills[0]);
+  });
+
+  it("rejects extra fields on the catalog, a skill item, and a diagnostic", () => {
+    expect(() => decodeSkillCatalog({ ...catalog, total: 2 })).toThrow("Invalid skill catalog");
+    expect(() => decodeSkillCatalog({ skills: [{ ...skills[0], enabled: true }], diagnostics: [] })).toThrow("Invalid skill catalog");
+    expect(() => decodeSkillCatalog({ skills: [], diagnostics: [{ ...diagnostics[0], code: "missing_description" }] })).toThrow("Invalid skill catalog");
+  });
+
+  it("rejects missing discriminators", () => {
+    expect(() => decodeSkillCatalog({ skills: [{ ...skills[0], scope: undefined }], diagnostics: [] })).toThrow("Invalid skill catalog");
+    expect(() => decodeSkillCatalog({ skills: [], diagnostics: [{ message: "Missing a type discriminator." }] })).toThrow("Invalid skill catalog");
+  });
+
+  it("rejects an unknown scope value", () => {
+    expect(() => decodeSkillCatalog({ skills: [{ ...skills[0], scope: "global" }], diagnostics: [] })).toThrow("Invalid skill catalog");
+    expect(() => decodeSkillItem({ ...skills[1], scope: "workspace" })).toThrow("Invalid skill item");
   });
 });
