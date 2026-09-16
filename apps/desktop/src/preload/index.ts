@@ -65,6 +65,16 @@ contextBridge.exposeInMainWorld("applePi", {
   operation: {
     cancel: (operationId: string) => ipcRenderer.invoke("operation:cancel", operationId),
   },
+  // Simple pass-throughs, like `session`/`model` above: skill commands have no
+  // `operationId`/`timeoutMs` in their protocol payload, so they skip
+  // `invokeOperation` (that helper only exists for the bounded, cancellable
+  // `provider.*` mutations).
+  skill: {
+    list: () => ipcRenderer.invoke("skill:list"),
+    install: (scope: "user" | "project", sourcePath: string) => ipcRenderer.invoke("skill:install", { scope, sourcePath }),
+    setEnabled: (name: string, scope: "user" | "project", enabled: boolean) => ipcRenderer.invoke("skill:setEnabled", { name, scope, enabled }),
+    remove: (name: string, scope: "user" | "project") => ipcRenderer.invoke("skill:remove", { name, scope }),
+  },
 });
 
 interface ProviderOperationOptions {
