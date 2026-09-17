@@ -16,12 +16,13 @@ import {
   Terminal,
   X,
 } from "lucide-react";
-import type { CustomProviderDefinition, ProviderItem, SessionSnapshot } from "@apple-pi/protocol";
+import type { CustomProviderDefinition, ProviderItem, SessionSnapshot, SkillCatalog } from "@apple-pi/protocol";
 import { runSessionResync } from "../session-resync.js";
 import { initialSessionState, reduceSession } from "../session-state.js";
 import { toTimelineItems, type ToolItem } from "../tool-activity.js";
 import type { Catalog, ModelItem, ModelRef, SessionItem, WorkspaceOpenResult } from "../global.js";
 import { ProviderSettings, modelUnavailable } from "./provider-settings.js";
+import { SkillSettings } from "./skill-settings.js";
 import "./styles.css";
 
 type UiSessionItem = SessionItem & { persisted: boolean };
@@ -80,6 +81,7 @@ function App() {
   const [models, setModels] = useState<ModelItem[]>([]);
   const [providers, setProviders] = useState<ProviderItem[]>([]);
   const [customProviders, setCustomProviders] = useState<CustomProviderDefinition[]>([]);
+  const [skillCatalog, setSkillCatalog] = useState<SkillCatalog>({ skills: [], diagnostics: [] });
   const [draft, setDraft] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [activeSessionId, setActiveSessionId] = useState("");
@@ -135,6 +137,10 @@ function App() {
       .listCustom()
       .then(setCustomProviders)
       .catch(() => setCustomProviders([]));
+    void window.applePi.skill
+      .list()
+      .then(setSkillCatalog)
+      .catch(() => setSkillCatalog({ skills: [], diagnostics: [] }));
     return window.applePi.session.subscribe((event) => {
       if (event.type === "session.event") dispatch({ type: "event", sequence: event.sequence, payload: event.payload });
     });
@@ -158,6 +164,10 @@ function App() {
     void window.applePi.provider
       .listCustom()
       .then(setCustomProviders)
+      .catch(() => undefined);
+    void window.applePi.skill
+      .list()
+      .then(setSkillCatalog)
       .catch(() => undefined);
   }, [settingsOpen]);
 
@@ -478,6 +488,27 @@ function App() {
                 cancel: (operationId) => window.applePi.operation.cancel(operationId),
                 subscribe: (listener) => window.applePi.provider.subscribeAuthEvent(listener),
               }}
+            />
+            <SkillSettings
+              skills={skillCatalog.skills}
+              diagnostics={skillCatalog.diagnostics}
+              canInstallToProject={Boolean(workspacePath)}
+              onInstall={async (scope, sourcePath) => {
+                const result = await window.applePi.skill.install(scope, sourcePath);
+                setSkillCatalog(await window.applePi.skill.list());
+                return result;
+              }}
+              onSetEnabled={async (name, scope, enabled) => {
+                const result = await window.applePi.skill.setEnabled(name, scope, enabled);
+                setSkillCatalog(await window.applePi.skill.list());
+                return result;
+              }}
+              onRemove={async (name, scope) => {
+                const result = await window.applePi.skill.remove(name, scope);
+                setSkillCatalog(await window.applePi.skill.list());
+                return result;
+              }}
+              onPickDirectory={() => window.applePi.skill.pickDirectory()}
             />
           </section>
         ) : (

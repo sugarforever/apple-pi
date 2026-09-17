@@ -74,6 +74,10 @@ contextBridge.exposeInMainWorld("applePi", {
     install: (scope: "user" | "project", sourcePath: string) => ipcRenderer.invoke("skill:install", { scope, sourcePath }),
     setEnabled: (name: string, scope: "user" | "project", enabled: boolean) => ipcRenderer.invoke("skill:setEnabled", { name, scope, enabled }),
     remove: (name: string, scope: "user" | "project") => ipcRenderer.invoke("skill:remove", { name, scope }),
+    // Side-effect-free directory picker for the install flow: unlike
+    // `workspace:pick`, this never touches the workspace catalog or opens a
+    // session, so it has no scope/cwd argument to pass through here.
+    pickDirectory: () => ipcRenderer.invoke("skill:pickDirectory"),
   },
 });
 

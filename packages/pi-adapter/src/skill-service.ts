@@ -18,6 +18,7 @@ import { mapPiSkill, mapPiSkillDiagnostic } from "./mappers.js";
 
 export interface SkillResourceLoader {
   getSkills(): { skills: Skill[]; diagnostics: ResourceDiagnostic[] };
+  reload(): Promise<void>;
 }
 
 interface ActiveSkillSource {
@@ -144,6 +145,17 @@ export class PiSkillService {
     return decodeSkillCatalog({ skills: skills.map(mapPiSkill), diagnostics: diagnostics.map(mapPiSkillDiagnostic) });
   }
 
+  // getSkills() is a pure cached getter (see createSkillResourceLoader's doc
+  // comment) — it never re-scans on its own. A mutation below just changed
+  // files on disk under `cwd`'s managed roots, so if that cwd's session is
+  // the one currently active, its shared loader is now stale: reload it so
+  // both the next list() (used internally by disable()/remove() to find a
+  // skill's current location, and externally by callers refreshing after a
+  // mutation) and the live agent session itself see the change immediately.
+  private async refreshActiveLoader(cwd: string): Promise<void> {
+    if (this.active?.cwd === cwd) await this.active.loader.reload();
+  }
+
   // Validates `sourcePath` with Pi's own `loadSkillsFromDir` *before* touching
   // the managed root, then copies into a hidden, dot-prefixed staging directory
   // inside the managed root (invisible to Pi's own scanner, which skips
@@ -216,6 +228,7 @@ export class PiSkillService {
       wasDirectory: true,
       disableModelInvocation: candidate.disableModelInvocation,
     });
+    await this.refreshActiveLoader(cwd);
     return decodeSkillOperationResult({ skill, diagnostics: [] });
   }
 
@@ -244,6 +257,7 @@ export class PiSkillService {
       wasDirectory: unit.path !== found.path,
       disableModelInvocation: found.disableModelInvocation,
     });
+    await this.refreshActiveLoader(cwd);
     return decodeSkillOperationResult({ skill, diagnostics: [] });
   }
 
@@ -267,6 +281,7 @@ export class PiSkillService {
       wasDirectory: basename(found.filePath) === "SKILL.md",
       disableModelInvocation: found.disableModelInvocation,
     });
+    await this.refreshActiveLoader(cwd);
     return decodeSkillOperationResult({ skill, diagnostics: [] });
   }
 
@@ -279,6 +294,7 @@ export class PiSkillService {
       if (!found.managed) return decodeSkillOperationResult({ diagnostics: [notManagedDiagnostic(name, scope, found.path)] });
       const unit = skillUnit(found.path);
       await rm(unit.path, { recursive: true, force: true });
+      await this.refreshActiveLoader(cwd);
       return decodeSkillOperationResult({ skill: found, diagnostics: [] });
     }
 
@@ -297,6 +313,7 @@ export class PiSkillService {
       wasDirectory: basename(disabledFound.filePath) === "SKILL.md",
       disableModelInvocation: disabledFound.disableModelInvocation,
     });
+    await this.refreshActiveLoader(cwd);
     return decodeSkillOperationResult({ skill, diagnostics: [] });
   }
 }
