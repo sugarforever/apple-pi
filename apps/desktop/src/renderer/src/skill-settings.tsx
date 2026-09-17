@@ -7,6 +7,13 @@ export type SkillActivity = "idle" | "checking";
 export interface SkillSettingsProps {
   skills: SkillItem[];
   diagnostics: SkillDiagnostic[];
+  // Skills currently sitting in Apple Pi's disabled holding directory (see
+  // `PiSkillService.listDisabled` in `@apple-pi/pi-adapter`'s skill-service.ts).
+  // Deliberately a separate list rather than folded into `skills`: a disabled
+  // skill is, by design, invisible to Pi's own discovery, and `skills` mirrors
+  // that discovery exactly. This is Apple Pi's own bookkeeping layered on top,
+  // so the panel can still show a disabled skill and offer to re-enable it.
+  disabledSkills: SkillItem[];
   // A project-scoped skill only makes sense while a workspace is open; the
   // parent (main.tsx) is the one that knows whether that is currently true.
   canInstallToProject: boolean;
@@ -71,6 +78,12 @@ export function SkillSettings(props: SkillSettingsProps) {
     return needle ? props.skills.filter((skill) => `${skill.name} ${skill.description}`.toLocaleLowerCase().includes(needle)) : props.skills;
   }, [props.skills, query]);
 
+  // Same search box, same filtering rule, applied to the disabled list below.
+  const visibleDisabled = useMemo(() => {
+    const needle = query.trim().toLocaleLowerCase();
+    return needle ? props.disabledSkills.filter((skill) => `${skill.name} ${skill.description}`.toLocaleLowerCase().includes(needle)) : props.disabledSkills;
+  }, [props.disabledSkills, query]);
+
   const run = async (key: string, operation: () => Promise<SkillOperationResult>): Promise<void> => {
     setActivity((current) => ({ ...current, [key]: "checking" }));
     setFeedback((current) => ({ ...current, [key]: undefined }));
@@ -89,6 +102,13 @@ export function SkillSettings(props: SkillSettingsProps) {
 
   const toggleEnabled = (skill: SkillItem): void => {
     void run(skillKey(skill.scope, skill.name), () => props.onSetEnabled(skill.name, skill.scope, !isSkillEnabled(skill)));
+  };
+
+  // A disabled skill only ever needs to go one direction from this section:
+  // back into discovery. It reuses the same setEnabled mutation as the
+  // enabled list's toggle — there is no separate "re-enable" API.
+  const enableSkill = (skill: SkillItem): void => {
+    void run(skillKey(skill.scope, skill.name), () => props.onSetEnabled(skill.name, skill.scope, true));
   };
 
   const removeSkill = (skill: SkillItem): void => {
@@ -265,6 +285,74 @@ export function SkillSettings(props: SkillSettingsProps) {
             );
           })}
         </div>
+      )}
+      {props.disabledSkills.length > 0 && (
+        <details className="skill-disabled-section">
+          <summary>Disabled ({props.disabledSkills.length})</summary>
+          {visibleDisabled.length === 0 ? (
+            <div className="skill-empty">
+              <strong>No matching disabled skills</strong>
+              <p>Try a different search term.</p>
+            </div>
+          ) : (
+            <div className="skill-list">
+              {visibleDisabled.map((skill) => {
+                const key = skillKey(skill.scope, skill.name);
+                const checking = activity[key] === "checking";
+                const diagnostic = feedback[key];
+                const confirming = confirmingRemove[key] ?? false;
+                return (
+                  <article className="skill-card skill-card-disabled" key={key} aria-busy={checking}>
+                    <div className="skill-summary">
+                      <div className="skill-name">
+                        <h3>{skill.name}</h3>
+                        <p>{skill.scope} · Disabled</p>
+                      </div>
+                      <button type="button" className="skill-toggle" aria-label={`Enable ${skill.name}`} onClick={() => enableSkill(skill)} disabled={checking}>
+                        <ToggleLeft size={16} /> Enable
+                      </button>
+                    </div>
+                    <p className="skill-description">{skill.description}</p>
+                    <p className="skill-path">{skill.path}</p>
+                    {diagnostic && (
+                      <p className={`skill-diagnostic ${diagnostic.type}`} role={diagnosticRole(diagnostic.type)}>
+                        {diagnostic.message}
+                      </p>
+                    )}
+                    <div className="skill-actions">
+                      {!confirming ? (
+                        <button
+                          type="button"
+                          className="danger-button"
+                          aria-label={`Remove ${skill.name}`}
+                          onClick={() => setConfirmingRemove((current) => ({ ...current, [key]: true }))}
+                          disabled={checking}
+                        >
+                          <Trash2 size={13} /> Remove
+                        </button>
+                      ) : (
+                        <span className="skill-remove-confirm" role="status">
+                          Remove &quot;{skill.name}&quot;?
+                          <button type="button" className="danger-button" onClick={() => removeSkill(skill)} disabled={checking}>
+                            Yes, remove
+                          </button>
+                          <button
+                            type="button"
+                            className="secondary"
+                            onClick={() => setConfirmingRemove((current) => ({ ...current, [key]: false }))}
+                            disabled={checking}
+                          >
+                            Cancel
+                          </button>
+                        </span>
+                      )}
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          )}
+        </details>
       )}
     </section>
   );

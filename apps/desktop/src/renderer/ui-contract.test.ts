@@ -295,6 +295,25 @@ describe("renderer skills settings contract", () => {
     expect(skills).toContain("disabled={checking || !skill.managed}");
     expect(skills).toContain("NOT_MANAGED_TITLE");
   });
+
+  it("shows disabled skills (moved to Apple Pi's holding directory, so absent from the enabled list) in their own section with an Enable action", () => {
+    expect(skills).toContain("disabledSkills: SkillItem[];");
+    expect(skills).toContain('<details className="skill-disabled-section">');
+    expect(skills).toContain("Disabled ({props.disabledSkills.length})");
+    expect(skills).toContain("const enableSkill = (skill: SkillItem): void => {");
+    expect(skills).toContain("props.onSetEnabled(skill.name, skill.scope, true)");
+    expect(skills).toContain("aria-label={`Enable ${skill.name}`}");
+  });
+
+  it("filters the disabled section by the same search query as the enabled list", () => {
+    expect(skills).toContain("const visibleDisabled = useMemo(() => {");
+    expect(skills).toContain("props.disabledSkills.filter((skill) => `${skill.name} ${skill.description}`.toLocaleLowerCase().includes(needle))");
+  });
+
+  it("lets a disabled skill be removed directly, reusing the same confirm-then-remove flow as an enabled skill", () => {
+    expect(skills).toContain("onClick={() => removeSkill(skill)}");
+    expect(skills).toContain('role="status"');
+  });
 });
 
 describe("renderer skills settings mounting contract", () => {
@@ -304,6 +323,13 @@ describe("renderer skills settings mounting contract", () => {
     expect(source).toContain("onInstall={async (scope, sourcePath) => {");
     expect(source).toContain("onPickDirectory={() => window.applePi.skill.pickDirectory()}");
     expect(source).toContain("canInstallToProject={Boolean(workspacePath)}");
+  });
+
+  it("fetches and passes disabled skills alongside the enabled catalog, refreshed at the same points", () => {
+    expect(source).toContain("window.applePi.skill.listDisabled()");
+    expect(source).toContain("disabledSkills={disabledSkills}");
+    // Refreshed on mount and whenever Settings opens, matching skillCatalog's own refresh points.
+    expect(source).toContain("setDisabledSkills");
   });
 });
 

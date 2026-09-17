@@ -285,6 +285,40 @@ export class PiSkillService {
     return decodeSkillOperationResult({ skill, diagnostics: [] });
   }
 
+  // Reports what is currently sitting in each scope's disabled holding
+  // directory (see disabledSkillsRoot), deliberately kept separate from
+  // list()/SkillCatalog rather than folded into it: list() exists specifically
+  // to mirror Pi's own discovery exactly (see the class-level comment on
+  // list()), and a disabled skill is, by design, invisible to that discovery.
+  // This lets a UI show a disabled skill (and offer to re-enable it) without
+  // ever breaking that "matches exactly what the session would discover"
+  // guarantee for list() itself.
+  async listDisabled(cwd: string): Promise<SkillItem[]> {
+    const scopes: SkillScope[] = ["user", "project"];
+    return scopes.flatMap((scope) => {
+      const scan = loadSkillsFromDir({ dir: disabledSkillsRoot(scope, cwd), source: "disabled" });
+      return scan.skills.map((found) => {
+        // `found.filePath` always points at the SKILL.md file itself; skillUnit
+        // resolves it back to the unit's own root (its containing directory for
+        // a SKILL.md-wrapped skill, or that same file otherwise), matching what
+        // skillItemFromUnit expects as `unitPath` everywhere else in this file.
+        const unit = skillUnit(found.filePath);
+        return skillItemFromUnit({
+          name: found.name,
+          description: found.description,
+          scope,
+          unitPath: unit.path,
+          wasDirectory: unit.path !== found.filePath,
+          // Sitting in Apple Pi's own disabled holding directory *is* the
+          // disabled state, regardless of what the skill's own frontmatter
+          // says: force this true so the UI's `isSkillEnabled()` check
+          // (`!skill.disableModelInvocation`) always reports it as disabled.
+          disableModelInvocation: true,
+        });
+      });
+    });
+  }
+
   // Deletes a managed skill entirely, whether it is currently discovered
   // (enabled) or sitting in the disabled holding directory.
   async remove(name: string, scope: SkillScope, cwd: string): Promise<SkillOperationResult> {

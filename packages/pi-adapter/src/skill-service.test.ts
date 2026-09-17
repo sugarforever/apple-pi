@@ -344,6 +344,59 @@ describe("PiSkillService lifecycle", () => {
     });
   });
 
+  describe("listDisabled", () => {
+    it("returns an empty list when nothing is disabled and the holding directories don't exist yet", async () => {
+      const service = new PiSkillService();
+
+      expect(await service.listDisabled(cwd)).toEqual([]);
+    });
+
+    it("lists skills sitting in each scope's disabled holding directory, reporting them as disabled regardless of their own frontmatter", async () => {
+      await writeSkillFixture(join(managedRoot("user"), "pdf-forms"), { name: "pdf-forms", description: "Fill and flatten PDF forms." });
+      await writeSkillFixture(join(managedRoot("project"), "release-notes"), { name: "release-notes", description: "Draft release notes." });
+      const service = new PiSkillService();
+      await service.setEnabled("pdf-forms", "user", cwd, false);
+      await service.setEnabled("release-notes", "project", cwd, false);
+
+      const disabled = await service.listDisabled(cwd);
+
+      expect(disabled).toEqual(
+        expect.arrayContaining([
+          {
+            name: "pdf-forms",
+            description: "Fill and flatten PDF forms.",
+            scope: "user",
+            path: join(disabledRoot("user"), "pdf-forms", "SKILL.md"),
+            disableModelInvocation: true,
+            managed: true,
+          },
+          {
+            name: "release-notes",
+            description: "Draft release notes.",
+            scope: "project",
+            path: join(disabledRoot("project"), "release-notes", "SKILL.md"),
+            disableModelInvocation: true,
+            managed: true,
+          },
+        ]),
+      );
+      expect(disabled).toHaveLength(2);
+    });
+
+    it("never overlaps with list(), mirroring exactly what disabling a skill removed from Pi's own discovery", async () => {
+      await writeSkillFixture(join(managedRoot("user"), "pdf-forms"), { name: "pdf-forms", description: "Fill and flatten PDF forms." });
+      const service = new PiSkillService();
+      await service.setEnabled("pdf-forms", "user", cwd, false);
+
+      const catalog = await service.list(cwd);
+      const disabled = await service.listDisabled(cwd);
+
+      expect(catalog.skills.find((skill) => skill.name === "pdf-forms")).toBeUndefined();
+      expect(disabled).toHaveLength(1);
+      expect(disabled[0]?.name).toBe("pdf-forms");
+    });
+  });
+
   describe("remove", () => {
     it("deletes a managed skill's directory entirely", async () => {
       await writeSkillFixture(join(managedRoot("user"), "pdf-forms"), { name: "pdf-forms", description: "Fill and flatten PDF forms." });

@@ -326,6 +326,51 @@ describe("HostServer", () => {
     expect(service.list).not.toHaveBeenCalled();
   });
 
+  it("lists disabled skills from the skill service, kept separate from skill.list", async () => {
+    const server = new HostServer();
+    const service = (server as unknown as { pi: { skills: { listDisabled: (cwd: string) => Promise<unknown> } } }).pi.skills;
+    const disabledSkill = { ...sampleSkill, disableModelInvocation: true };
+    service.listDisabled = vi.fn(async () => [disabledSkill]);
+
+    const response = await server.handle({
+      protocolVersion: 1,
+      requestId: "skill-list-disabled",
+      type: "skill.listDisabled",
+      payload: { cwd: "/workspace" },
+    });
+
+    expect(response).toEqual({ protocolVersion: 1, requestId: "skill-list-disabled", ok: true, result: [disabledSkill] });
+    expect(service.listDisabled).toHaveBeenCalledWith("/workspace");
+  });
+
+  it("rejects a malformed skill.listDisabled payload before it reaches the skill service", async () => {
+    const server = new HostServer();
+    const service = (server as unknown as { pi: { skills: { listDisabled: (cwd: string) => Promise<unknown> } } }).pi.skills;
+    service.listDisabled = vi.fn(async () => []);
+
+    const response = await server.handle({ protocolVersion: 1, requestId: "skill-list-disabled-bad", type: "skill.listDisabled", payload: {} });
+
+    expect(response).toMatchObject({ ok: false });
+    expect(service.listDisabled).not.toHaveBeenCalled();
+  });
+
+  it("sanitizes a skill.listDisabled failure the same way as other skill commands", async () => {
+    const server = new HostServer();
+    const service = (server as unknown as { pi: { skills: { listDisabled: () => Promise<unknown> } } }).pi.skills;
+    service.listDisabled = vi.fn(async () => {
+      throw new Error("/Users/private-user/secret-project/.pi/skills-disabled failure");
+    });
+
+    const response = await server.handle({
+      protocolVersion: 1,
+      requestId: "skill-list-disabled-fail",
+      type: "skill.listDisabled",
+      payload: { cwd: "/workspace" },
+    });
+
+    expect(response).toEqual({ protocolVersion: 1, requestId: "skill-list-disabled-fail", ok: false, error: "Skill operation failed" });
+  });
+
   it("routes skill install requests to the skill service", async () => {
     const server = new HostServer();
     const service = (server as unknown as { pi: { skills: { install: (sourcePath: string, scope: string, cwd: string) => Promise<unknown> } } }).pi.skills;
