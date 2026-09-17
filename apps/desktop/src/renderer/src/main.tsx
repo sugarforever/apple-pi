@@ -16,7 +16,7 @@ import {
   Terminal,
   X,
 } from "lucide-react";
-import type { CustomProviderDefinition, ProviderItem, SessionSnapshot, SkillCatalog } from "@apple-pi/protocol";
+import type { CustomProviderDefinition, ProviderItem, SessionSnapshot, SkillCatalog, SkillItem } from "@apple-pi/protocol";
 import { runSessionResync } from "../session-resync.js";
 import { initialSessionState, reduceSession } from "../session-state.js";
 import { toTimelineItems, type ToolItem } from "../tool-activity.js";
@@ -82,6 +82,7 @@ function App() {
   const [providers, setProviders] = useState<ProviderItem[]>([]);
   const [customProviders, setCustomProviders] = useState<CustomProviderDefinition[]>([]);
   const [skillCatalog, setSkillCatalog] = useState<SkillCatalog>({ skills: [], diagnostics: [] });
+  const [disabledSkills, setDisabledSkills] = useState<SkillItem[]>([]);
   const [draft, setDraft] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [activeSessionId, setActiveSessionId] = useState("");
@@ -141,6 +142,10 @@ function App() {
       .list()
       .then(setSkillCatalog)
       .catch(() => setSkillCatalog({ skills: [], diagnostics: [] }));
+    void window.applePi.skill
+      .listDisabled()
+      .then(setDisabledSkills)
+      .catch(() => setDisabledSkills([]));
     return window.applePi.session.subscribe((event) => {
       if (event.type === "session.event") dispatch({ type: "event", sequence: event.sequence, payload: event.payload });
     });
@@ -168,6 +173,10 @@ function App() {
     void window.applePi.skill
       .list()
       .then(setSkillCatalog)
+      .catch(() => undefined);
+    void window.applePi.skill
+      .listDisabled()
+      .then(setDisabledSkills)
       .catch(() => undefined);
   }, [settingsOpen]);
 
@@ -492,6 +501,7 @@ function App() {
             <SkillSettings
               skills={skillCatalog.skills}
               diagnostics={skillCatalog.diagnostics}
+              disabledSkills={disabledSkills}
               canInstallToProject={Boolean(workspacePath)}
               onInstall={async (scope, sourcePath) => {
                 const result = await window.applePi.skill.install(scope, sourcePath);
@@ -501,11 +511,13 @@ function App() {
               onSetEnabled={async (name, scope, enabled) => {
                 const result = await window.applePi.skill.setEnabled(name, scope, enabled);
                 setSkillCatalog(await window.applePi.skill.list());
+                setDisabledSkills(await window.applePi.skill.listDisabled());
                 return result;
               }}
               onRemove={async (name, scope) => {
                 const result = await window.applePi.skill.remove(name, scope);
                 setSkillCatalog(await window.applePi.skill.list());
+                setDisabledSkills(await window.applePi.skill.listDisabled());
                 return result;
               }}
               onPickDirectory={() => window.applePi.skill.pickDirectory()}

@@ -8,6 +8,7 @@ import type {
   SessionItem as ProtocolSessionItem,
   SessionSnapshot,
   SkillCatalog,
+  SkillItem,
   SkillOperationResult,
   SkillScope,
 } from "@apple-pi/protocol";
@@ -48,6 +49,7 @@ declare global {
       operation: { cancel(operationId: string): Promise<{ cancelled: boolean }> };
       skill: {
         list(): Promise<SkillCatalog>;
+        listDisabled(): Promise<SkillItem[]>;
         install(scope: SkillScope, sourcePath: string): Promise<SkillOperationResult>;
         setEnabled(name: string, scope: SkillScope, enabled: boolean): Promise<SkillOperationResult>;
         remove(name: string, scope: SkillScope): Promise<SkillOperationResult>;

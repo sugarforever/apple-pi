@@ -12,6 +12,7 @@ import {
   SessionItemSchema,
   SessionSnapshotSchema,
   SkillCatalogSchema,
+  SkillItemSchema,
   SkillOperationResultSchema,
   SkillScopeSchema,
   type ApplePiSessionEvent,
@@ -101,6 +102,14 @@ export const Payloads = {
     { additionalProperties: false },
   ),
   "skill.list": Type.Object({ cwd: Type.String({ minLength: 1 }) }, { additionalProperties: false }),
+  // Deliberately its own command rather than an extra field on skill.list's
+  // SkillCatalog: skill.list exists specifically to mirror exactly what Pi's
+  // own session would discover (see PiSkillService.list's doc comment in
+  // @apple-pi/pi-adapter), and a disabled skill is, by design, invisible to
+  // that discovery. Same payload shape as skill.list (just a cwd) since it
+  // scans the same two scopes, only the sibling "-disabled" holding
+  // directories instead of the managed roots.
+  "skill.listDisabled": Type.Object({ cwd: Type.String({ minLength: 1 }) }, { additionalProperties: false }),
   "skill.install": Type.Object(
     { cwd: Type.String({ minLength: 1 }), scope: SkillScopeSchema, sourcePath: Type.String({ minLength: 1 }) },
     { additionalProperties: false },
@@ -149,6 +158,12 @@ export const ResultSchemas = {
   "provider.updateCustom": ProviderOperationResultSchema,
   "provider.removeCustom": ProviderOperationResultSchema,
   "skill.list": SkillCatalogSchema,
+  // A plain array of SkillItem, not a SkillCatalog: there is no notion of a
+  // "diagnostic" for the disabled holding directory (it is Apple Pi's own
+  // invention, never something Pi's loader reports collisions/warnings
+  // against), so wrapping this in the fuller SkillCatalog shape would just
+  // add an always-empty `diagnostics` field.
+  "skill.listDisabled": Type.Array(SkillItemSchema),
   "skill.install": SkillOperationResultSchema,
   "skill.setEnabled": SkillOperationResultSchema,
   "skill.remove": SkillOperationResultSchema,

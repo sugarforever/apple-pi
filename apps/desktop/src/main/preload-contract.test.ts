@@ -38,10 +38,11 @@ describe("applePi preload API contract", () => {
     return exposed as Record<string, any>;
   }
 
-  it("exposes a skill namespace with list/install/setEnabled/remove", async () => {
+  it("exposes a skill namespace with list/listDisabled/install/setEnabled/remove", async () => {
     const api = await loadExposedApi();
     expect(typeof api.skill).toBe("object");
     expect(typeof api.skill.list).toBe("function");
+    expect(typeof api.skill.listDisabled).toBe("function");
     expect(typeof api.skill.install).toBe("function");
     expect(typeof api.skill.setEnabled).toBe("function");
     expect(typeof api.skill.remove).toBe("function");
@@ -58,6 +59,9 @@ describe("applePi preload API contract", () => {
 
     await api.skill.list();
     expect(invoke).toHaveBeenLastCalledWith("skill:list");
+
+    await api.skill.listDisabled();
+    expect(invoke).toHaveBeenLastCalledWith("skill:listDisabled");
 
     await api.skill.install("project", "/tmp/my-skill");
     expect(invoke).toHaveBeenLastCalledWith("skill:install", { scope: "project", sourcePath: "/tmp/my-skill" });

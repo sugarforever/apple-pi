@@ -162,6 +162,8 @@ export class HostServer {
           );
         case "skill.list":
           return success("skill.list", message.requestId, await this.pi.skills.list(message.payload.cwd));
+        case "skill.listDisabled":
+          return success("skill.listDisabled", message.requestId, await this.pi.skills.listDisabled(message.payload.cwd));
         case "skill.install":
           return success(
             "skill.install",

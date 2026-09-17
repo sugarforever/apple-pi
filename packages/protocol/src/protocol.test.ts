@@ -264,6 +264,28 @@ describe("host protocol", () => {
     });
   });
 
+  it("validates the skill.listDisabled command, kept separate from skill.list's SkillCatalog result", () => {
+    const message = {
+      protocolVersion: 1,
+      requestId: "skill-list-disabled",
+      type: "skill.listDisabled",
+      payload: { cwd: "/workspace" },
+    } as const;
+    expect(decodeHostMessage(message)).toEqual(message);
+    expect(() => decodeHostMessage({ ...message, payload: {} })).toThrow("Invalid host message payload");
+
+    const disabledSkill = {
+      name: "pdf-forms",
+      description: "Fill and flatten PDF forms.",
+      scope: "user",
+      path: "/home/jane/.pi/agent/skills-disabled/pdf-forms/SKILL.md",
+      disableModelInvocation: true,
+      managed: true,
+    } as const;
+    expect(decodeCommandResult("skill.listDisabled", [disabledSkill])).toEqual([disabledSkill]);
+    expect(() => decodeCommandResult("skill.listDisabled", { skills: [disabledSkill], diagnostics: [] })).toThrow("Invalid result for skill.listDisabled");
+  });
+
   it("rejects unknown event types and invalid event sequences", () => {
     expect(() =>
       decodeHostRecord({
