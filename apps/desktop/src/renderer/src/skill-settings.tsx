@@ -86,6 +86,47 @@ export function mergeSkillLists(skills: SkillItem[], disabledSkills: SkillItem[]
   return Array.from(byKey.values()).sort((a, b) => a.name.localeCompare(b.name) || a.scope.localeCompare(b.scope));
 }
 
+// One collapsed line per diagnostic type instead of one banner per
+// diagnostic. Catalog-level diagnostics are mostly benign and repetitive --
+// a dozen "name collision" entries when the same skill sits in both
+// `~/.pi/agent/skills` and `~/.agents/skills`, which Pi resolves by itself --
+// so a wall of red alerts buried the list without telling the user anything
+// actionable. The count and a plain-language headline go in the summary;
+// each entry's own message (and, for a collision, which copy won) stays
+// available on expand for anyone who wants to clean up.
+export interface SkillDiagnosticGroup {
+  type: SkillDiagnostic["type"];
+  headline: string;
+  items: string[];
+}
+
+const DIAGNOSTIC_TYPE_ORDER: SkillDiagnostic["type"][] = ["error", "collision", "warning"];
+
+function diagnosticHeadline(type: SkillDiagnostic["type"], count: number): string {
+  const skills = count === 1 ? "1 skill" : `${count} skills`;
+  switch (type) {
+    case "error":
+      return `${skills} could not be loaded.`;
+    case "collision":
+      return `${skills} ${count === 1 ? "exists" : "exist"} in more than one skills folder; the first copy found is used.`;
+    case "warning":
+      return `${skills} ${count === 1 ? "has" : "have"} a warning.`;
+  }
+}
+
+function diagnosticDetail(diagnostic: SkillDiagnostic): string {
+  if (diagnostic.collision) return `${diagnostic.collision.name}: using ${diagnostic.collision.winnerPath}, ignoring ${diagnostic.collision.loserPath}`;
+  return diagnostic.path ? `${diagnostic.message} (${diagnostic.path})` : diagnostic.message;
+}
+
+export function groupSkillDiagnostics(diagnostics: SkillDiagnostic[]): SkillDiagnosticGroup[] {
+  return DIAGNOSTIC_TYPE_ORDER.flatMap((type) => {
+    const matching = diagnostics.filter((diagnostic) => diagnostic.type === type);
+    if (matching.length === 0) return [];
+    return [{ type, headline: diagnosticHeadline(type, matching.length), items: matching.map(diagnosticDetail) }];
+  });
+}
+
 export function SkillSettings(props: SkillSettingsProps) {
   const [query, setQuery] = useState("");
   const [activity, setActivity] = useState<Record<string, SkillActivity>>({});
@@ -195,10 +236,15 @@ export function SkillSettings(props: SkillSettingsProps) {
           <input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search skills" />
         </label>
       </div>
-      {props.diagnostics.map((diagnostic, index) => (
-        <p key={`catalog-diagnostic-${index}`} className={`skill-diagnostic ${diagnostic.type}`} role={diagnosticRole(diagnostic.type)}>
-          {diagnostic.message}
-        </p>
+      {groupSkillDiagnostics(props.diagnostics).map((group) => (
+        <details key={`catalog-diagnostic-${group.type}`} className={`skill-diagnostic skill-diagnostic-group ${group.type}`}>
+          <summary role={diagnosticRole(group.type)}>{group.headline}</summary>
+          <ul>
+            {group.items.map((item, index) => (
+              <li key={`${group.type}-${index}`}>{item}</li>
+            ))}
+          </ul>
+        </details>
       ))}
       {projectScopeNotice(props.canInstallToProject) && (
         <p className="skill-scope-notice" role="status">
