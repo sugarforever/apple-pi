@@ -277,6 +277,7 @@ handle("provider:removeCustom", async (_event, value: unknown) => {
 // unlike the `provider.*` mutations above, their protocol payloads carry no
 // `operationId`/`timeoutMs`, so there is nothing here to bound or cancel.
 handle("skill:list", () => (workspacePath ? host.request("skill.list", { cwd: workspacePath }) : { skills: [], diagnostics: [] }));
+handle("skill:listDisabled", () => (workspacePath ? host.request("skill.listDisabled", { cwd: workspacePath }) : []));
 handle("skill:install", (_event, value: unknown) => {
   if (!workspacePath) throw new Error("Select a workspace first");
   const { scope, sourcePath } = skillInstallInput(value);

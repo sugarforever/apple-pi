@@ -71,6 +71,12 @@ contextBridge.exposeInMainWorld("applePi", {
   // `provider.*` mutations).
   skill: {
     list: () => ipcRenderer.invoke("skill:list"),
+    // Separate from `list()`, mirroring the protocol split between
+    // `skill.list` and `skill.listDisabled`: this surfaces what is currently
+    // sitting in each scope's disabled holding directory (invisible to Pi's
+    // own discovery, and so absent from `list()`), for the Skills panel's
+    // "Disabled" section to show and offer to re-enable.
+    listDisabled: () => ipcRenderer.invoke("skill:listDisabled"),
     install: (scope: "user" | "project", sourcePath: string) => ipcRenderer.invoke("skill:install", { scope, sourcePath }),
     setEnabled: (name: string, scope: "user" | "project", enabled: boolean) => ipcRenderer.invoke("skill:setEnabled", { name, scope, enabled }),
     remove: (name: string, scope: "user" | "project") => ipcRenderer.invoke("skill:remove", { name, scope }),
