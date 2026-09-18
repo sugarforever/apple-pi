@@ -58,9 +58,9 @@ export function parseManifest(contents) {
       continue;
     }
 
-    const archiveField = line.match(/^ {4}(sha512|size): (.+)$/);
+    const archiveField = line.match(/^ {4}(sha512|size|blockMapSize): (.+)$/);
     if (archiveField && current) {
-      current[archiveField[1]] = archiveField[1] === "size" ? Number(archiveField[2]) : unquote(archiveField[2]);
+      current[archiveField[1]] = archiveField[1] === "sha512" ? unquote(archiveField[2]) : Number(archiveField[2]);
       continue;
     }
 
@@ -165,6 +165,7 @@ function serialize(manifest) {
   const lines = [`version: ${manifest.version}`, "files:"];
   for (const file of manifest.files) {
     lines.push(`  - url: ${file.url}`, `    sha512: ${file.sha512}`, `    size: ${file.size}`);
+    if (file.blockMapSize !== undefined) lines.push(`    blockMapSize: ${file.blockMapSize}`);
   }
   lines.push(`path: ${manifest.path}`, `sha512: ${manifest.sha512}`);
   if (manifest.releaseDate) lines.push(`releaseDate: '${manifest.releaseDate}'`);

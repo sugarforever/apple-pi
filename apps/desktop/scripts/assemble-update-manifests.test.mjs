@@ -38,6 +38,25 @@ sha512: c2hh
 releaseDate: '2026-09-16T00:27:44.373Z'
 `;
 
+/**
+ * Byte-for-byte what electron-builder 26.8.1 actually wrote for the Linux x64
+ * build of v0.6.0 (see issue #72): the AppImage entry carries a `blockMapSize`
+ * field the parser didn't recognize yet, which failed the real release.
+ */
+const LINUX_BLOCKMAP_YAML = `version: 0.6.0
+files:
+  - url: apple-pi-0.6.0-linux-x64.AppImage
+    sha512: +knN1tePplV/4PF93u+GNMJ442WyPR60B4orndfBcALFzUj9iGprgaoNduDg7oJSFhxIO4a1vN7nDtquIEfNbw==
+    size: 138406831
+    blockMapSize: 146371
+  - url: apple-pi-0.6.0-linux-x64.deb
+    sha512: a470mAG1NTxlWFNoC92Agnfw0AMM/xkNwmxg9cV+tyO9Se/Bhq394FPUBwkBwHxp9lwpbMVo5FkEHbdSkzQkaQ==
+    size: 103795708
+path: apple-pi-0.6.0-linux-x64.AppImage
+sha512: +knN1tePplV/4PF93u+GNMJ442WyPR60B4orndfBcALFzUj9iGprgaoNduDg7oJSFhxIO4a1vN7nDtquIEfNbw==
+releaseDate: '2026-09-16T01:59:42.630Z'
+`;
+
 const ARM64 = parseManifest(ARM64_YAML);
 const X64 = parseManifest(X64_YAML);
 
@@ -85,6 +104,15 @@ releaseDate: '2026-09-16T00:25:54.468Z'
     assert.throws(() => parseManifest(`${ARM64_YAML}stagingPercentage: 100\n`), /unsupported line 9/);
     assert.throws(() => parseManifest("version: 0.5.0\n"), /lists no version or no files/);
     assert.throws(() => parseManifest(""), /lists no version or no files/);
+  });
+
+  it("reads a per-file blockMapSize (issue #72)", () => {
+    const parsed = parseManifest(LINUX_BLOCKMAP_YAML);
+    assert.equal(parsed.files[0].blockMapSize, 146371);
+    assert.equal(parsed.files[0].size, 138406831);
+    // The .deb has no blockmap: the field is only present when electron-builder
+    // actually produced one, never defaulted to zero or omitted-as-undefined-key.
+    assert.equal("blockMapSize" in parsed.files[1], false);
   });
 });
 
@@ -180,6 +208,22 @@ test("writes a manifest it can read back", async (t) => {
   const written = parseManifest(await readFile(path.join(outputDir, "latest-mac.yml"), "utf8"));
 
   assert.deepEqual(written, mergeManifests([ARM64, X64]));
+});
+
+test("carries a per-file blockMapSize through the published feed (issue #72)", async (t) => {
+  const { root, inputDir, outputDir } = await stage({
+    "update-linux-x64.yml": LINUX_BLOCKMAP_YAML,
+    "update-mac-arm64.yml": ARM64_YAML,
+    "update-mac-x64.yml": X64_YAML,
+    "update-win-x64.yml": single("win", "apple-pi-0.6.0-win-x64-setup.exe"),
+  });
+  t.after(() => rm(root, { recursive: true, force: true }));
+
+  await assembleUpdateManifests({ inputDir, outputDir, platforms: ["mac", "win", "linux"] });
+  const written = parseManifest(await readFile(path.join(outputDir, "latest-linux.yml"), "utf8"));
+
+  assert.equal(written.files.find((file) => file.url.endsWith(".AppImage")).blockMapSize, 146371);
+  assert.equal("blockMapSize" in written.files.find((file) => file.url.endsWith(".deb")), false);
 });
 
 test("refuses to publish a feed missing a platform", async (t) => {
