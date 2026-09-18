@@ -339,6 +339,18 @@ describe("renderer skills settings contract", () => {
     expect(skills).toContain('role="status"');
   });
 
+  it("offers Remove as a compact icon-only button in the card's header row, not a full-width action row below it", () => {
+    expect(skills).toContain('<div className="skill-controls">');
+    expect(skills).toContain('className="skill-remove"');
+    expect(skills).toContain("aria-label={`Remove ${skill.name}`}");
+    expect(skills).toContain('<Trash2 size={14} aria-hidden="true" />');
+    expect(skills).not.toContain('className="skill-actions"');
+    expect(skills).not.toContain("<Trash2 size={13} /> Remove");
+    expect(rule(".skill-remove")).toContain("width: 28px");
+    expect(rule(".skill-remove")).toContain("background: transparent");
+    expect(styles).not.toContain(".skill-actions");
+  });
+
   it("disables mutating controls for a skill Apple Pi does not manage, with an explanatory title", () => {
     expect(skills).toContain("disabled={checking || !skill.managed}");
     expect(skills).toContain("NOT_MANAGED_TITLE");
