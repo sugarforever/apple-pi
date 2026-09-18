@@ -292,7 +292,38 @@ describe("renderer skills settings contract", () => {
   it("offers a per-skill enable/disable toggle wired to onSetEnabled", () => {
     expect(skills).toContain("aria-pressed={enabled}");
     expect(skills).toContain("onClick={() => toggleEnabled(skill)}");
-    expect(skills).toContain("props.onSetEnabled(skill.name, skill.scope, !isSkillEnabled(skill))");
+    expect(skills).toContain("const target = !isSkillEnabled(skill);");
+    expect(skills).toContain("props.onSetEnabled(skill.name, skill.scope, target)");
+  });
+
+  it("flips the toggle to its target state immediately and shows a settling effect until the refreshed lists land, without freezing the button", () => {
+    // Optimistic target, keyed like the rest of the per-skill state.
+    expect(skills).toContain("const [pendingEnabled, setPendingEnabled] = useState<Record<string, boolean | undefined>>({});");
+    expect(skills).toContain("const enabled = pendingEnabled[key] ?? isSkillEnabled(skill);");
+    expect(skills).toContain("const settling = pendingEnabled[key] !== undefined;");
+    // The round trip runs inside a React Transition; the clear after the
+    // await opts back in (React 19 drops updates after the first await
+    // from the transition otherwise).
+    expect(skills).toContain("const [, startToggleTransition] = useTransition();");
+    expect(skills).toContain("startToggleTransition(async () => {");
+    expect(skills).toContain("startTransition(() => setPendingEnabled((current) => ({ ...current, [key]: undefined })));");
+    // Visible + announced settling state; a repeat click is ignored in code
+    // rather than by disabling the button, which would drop focus.
+    expect(skills).toContain("aria-busy={settling}");
+    expect(skills).toContain("if (pendingEnabled[key] !== undefined) return;");
+    expect(skills).toContain(
+      '{settling ? <CircleDashed size={16} className="skill-toggle-settling" /> : enabled ? <ToggleRight size={16} /> : <ToggleLeft size={16} />}',
+    );
+    expect(skills).toContain('{settling ? (enabled ? "Enabling…" : "Disabling…") : enabled ? "Enabled" : "Disabled"}');
+    expect(rule(".skill-toggle")).toContain("transition:");
+    expect(rule('.skill-toggle[aria-busy="true"]')).toContain("cursor: progress");
+    expect(rule(".skill-toggle-settling")).toContain("animation: status-spin");
+  });
+
+  it("keeps the card free of the on-disk path, leaving it as a hover title on the name", () => {
+    expect(skills).not.toContain('className="skill-path"');
+    expect(skills).toContain("<h3 title={skill.path}>{skill.name}</h3>");
+    expect(styles).not.toContain(".skill-path");
   });
 
   it("requires a confirmation step before removing a skill", () => {
@@ -341,6 +372,12 @@ describe("renderer skills settings mounting contract", () => {
     expect(source).toContain("disabledSkills={disabledSkills}");
     // Refreshed on mount and whenever Settings opens, matching skillCatalog's own refresh points.
     expect(source).toContain("setDisabledSkills");
+  });
+
+  it("refreshes both skill lists together after a mutation, so a skill moving between them never vanishes for a frame", () => {
+    expect(source).toContain("const [catalog, disabled] = await Promise.all([window.applePi.skill.list(), window.applePi.skill.listDisabled()]);");
+    expect(source).toContain("const result = await window.applePi.skill.setEnabled(name, scope, enabled);\n                await refreshSkillLists();");
+    expect(source).toContain("const result = await window.applePi.skill.remove(name, scope);\n                await refreshSkillLists();");
   });
 });
 
