@@ -276,7 +276,13 @@ handle("provider:removeCustom", async (_event, value: unknown) => {
 // Skill commands are simple pass-throughs (see `apps/desktop/src/preload/index.ts`):
 // unlike the `provider.*` mutations above, their protocol payloads carry no
 // `operationId`/`timeoutMs`, so there is nothing here to bound or cancel.
-handle("skill:list", () => (workspacePath ? host.request("skill.list", { cwd: workspacePath }) : { skills: [], diagnostics: [] }));
+// User-scope skills (`~/.pi/agent/skills/`, `~/.agents/skills/`) have nothing
+// to do with any project, so they should be visible even with zero
+// workspaces open (Settings is an app-level surface, reachable that way).
+// `skill.list`'s `cwd` is optional for exactly this reason: omitting it (as
+// opposed to the old hardcoded empty catalog below) tells the skill service
+// to skip project-scope discovery and report user-scope skills only.
+handle("skill:list", () => host.request("skill.list", workspacePath ? { cwd: workspacePath } : {}));
 handle("skill:listDisabled", () => (workspacePath ? host.request("skill.listDisabled", { cwd: workspacePath }) : []));
 handle("skill:install", (_event, value: unknown) => {
   if (!workspacePath) throw new Error("Select a workspace first");

@@ -264,6 +264,27 @@ describe("host protocol", () => {
     });
   });
 
+  it("validates the skill.list command with cwd omitted, for listing user-scope skills with no workspace open", () => {
+    const withCwd = { protocolVersion: 1, requestId: "skill-list-1", type: "skill.list", payload: { cwd: "/workspace" } } as const;
+    expect(decodeHostMessage(withCwd)).toEqual(withCwd);
+
+    const withoutCwd = { protocolVersion: 1, requestId: "skill-list-2", type: "skill.list", payload: {} } as const;
+    expect(decodeHostMessage(withoutCwd)).toEqual(withoutCwd);
+
+    expect(() => decodeHostMessage({ ...withCwd, payload: { cwd: "" } })).toThrow("Invalid host message payload");
+    expect(() => decodeHostMessage({ ...withCwd, payload: { cwd: "/workspace", extra: true } })).toThrow("Invalid host message payload");
+
+    const userSkill = {
+      name: "pdf-forms",
+      description: "Fill and flatten PDF forms.",
+      scope: "user",
+      path: "/home/jane/.pi/agent/skills/pdf-forms/SKILL.md",
+      disableModelInvocation: false,
+      managed: true,
+    } as const;
+    expect(decodeCommandResult("skill.list", { skills: [userSkill], diagnostics: [] })).toEqual({ skills: [userSkill], diagnostics: [] });
+  });
+
   it("validates the skill.listDisabled command, kept separate from skill.list's SkillCatalog result", () => {
     const message = {
       protocolVersion: 1,

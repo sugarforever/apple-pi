@@ -26,6 +26,16 @@ vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => {
   return { ...actual, DefaultResourceLoader: DefaultResourceLoaderMock, getAgentDir: pi.getAgentDir };
 });
 
+// Only `homedir()` is faked here (list()'s no-cwd path uses it to find
+// `~/.agents/skills`, the second global skills root — see scanUserScopeSkills
+// in skill-service.ts); `tmpdir()` stays real since fixtures below still need
+// real temp directories on disk.
+const os = vi.hoisted(() => ({ homedir: vi.fn(() => "/fake/home") }));
+vi.mock("node:os", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:os")>();
+  return { ...actual, homedir: os.homedir };
+});
+
 import { loadSkillsFromDir, type ResourceDiagnostic, type Skill } from "@earendil-works/pi-coding-agent";
 import { createSkillResourceLoader, PiSkillService, type SkillResourceLoader } from "./skill-service.js";
 
@@ -171,6 +181,115 @@ describe("PiSkillService", () => {
 
     expect(activeLoader.getSkills).not.toHaveBeenCalled();
     expect(DefaultResourceLoaderMock).toHaveBeenCalledExactlyOnceWith({ cwd: "/workspace", agentDir: "/fake/agent-dir" });
+  });
+});
+
+// --- list() with no cwd at all (global/user-scope skills, no workspace) ----
+//
+// Settings is an app-level surface reachable with zero workspaces open, so
+// list() must be able to report user-scope skills without ever needing a
+// project `cwd` to construct a DefaultResourceLoader with (see issue #68:
+// "Global (user-scope) skills are invisible in Settings unless a workspace
+// is open"). These exercise real filesystem fixtures under both global
+// roots, with only `homedir()` faked (see the module mock above).
+describe("PiSkillService.list() with no cwd", () => {
+  let root: string;
+
+  beforeEach(async () => {
+    DefaultResourceLoaderMock.mockClear();
+    pi.resourceLoaderReload.mockClear();
+    pi.resourceLoaderGetSkills.mockReset();
+    root = await mkdtemp(join(tmpdir(), "apple-pi-skill-global-"));
+    const agentDir = join(root, "agent-dir");
+    const home = join(root, "home");
+    await mkdir(agentDir, { recursive: true });
+    await mkdir(home, { recursive: true });
+    pi.getAgentDir.mockReturnValue(agentDir);
+    os.homedir.mockReturnValue(home);
+  });
+
+  afterEach(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  async function writeSkillFixture(dir: string, name: string, description: string): Promise<void> {
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, "SKILL.md"), `---\nname: ${name}\ndescription: ${JSON.stringify(description)}\n---\n\nDo the thing.\n`, "utf8");
+  }
+
+  it("returns an empty catalog when neither global skills root exists yet, without constructing a DefaultResourceLoader", async () => {
+    const service = new PiSkillService();
+
+    const catalog = await service.list();
+
+    expect(catalog).toEqual({ skills: [], diagnostics: [] });
+    expect(DefaultResourceLoaderMock).not.toHaveBeenCalled();
+    expect(pi.resourceLoaderReload).not.toHaveBeenCalled();
+  });
+
+  it("lists skills from ~/.pi/agent/skills as user-scope and managed, with no project-scope discovery at all", async () => {
+    const agentDir = pi.getAgentDir();
+    await writeSkillFixture(join(agentDir, "skills", "pdf-forms"), "pdf-forms", "Fill and flatten PDF forms.");
+    const service = new PiSkillService();
+
+    const catalog = await service.list();
+
+    expect(catalog).toEqual({
+      skills: [
+        {
+          name: "pdf-forms",
+          description: "Fill and flatten PDF forms.",
+          scope: "user",
+          path: join(agentDir, "skills", "pdf-forms", "SKILL.md"),
+          disableModelInvocation: false,
+          managed: true,
+        },
+      ],
+      diagnostics: [],
+    });
+    expect(DefaultResourceLoaderMock).not.toHaveBeenCalled();
+  });
+
+  it("also lists skills from ~/.agents/skills as user-scope and managed", async () => {
+    const home = os.homedir();
+    await writeSkillFixture(join(home, ".agents", "skills", "release-notes"), "release-notes", "Draft release notes from recent commits.");
+    const service = new PiSkillService();
+
+    const catalog = await service.list();
+
+    expect(catalog.skills).toEqual([
+      {
+        name: "release-notes",
+        description: "Draft release notes from recent commits.",
+        scope: "user",
+        path: join(home, ".agents", "skills", "release-notes", "SKILL.md"),
+        disableModelInvocation: false,
+        managed: true,
+      },
+    ]);
+  });
+
+  it("merges both global roots and flags a same-name collision, the pi-agent root winning", async () => {
+    const agentDir = pi.getAgentDir();
+    const home = os.homedir();
+    await writeSkillFixture(join(agentDir, "skills", "pdf-forms"), "pdf-forms", "The pi-agent copy.");
+    await writeSkillFixture(join(home, ".agents", "skills", "pdf-forms"), "pdf-forms", "The .agents copy.");
+    const service = new PiSkillService();
+
+    const catalog = await service.list();
+
+    expect(catalog.skills).toEqual([expect.objectContaining({ name: "pdf-forms", description: "The pi-agent copy.", scope: "user" })]);
+    expect(catalog.diagnostics).toEqual([expect.objectContaining({ type: "collision" })]);
+  });
+
+  it("never falls back to the active session's loader, even when one is set for some cwd", async () => {
+    const activeLoader = { getSkills: vi.fn(() => ({ skills: [], diagnostics: [] })), reload: vi.fn(async () => {}) };
+    const service = new PiSkillService();
+    service.setActiveLoader({ cwd: "/workspace", loader: activeLoader });
+
+    await service.list();
+
+    expect(activeLoader.getSkills).not.toHaveBeenCalled();
   });
 });
 

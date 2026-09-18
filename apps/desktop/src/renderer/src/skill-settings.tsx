@@ -59,6 +59,19 @@ export function firstActionableSkillDiagnostic(result: SkillOperationResult): Sk
 // already known to fail.
 const NOT_MANAGED_TITLE = "Apple Pi doesn't manage this skill (it came from a settings.json entry or a bundled extension), so it can't be changed here.";
 
+// With no workspace open, `skills`/`disabledSkills` only ever contain
+// user-scope entries (see `skill:list`'s IPC handler in
+// `apps/desktop/src/main/index.ts` and `PiSkillService.list` in
+// `@apple-pi/pi-adapter`, which skip project-scope discovery entirely rather
+// than fake it). Silently showing fewer skills with no explanation is exactly
+// what made global skills look "invisible" instead of merely
+// project-skills-unavailable (see issue #68); this names the reason instead.
+export function projectScopeNotice(canInstallToProject: boolean): string | undefined {
+  return canInstallToProject
+    ? undefined
+    : "No workspace is open, so project-scoped skills aren't shown or manageable here. Only skills installed for this user are listed below.";
+}
+
 export function SkillSettings(props: SkillSettingsProps) {
   const [query, setQuery] = useState("");
   const [activity, setActivity] = useState<Record<string, SkillActivity>>({});
@@ -154,6 +167,11 @@ export function SkillSettings(props: SkillSettingsProps) {
           {diagnostic.message}
         </p>
       ))}
+      {projectScopeNotice(props.canInstallToProject) && (
+        <p className="skill-scope-notice" role="status">
+          {projectScopeNotice(props.canInstallToProject)}
+        </p>
+      )}
       <div className="skill-install">
         <button type="button" aria-label="Install skill" onClick={() => void pickDirectory()} disabled={installBusy}>
           <Plus size={14} /> Install skill

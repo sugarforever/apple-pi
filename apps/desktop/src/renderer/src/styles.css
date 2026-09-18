@@ -1286,6 +1286,14 @@ main > header {
   background: #2d1917;
   color: var(--danger);
 }
+.skill-scope-notice {
+  margin: 10px 0 0;
+  padding: 9px 10px;
+  border-radius: 6px;
+  background: #242019;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
 .skill-actions {
   display: flex;
   align-items: center;
