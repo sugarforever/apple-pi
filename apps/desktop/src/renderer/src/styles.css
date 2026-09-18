@@ -1312,38 +1312,59 @@ main > header {
   color: var(--text-secondary);
   font-size: 12px;
 }
-.skill-actions {
+.skill-controls {
   display: flex;
+  flex-shrink: 0;
   align-items: center;
-  margin-top: 15px;
+  gap: 6px;
 }
-.skill-actions .danger-button {
-  padding: 7px 10px;
-  border: 1px solid #70433d;
+.skill-remove {
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid transparent;
   border-radius: 6px;
   background: transparent;
-  color: var(--danger);
+  color: var(--text-tertiary);
   cursor: pointer;
-  font-size: 11px;
 }
-.skill-actions .danger-button:disabled {
+.skill-remove:hover,
+.skill-remove:focus-visible {
+  border-color: #70433d;
+  color: var(--danger);
+}
+.skill-remove:disabled {
   opacity: 0.55;
   cursor: not-allowed;
 }
 .skill-remove-confirm {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   color: var(--text-secondary);
   font-size: 11px;
+  white-space: nowrap;
 }
+.skill-remove-confirm .danger-button,
 .skill-remove-confirm .secondary {
-  padding: 7px 10px;
+  padding: 5px 8px;
   border: 1px solid var(--border-strong);
   border-radius: 6px;
   background: transparent;
+  color: var(--text-secondary);
   cursor: pointer;
   font-size: 11px;
+}
+.skill-remove-confirm .danger-button {
+  border-color: #70433d;
+  color: var(--danger);
+}
+.skill-remove-confirm button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 .skill-empty {
   display: grid;

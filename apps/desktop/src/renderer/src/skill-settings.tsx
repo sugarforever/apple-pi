@@ -325,22 +325,54 @@ export function SkillSettings(props: SkillSettingsProps) {
                       {skill.scope} · {skill.managed ? "Apple Pi managed" : "Not managed by Apple Pi"}
                     </p>
                   </div>
-                  <button
-                    type="button"
-                    className="skill-toggle"
-                    aria-label={enabled ? `Disable ${skill.name}` : `Enable ${skill.name}`}
-                    aria-pressed={enabled}
-                    aria-busy={settling}
-                    onClick={() => toggleEnabled(skill)}
-                    // Stays enabled (and focusable) while settling: toggleEnabled
-                    // ignores the repeat click itself, and a disabled button would
-                    // drop keyboard focus mid-operation and dim the effect.
-                    disabled={!skill.managed}
-                    title={!skill.managed ? NOT_MANAGED_TITLE : undefined}
-                  >
-                    {settling ? <CircleDashed size={16} className="skill-toggle-settling" /> : enabled ? <ToggleRight size={16} /> : <ToggleLeft size={16} />}
-                    {settling ? (enabled ? "Enabling…" : "Disabling…") : enabled ? "Enabled" : "Disabled"}
-                  </button>
+                  <div className="skill-controls">
+                    <button
+                      type="button"
+                      className="skill-toggle"
+                      aria-label={enabled ? `Disable ${skill.name}` : `Enable ${skill.name}`}
+                      aria-pressed={enabled}
+                      aria-busy={settling}
+                      onClick={() => toggleEnabled(skill)}
+                      // Stays enabled (and focusable) while settling: toggleEnabled
+                      // ignores the repeat click itself, and a disabled button would
+                      // drop keyboard focus mid-operation and dim the effect.
+                      disabled={!skill.managed}
+                      title={!skill.managed ? NOT_MANAGED_TITLE : undefined}
+                    >
+                      {settling ? <CircleDashed size={16} className="skill-toggle-settling" /> : enabled ? <ToggleRight size={16} /> : <ToggleLeft size={16} />}
+                      {settling ? (enabled ? "Enabling…" : "Disabling…") : enabled ? "Enabled" : "Disabled"}
+                    </button>
+                    {/* Remove lives in the header row as an icon-only button, so
+                        a card costs no extra height for a rarely used action; the
+                        two-step confirm swaps in beside the toggle, in place. */}
+                    {!confirming ? (
+                      <button
+                        type="button"
+                        className="skill-remove"
+                        aria-label={`Remove ${skill.name}`}
+                        onClick={() => setConfirmingRemove((current) => ({ ...current, [key]: true }))}
+                        disabled={checking || !skill.managed}
+                        title={!skill.managed ? NOT_MANAGED_TITLE : `Remove ${skill.name}`}
+                      >
+                        <Trash2 size={14} aria-hidden="true" />
+                      </button>
+                    ) : (
+                      <span className="skill-remove-confirm" role="status">
+                        Remove?
+                        <button type="button" className="danger-button" onClick={() => removeSkill(skill)} disabled={checking}>
+                          Yes
+                        </button>
+                        <button
+                          type="button"
+                          className="secondary"
+                          onClick={() => setConfirmingRemove((current) => ({ ...current, [key]: false }))}
+                          disabled={checking}
+                        >
+                          Cancel
+                        </button>
+                      </span>
+                    )}
+                  </div>
                 </div>
                 <p className="skill-description">{skill.description}</p>
                 {diagnostic && (
@@ -348,35 +380,6 @@ export function SkillSettings(props: SkillSettingsProps) {
                     {diagnostic.message}
                   </p>
                 )}
-                <div className="skill-actions">
-                  {!confirming ? (
-                    <button
-                      type="button"
-                      className="danger-button"
-                      aria-label={`Remove ${skill.name}`}
-                      onClick={() => setConfirmingRemove((current) => ({ ...current, [key]: true }))}
-                      disabled={checking || !skill.managed}
-                      title={!skill.managed ? NOT_MANAGED_TITLE : undefined}
-                    >
-                      <Trash2 size={13} /> Remove
-                    </button>
-                  ) : (
-                    <span className="skill-remove-confirm" role="status">
-                      Remove &quot;{skill.name}&quot;?
-                      <button type="button" className="danger-button" onClick={() => removeSkill(skill)} disabled={checking}>
-                        Yes, remove
-                      </button>
-                      <button
-                        type="button"
-                        className="secondary"
-                        onClick={() => setConfirmingRemove((current) => ({ ...current, [key]: false }))}
-                        disabled={checking}
-                      >
-                        Cancel
-                      </button>
-                    </span>
-                  )}
-                </div>
               </article>
             );
           })}
