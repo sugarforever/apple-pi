@@ -269,7 +269,14 @@ describe("renderer skills settings contract", () => {
   it("surfaces per-skill and catalog-level diagnostics with an accessible role, adapted from type instead of severity", () => {
     expect(skills).toContain('export function diagnosticRole(type: SkillDiagnostic["type"]): "alert" | "status" {');
     expect(skills).toContain("role={diagnosticRole(diagnostic.type)}");
-    expect(skills).toContain("props.diagnostics.map(");
+    // Catalog-level diagnostics are packed into one collapsed line per type
+    // (see groupSkillDiagnostics in skill-settings.test.ts), not one banner
+    // per diagnostic; the role lands on the summary so it is still announced.
+    expect(skills).toContain("groupSkillDiagnostics(props.diagnostics).map((group) => (");
+    expect(skills).toContain("<details key={`catalog-diagnostic-${group.type}`} className={`skill-diagnostic skill-diagnostic-group ${group.type}`}>");
+    expect(skills).toContain("<summary role={diagnosticRole(group.type)}>{group.headline}</summary>");
+    expect(skills).not.toContain("props.diagnostics.map(");
+    expect(rule(".skill-diagnostic-group summary")).toContain("cursor: pointer");
   });
 
   it("offers a labelled install control that drives a native directory picker with a scope choice", () => {
@@ -339,7 +346,7 @@ describe("renderer skills settings contract", () => {
 
   it("shows enabled and disabled skills together in one alphabetically sorted list, with no separate section", () => {
     expect(skills).toContain("disabledSkills: SkillItem[];");
-    expect(skills).not.toContain("<details");
+    expect(skills).not.toContain('<details className="skill-disabled');
     expect(skills).not.toContain("skill-disabled-section");
     expect(skills).not.toContain("const enableSkill");
     expect(skills).not.toContain("const visibleDisabled");
