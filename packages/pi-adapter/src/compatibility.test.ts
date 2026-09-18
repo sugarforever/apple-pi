@@ -1,11 +1,13 @@
 import { copyFile, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
-import { createAgentSession, ModelRuntime, readStoredCredential, SessionManager } from "@earendil-works/pi-coding-agent";
+import { fileURLToPath } from "node:url";
+import { createAgentSession, DefaultResourceLoader, ModelRuntime, readStoredCredential, SessionManager } from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, expectTypeOf, it, vi } from "vitest";
-import { CustomProviderStore, PI_VERSION, mapPiEvent, mapPiMessages, mapPiModel, mapPiSessionItem, PiProviderService } from "./index.js";
+import { CustomProviderStore, PI_VERSION, mapPiEvent, mapPiMessages, mapPiModel, mapPiSessionItem, PiProviderService, PiSkillService } from "./index.js";
 
 const fixtureUrl = (name: string) => new URL(`../test/fixtures/pi-0.84.2/${name}`, import.meta.url);
+const fixturePath = (name: string) => fileURLToPath(fixtureUrl(name));
 const temporaryDirectories: string[] = [];
 
 async function temporaryDirectory(): Promise<string> {
@@ -392,5 +394,102 @@ describe("Pi 0.84.2 custom OpenAI-compatible provider compatibility (issue #27)"
     const raw = JSON.parse(await readFile(modelsPath, "utf8"));
     expect(raw.providers["hand-written"]).toEqual({ baseUrl: "https://hand-written.invalid/v1", api: "openai-completions", models: [{ id: "m1" }] });
     expect(raw.providers["apple-pi-added"]).toBeUndefined();
+  });
+});
+
+// Grounds Task 7 of the skill-management epic (issue #59) against the real SDK: a
+// checked-in fixture tree under test/fixtures/pi-0.84.2/skills/ stands in for the two
+// roots Pi's own DefaultResourceLoader scans (an "agent" dir for user scope, a
+// "workspace" dir with its own .pi/skills for project scope — see manifest.json in
+// that fixture directory for what each subdirectory is for), and PiSkillService.list()
+// runs against a *real*, unmocked DefaultResourceLoader constructed directly from
+// them, exactly like skill-service.ts's own createSkillResourceLoader() does for a
+// live session. Nothing here mocks @earendil-works/pi-coding-agent (unlike
+// skill-service.test.ts, which mocks DefaultResourceLoader itself to unit-test
+// PiSkillService in isolation) — a future Pi upgrade that changes validation or
+// collision behavior fails this test, not just skill-service.test.ts's hand-written
+// doubles.
+describe("Pi 0.84.2 skill discovery compatibility (issue #59)", () => {
+  const skillsFixtureRoot = fixturePath("skills");
+  const agentDir = join(skillsFixtureRoot, "agent");
+  const workspaceCwd = join(skillsFixtureRoot, "workspace");
+  const validSkillPath = join(agentDir, "skills", "valid-skill", "SKILL.md");
+  const userLoserPath = join(agentDir, "skills", "shared-name", "SKILL.md");
+  const missingDescriptionPath = join(workspaceCwd, ".pi", "skills", "missing-description", "SKILL.md");
+  const projectWinnerPath = join(workspaceCwd, ".pi", "skills", "shared-name-project", "SKILL.md");
+
+  it("pins the fixture tree to the same Pi version the adapter depends on", async () => {
+    const piPackageUrl = new URL("../package.json", import.meta.resolve("@earendil-works/pi-coding-agent"));
+    const piPackage = JSON.parse(await readFile(piPackageUrl, "utf8")) as { version: string };
+    const manifest = JSON.parse(await readFile(fixtureUrl("skills/manifest.json"), "utf8")) as { piVersion: string; sanitized: boolean };
+
+    expect(manifest).toMatchObject({ piVersion: PI_VERSION, sanitized: true });
+    expect(piPackage.version).toBe(manifest.piVersion);
+  });
+
+  it("maps a valid skill, drops a skill with a missing description, and resolves a cross-scope name collision exactly as Pi 0.84.2's own scanner does", async () => {
+    // package-manager.js's addAutoDiscoveredResources() merges in `~/.agents/skills`
+    // unconditionally, keyed off the real machine's home directory (getHomeDir()),
+    // regardless of the explicit `agentDir` passed to DefaultResourceLoader below.
+    // Overriding HOME for the duration of this test is the only way to keep this
+    // fixture-pinned assertion from picking up whatever real skills happen to be
+    // installed on the machine running the test.
+    const originalHome = process.env.HOME;
+    const isolatedHome = await temporaryDirectory();
+    process.env.HOME = isolatedHome;
+    try {
+      const loader = new DefaultResourceLoader({ cwd: workspaceCwd, agentDir });
+      await loader.reload();
+      const service = new PiSkillService();
+      // Bypasses createSkillResourceLoader()'s own getAgentDir() default, so this
+      // exercises PiSkillService.list() itself (the method the desktop app and the
+      // skill.list host command actually call) against our explicit fixture loader,
+      // the same way PiSessionService wires a live session's loader in (see
+      // packages/pi-adapter/src/index.ts).
+      service.setActiveLoader({ cwd: workspaceCwd, loader });
+
+      const catalog = await service.list(workspaceCwd);
+
+      expect(catalog.skills).toEqual(
+        expect.arrayContaining([
+          {
+            name: "valid-skill",
+            description:
+              "Fixture skill used to verify PiSkillService.list() maps a valid, user-scope Pi skill exactly as Pi 0.84.2's own DefaultResourceLoader discovers it.",
+            scope: "user",
+            path: validSkillPath,
+            disableModelInvocation: false,
+            managed: true,
+          },
+          {
+            name: "shared-name",
+            description:
+              "Project-scope half of a fixture name collision; Pi 0.84.2 scans project skills before user skills, so this copy wins and the user-scope copy is reported as the loser diagnostic.",
+            scope: "project",
+            path: projectWinnerPath,
+            disableModelInvocation: false,
+            managed: true,
+          },
+        ]),
+      );
+      // Only these two: the missing-description skill never becomes a skill at all,
+      // and the collision loser is entirely absent from the winning set.
+      expect(catalog.skills).toHaveLength(2);
+
+      expect(catalog.diagnostics).toEqual(
+        expect.arrayContaining([
+          { type: "warning", message: "description is required", path: missingDescriptionPath },
+          {
+            type: "collision",
+            message: 'name "shared-name" collision',
+            path: userLoserPath,
+            collision: { resourceType: "skill", name: "shared-name", winnerPath: projectWinnerPath, loserPath: userLoserPath },
+          },
+        ]),
+      );
+      expect(catalog.diagnostics).toHaveLength(2);
+    } finally {
+      process.env.HOME = originalHome;
+    }
   });
 });

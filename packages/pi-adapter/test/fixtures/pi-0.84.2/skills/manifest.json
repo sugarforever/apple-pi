@@ -1,0 +1,12 @@
+{
+  "piVersion": "0.84.2",
+  "sanitized": true,
+  "source": "synthetic skill fixture corpus",
+  "layout": {
+    "agent/skills/valid-skill": "a valid user-scope skill",
+    "agent/skills/shared-name": "user-scope loser of the shared-name collision",
+    "workspace/.pi/skills/missing-description": "project-scope skill missing the required description field; Pi drops it entirely",
+    "workspace/.pi/skills/shared-name-project": "project-scope winner of the shared-name collision (directory name deliberately differs from the skill's own name)"
+  },
+  "covers": ["valid-skill", "missing-description", "name-collision"]
+}

@@ -39,11 +39,21 @@ fixture produced for the Pi `0.84.2` baseline.
 - Workspace selection, session create/list/open, prompt streaming, cancellation,
   transcript recovery, model listing, per-session model switching, and an
   app-catalog default model are implemented.
+- Skill browsing, install, enable/disable, and remove are implemented in the
+  Settings panel. Install/enable/disable/remove act only on the standard
+  `~/.pi/agent/skills/` (user scope) and project `.pi/skills/` roots Pi's own
+  `DefaultResourceLoader` already scans, so a skill installed or removed through
+  Apple Pi is immediately visible to (and manageable by) the Pi CLI, and vice
+  versa. The Skills settings panel currently shows an empty catalog until a
+  workspace is open, even for user-scope skills that have nothing to do with any
+  project; making user-scope skills visible with no workspace open is tracked
+  separately (issue #68) and is not yet fixed.
 - Apple Pi reuses Pi's provider configuration under `~/.pi/agent`. There is no
   native login UI; users authenticate through the Pi CLI with `/login` first.
 - Signing, notarization, automatic updates, integrated terminal, Git worktree/diff
   workflows, attachments, orchestration, and productized extension management
-  remain planned. They are not covered by the current compatibility claim.
+  beyond skills remain planned. They are not covered by the current compatibility
+  claim.
 
 ## Upgrade boundary
 
