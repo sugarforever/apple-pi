@@ -296,23 +296,20 @@ describe("renderer skills settings contract", () => {
     expect(skills).toContain("NOT_MANAGED_TITLE");
   });
 
-  it("shows disabled skills (moved to Apple Pi's holding directory, so absent from the enabled list) in their own section with an Enable action", () => {
+  it("shows enabled and disabled skills together in one alphabetically sorted list, with no separate section", () => {
     expect(skills).toContain("disabledSkills: SkillItem[];");
-    expect(skills).toContain('<details className="skill-disabled-section">');
-    expect(skills).toContain("Disabled ({props.disabledSkills.length})");
-    expect(skills).toContain("const enableSkill = (skill: SkillItem): void => {");
-    expect(skills).toContain("props.onSetEnabled(skill.name, skill.scope, true)");
-    expect(skills).toContain("aria-label={`Enable ${skill.name}`}");
+    expect(skills).not.toContain("<details");
+    expect(skills).not.toContain("skill-disabled-section");
+    expect(skills).not.toContain("const enableSkill");
+    expect(skills).not.toContain("const visibleDisabled");
+    expect(skills).toContain("const combined = useMemo(() => {");
+    expect(skills).toContain("[...props.skills, ...props.disabledSkills].sort((a, b) => a.name.localeCompare(b.name) || a.scope.localeCompare(b.scope))");
   });
 
-  it("filters the disabled section by the same search query as the enabled list", () => {
-    expect(skills).toContain("const visibleDisabled = useMemo(() => {");
-    expect(skills).toContain("props.disabledSkills.filter((skill) => `${skill.name} ${skill.description}`.toLocaleLowerCase().includes(needle))");
-  });
-
-  it("lets a disabled skill be removed directly, reusing the same confirm-then-remove flow as an enabled skill", () => {
-    expect(skills).toContain("onClick={() => removeSkill(skill)}");
-    expect(skills).toContain('role="status"');
+  it("filters the combined list by the same search query, and re-enabling a disabled skill reuses the same toggle", () => {
+    expect(skills).toContain("const visible = useMemo(() => {");
+    expect(skills).toContain("combined.filter((skill) => `${skill.name} ${skill.description}`.toLocaleLowerCase().includes(needle))");
+    expect(skills).toContain("onClick={() => toggleEnabled(skill)}");
   });
 });
 
