@@ -72,6 +72,20 @@ export function projectScopeNotice(canInstallToProject: boolean): string | undef
     : "No workspace is open, so project-scoped skills aren't shown or manageable here. Only skills installed for this user are listed below.";
 }
 
+// One row per scope+name. `skills` and `disabledSkills` are disjoint by
+// construction on the host side (see `PiSkillService.listDisabled`), but a
+// same-keyed entry in both would render two cards sharing one React key and
+// one activity/feedback slot -- the "state lost track" failure -- so the
+// discovered (enabled) entry wins here too rather than trusting that alone.
+export function mergeSkillLists(skills: SkillItem[], disabledSkills: SkillItem[]): SkillItem[] {
+  const byKey = new Map<string, SkillItem>();
+  for (const skill of [...skills, ...disabledSkills]) {
+    const key = skillKey(skill.scope, skill.name);
+    if (!byKey.has(key)) byKey.set(key, skill);
+  }
+  return Array.from(byKey.values()).sort((a, b) => a.name.localeCompare(b.name) || a.scope.localeCompare(b.scope));
+}
+
 export function SkillSettings(props: SkillSettingsProps) {
   const [query, setQuery] = useState("");
   const [activity, setActivity] = useState<Record<string, SkillActivity>>({});
@@ -89,9 +103,7 @@ export function SkillSettings(props: SkillSettingsProps) {
   // Enabled and disabled skills render as one alphabetically sorted list —
   // each card's own toggle already shows "Enabled"/"Disabled", so a separate
   // section just added a second place to look without adding information.
-  const combined = useMemo(() => {
-    return [...props.skills, ...props.disabledSkills].sort((a, b) => a.name.localeCompare(b.name) || a.scope.localeCompare(b.scope));
-  }, [props.skills, props.disabledSkills]);
+  const combined = useMemo(() => mergeSkillLists(props.skills, props.disabledSkills), [props.skills, props.disabledSkills]);
 
   const visible = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase();

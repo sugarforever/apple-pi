@@ -465,7 +465,20 @@ export class PiSkillService {
   // ever breaking that "matches exactly what the session would discover"
   // guarantee for list() itself. Like Pi's own collision handling, a name
   // held in two roots of one scope is reported once, from the earlier root.
+  //
+  // The two lists are disjoint by construction: a name list() currently
+  // discovers for a scope is never also reported here, even if a copy of it
+  // sits in some root's holding directory. That mixed state is real -- a
+  // copy disabled here while another tool later drops a same-named skill
+  // into `~/.agents/skills`, or a half-applied move from an earlier failure
+  // -- and Pi does see the live copy, so "enabled" is the truthful answer.
+  // Reporting both would hand the UI two same-keyed rows for one skill
+  // (one "Enabled", one "Disabled") whose per-skill state then collides.
+  // Disabling the live copy moves it too, after which the name shows up
+  // here exactly once, and enabling restores every copy.
   async listDisabled(cwd: string): Promise<SkillItem[]> {
+    const catalog = await this.list(cwd);
+    const discovered = new Set(catalog.skills.map((skill) => `${skill.scope}:${skill.name}`));
     const scopes: SkillScope[] = ["user", "project"];
     return scopes.flatMap((scope) => {
       const seen = new Set<string>();
@@ -473,7 +486,7 @@ export class PiSkillService {
       for (const root of managedSkillsRoots(scope, cwd)) {
         const scan = loadSkillsFromDir({ dir: disabledSkillsRoot(root), source: "disabled" });
         for (const found of scan.skills) {
-          if (seen.has(found.name)) continue;
+          if (seen.has(found.name) || discovered.has(`${scope}:${found.name}`)) continue;
           seen.add(found.name);
           // `found.filePath` always points at the SKILL.md file itself; skillUnit
           // resolves it back to the unit's own root (its containing directory for
