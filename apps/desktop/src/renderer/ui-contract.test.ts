@@ -279,6 +279,16 @@ describe("renderer skills settings contract", () => {
     expect(skills).toContain("props.canInstallToProject &&");
   });
 
+  // Issue #68: with no workspace open, the panel used to just show fewer
+  // skills with no explanation. Now it says so explicitly, reusing the same
+  // `canInstallToProject` flag the install form's project-scope radio
+  // already keys off (see the test above), rather than adding a second
+  // "is a workspace open" signal.
+  it("explains when project-scope skill management isn't available, instead of silently showing fewer skills", () => {
+    expect(skills).toContain("export function projectScopeNotice(canInstallToProject: boolean): string | undefined {");
+    expect(skills).toContain("projectScopeNotice(props.canInstallToProject)");
+  });
+
   it("offers a per-skill enable/disable toggle wired to onSetEnabled", () => {
     expect(skills).toContain("aria-pressed={enabled}");
     expect(skills).toContain("onClick={() => toggleEnabled(skill)}");

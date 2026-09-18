@@ -315,12 +315,31 @@ describe("HostServer", () => {
     expect(service.list).toHaveBeenCalledWith("/workspace");
   });
 
-  it("rejects a malformed skill.list payload before it reaches the skill service", async () => {
+  // `cwd` is optional on skill.list -- unlike every other skill.* command --
+  // because user-scope skills have nothing to do with any project, and
+  // Settings is reachable with zero workspaces open (see issue #68: "Global
+  // (user-scope) skills are invisible in Settings unless a workspace is
+  // open"). A payload with no `cwd` at all is therefore valid, not malformed:
+  // it reaches the skill service as `undefined`, which tells PiSkillService
+  // to report user-scope skills only.
+  it("routes a skill.list payload with no cwd to the skill service as undefined, for user-scope-only discovery", async () => {
     const server = new HostServer();
-    const service = (server as unknown as { pi: { skills: { list: (cwd: string) => Promise<unknown> } } }).pi.skills;
+    const service = (server as unknown as { pi: { skills: { list: (cwd?: string) => Promise<unknown> } } }).pi.skills;
+    const userSkill = { ...sampleSkill, scope: "user" as const, path: "/home/jane/.pi/agent/skills/my-skill/SKILL.md" };
+    service.list = vi.fn(async () => ({ skills: [userSkill], diagnostics: [] }));
+
+    const response = await server.handle({ protocolVersion: 1, requestId: "skill-list-no-cwd", type: "skill.list", payload: {} });
+
+    expect(response).toEqual({ protocolVersion: 1, requestId: "skill-list-no-cwd", ok: true, result: { skills: [userSkill], diagnostics: [] } });
+    expect(service.list).toHaveBeenCalledExactlyOnceWith(undefined);
+  });
+
+  it("rejects a genuinely malformed skill.list payload (an empty-string cwd) before it reaches the skill service", async () => {
+    const server = new HostServer();
+    const service = (server as unknown as { pi: { skills: { list: (cwd?: string) => Promise<unknown> } } }).pi.skills;
     service.list = vi.fn(async () => ({ skills: [], diagnostics: [] }));
 
-    const response = await server.handle({ protocolVersion: 1, requestId: "skill-list-bad", type: "skill.list", payload: {} });
+    const response = await server.handle({ protocolVersion: 1, requestId: "skill-list-bad", type: "skill.list", payload: { cwd: "" } });
 
     expect(response).toMatchObject({ ok: false });
     expect(service.list).not.toHaveBeenCalled();

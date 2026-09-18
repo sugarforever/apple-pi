@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { cp, mkdir, rename, rm, stat } from "node:fs/promises";
+import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { CONFIG_DIR_NAME, DefaultResourceLoader, getAgentDir, loadSkillsFromDir, type ResourceDiagnostic, type Skill } from "@earendil-works/pi-coding-agent";
 import {
@@ -129,6 +130,55 @@ function skillItemFromUnit(input: {
   });
 }
 
+// The two directory roots a real Pi session's DefaultResourceLoader treats as
+// user-scope, `source: "auto"` skill discovery, entirely independent of any
+// project (see addAutoDiscoveredResources in the SDK's core/package-manager.ts,
+// and core/trust-manager.ts, which always trusts `~/.agents/skills` regardless
+// of project trust): the managed root under Pi's own agent dir, and the
+// cross-agent-tool convention root under the home directory.
+function userScopeSkillsRoots(): string[] {
+  return [join(getAgentDir(), "skills"), join(homedir(), ".agents", "skills")];
+}
+
+// Scans just the two global (user-scope) skill roots above directly with
+// Pi's own `loadSkillsFromDir`, entirely without constructing a
+// `DefaultResourceLoader` -- which requires a real project `cwd` at
+// construction time (see `createSkillResourceLoader` above) that simply does
+// not exist when Settings is opened with zero workspaces open. Used only by
+// `list()` when it is called with no `cwd` at all: project-scope discovery
+// is skipped entirely in that case, never partially faked.
+function scanUserScopeSkills(): { skills: Skill[]; diagnostics: ResourceDiagnostic[] } {
+  const byName = new Map<string, Skill>();
+  const diagnostics: ResourceDiagnostic[] = [];
+  for (const dir of userScopeSkillsRoots()) {
+    const scanned = loadSkillsFromDir({ dir, source: "auto" });
+    diagnostics.push(...scanned.diagnostics);
+    for (const skill of scanned.skills) {
+      const existing = byName.get(skill.name);
+      if (existing) {
+        diagnostics.push({
+          type: "collision",
+          message: `Skill "${skill.name}" is defined in more than one global skills root; "${existing.filePath}" wins.`,
+          path: skill.filePath,
+          collision: { resourceType: "skill", name: skill.name, winnerPath: existing.filePath, loserPath: skill.filePath },
+        });
+        continue;
+      }
+      // loadSkillsFromDir's "auto" source string isn't one of the three cases
+      // createSkillSourceInfo special-cases ("user"/"project"/"path" -- see
+      // that function in the SDK's core/skills.ts), so it falls into the same
+      // default branch a real DefaultResourceLoader itself relies on for
+      // `managed: true` (source stays "auto"), but leaves `scope` defaulted to
+      // "temporary" rather than "user" (mapPiSkill would then wrongly report
+      // this as `scope: "project"` -- see this file's lifecycle tests
+      // re-tagging scope the same way, for the same reason). Both roots
+      // scanned here are user-scope by construction, so force it here too.
+      byName.set(skill.name, { ...skill, sourceInfo: { ...skill.sourceInfo, scope: "user" } });
+    }
+  }
+  return { skills: Array.from(byName.values()), diagnostics };
+}
+
 export class PiSkillService {
   private active?: ActiveSkillSource;
 
@@ -139,7 +189,19 @@ export class PiSkillService {
     this.active = active;
   }
 
-  async list(cwd: string): Promise<SkillCatalog> {
+  // With a `cwd`, mirrors exactly what a real Pi session would discover there
+  // (project + user scope, via a real or shared DefaultResourceLoader -- see
+  // createSkillResourceLoader). With no `cwd` at all -- Settings is reachable
+  // with zero workspaces open, unlike a real Pi session, which always has one
+  // -- project-scope discovery is skipped entirely rather than faked, and
+  // only the two global (user-scope) skill roots are scanned directly (see
+  // scanUserScopeSkills above), so this path never constructs a
+  // DefaultResourceLoader at all.
+  async list(cwd?: string): Promise<SkillCatalog> {
+    if (cwd === undefined) {
+      const { skills, diagnostics } = scanUserScopeSkills();
+      return decodeSkillCatalog({ skills: skills.map(mapPiSkill), diagnostics: diagnostics.map(mapPiSkillDiagnostic) });
+    }
     const loader = this.active?.cwd === cwd ? this.active.loader : await createSkillResourceLoader(cwd);
     const { skills, diagnostics } = loader.getSkills();
     return decodeSkillCatalog({ skills: skills.map(mapPiSkill), diagnostics: diagnostics.map(mapPiSkillDiagnostic) });

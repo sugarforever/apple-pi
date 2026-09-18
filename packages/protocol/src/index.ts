@@ -101,7 +101,13 @@ export const Payloads = {
     { id: Type.String({ minLength: 1 }), operationId: Type.String({ minLength: 1 }), timeoutMs: Type.Integer({ minimum: 100, maximum: 30_000 }) },
     { additionalProperties: false },
   ),
-  "skill.list": Type.Object({ cwd: Type.String({ minLength: 1 }) }, { additionalProperties: false }),
+  // `cwd` is optional: project-scope skills live under `<cwd>/.pi/skills` and
+  // `<cwd>/.agents/skills`, but user-scope skills (`~/.pi/agent/skills/`,
+  // `~/.agents/skills/`) have nothing to do with any project. Settings is an
+  // app-level surface reachable with zero workspaces open, so a missing `cwd`
+  // here means "skip project-scope discovery entirely, list user-scope only"
+  // rather than an error (see `PiSkillService.list` in `@apple-pi/pi-adapter`).
+  "skill.list": Type.Object({ cwd: Type.Optional(Type.String({ minLength: 1 })) }, { additionalProperties: false }),
   // Deliberately its own command rather than an extra field on skill.list's
   // SkillCatalog: skill.list exists specifically to mirror exactly what Pi's
   // own session would discover (see PiSkillService.list's doc comment in
