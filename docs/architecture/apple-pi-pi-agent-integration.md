@@ -40,11 +40,18 @@ fixture produced for the Pi `0.84.2` baseline.
   transcript recovery, model listing, per-session model switching, and an
   app-catalog default model are implemented.
 - Skill browsing, install, enable/disable, and remove are implemented in the
-  Settings panel. Install/enable/disable/remove act only on the standard
-  `~/.pi/agent/skills/` (user scope) and project `.pi/skills/` roots Pi's own
-  `DefaultResourceLoader` already scans, so a skill installed or removed through
-  Apple Pi is immediately visible to (and manageable by) the Pi CLI, and vice
-  versa. The Skills settings panel currently shows an empty catalog until a
+  Settings panel. Install writes to the standard `~/.pi/agent/skills/` (user
+  scope) or project `.pi/skills/` root. Enable/disable/remove act on every root
+  Pi's own `DefaultResourceLoader` auto-discovers for the scope — those two plus
+  the cross-agent-tool `~/.agents/skills/` (user) and `.agents/skills/` in the
+  project and its ancestors up to the git root (project) — so a skill installed
+  or removed through Apple Pi is immediately visible to (and manageable by) the
+  Pi CLI, and vice versa. Disabling moves a skill into an Apple Pi-owned
+  `-disabled` holding directory sibling to the root it came from (e.g.
+  `~/.agents/skills-disabled/`); every same-named copy across the scope's roots
+  moves together, since Pi resolves such duplicates as a collision (first root
+  wins) and moving only the winner would just surface the hidden copy. Enabling
+  moves each copy back into its own root. The Skills settings panel currently shows an empty catalog until a
   workspace is open, even for user-scope skills that have nothing to do with any
   project; making user-scope skills visible with no workspace open is tracked
   separately (issue #68) and is not yet fixed.

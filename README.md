@@ -24,9 +24,12 @@ Transcripts remain in pi's normal JSONL storage and are compatible with the pi
 CLI.
 
 Skills work the same way: Apple Pi's Settings panel browses, installs,
-enables/disables, and removes skills from the same `~/.pi/agent/skills/`
-(global) and project `.pi/skills/` directories the pi CLI already scans, so a
-skill added through either one shows up in the other with no extra step.
+enables/disables, and removes skills from the same directories the pi CLI
+already scans — `~/.pi/agent/skills/` and `~/.agents/skills/` (global), and
+`.pi/skills/` and `.agents/skills/` (project) — so a skill added through either
+one shows up in the other with no extra step. Disabling a skill moves it into a
+sibling `skills-disabled/` directory next to the root it lives in (for example
+`~/.agents/skills-disabled/`), and enabling it moves it back.
 
 ## Development
 

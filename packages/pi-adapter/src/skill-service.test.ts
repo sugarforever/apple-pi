@@ -310,30 +310,56 @@ describe("PiSkillService lifecycle", () => {
     pi.resourceLoaderGetSkills.mockReset();
     root = await mkdtemp(join(tmpdir(), "apple-pi-skill-lifecycle-"));
     const agentDir = join(root, "agent-dir");
+    const home = join(root, "home");
     cwd = join(root, "workspace");
     await mkdir(agentDir, { recursive: true });
-    await mkdir(cwd, { recursive: true });
+    await mkdir(home, { recursive: true });
+    // A `.git` marker stops the real loader's ancestor walk for project-scope
+    // `.agents/skills` roots at the workspace itself (see
+    // collectAncestorAgentsSkillDirs in the SDK's core/package-manager.ts),
+    // so nothing above the temp workspace is ever scanned or written to.
+    await mkdir(join(cwd, ".git"), { recursive: true });
     pi.getAgentDir.mockReturnValue(agentDir);
+    os.homedir.mockReturnValue(home);
     // Wire the mocked DefaultResourceLoader's getSkills() to the real scanner
-    // pointed at the real managed roots, so a `list()` call after a lifecycle
-    // mutation reflects what actually landed on disk, not canned data.
+    // pointed at the real managed roots — all four of them, in the real
+    // loader's own order (project `.pi`, project `.agents`, user `.pi`, user
+    // `.agents`), with a same-name collision resolved first-wins exactly as
+    // the real loader does — so a `list()` call after a lifecycle mutation
+    // reflects what actually landed on disk, not canned data.
     // `loadSkillsFromDir`'s own `source` param only controls `sourceInfo.source`
     // (kept as "auto" here so mapPiSkill reports `managed: true`, matching what
-    // the real DefaultResourceLoader tags for these two roots); it does not set
+    // the real DefaultResourceLoader tags for these roots); it does not set
     // `sourceInfo.scope` for an arbitrary source string, so each root's results
     // are re-tagged with the right scope before mapping, mirroring what the
     // real loader's own metadata pass does for these exact directories.
-    const scanScoped = (dir: string, scope: "user" | "project") => {
-      const scanned = loadSkillsFromDir({ dir, source: "auto" });
-      return {
-        skills: scanned.skills.map((skill) => ({ ...skill, sourceInfo: { ...skill.sourceInfo, scope } })),
-        diagnostics: scanned.diagnostics,
-      };
-    };
     pi.resourceLoaderGetSkills.mockImplementation(() => {
-      const user = scanScoped(join(agentDir, "skills"), "user");
-      const project = scanScoped(join(cwd, ".pi", "skills"), "project");
-      return { skills: [...user.skills, ...project.skills], diagnostics: [...user.diagnostics, ...project.diagnostics] };
+      const roots: Array<[string, "user" | "project"]> = [
+        [join(cwd, ".pi", "skills"), "project"],
+        [join(cwd, ".agents", "skills"), "project"],
+        [join(agentDir, "skills"), "user"],
+        [join(home, ".agents", "skills"), "user"],
+      ];
+      const byName = new Map<string, Skill>();
+      const diagnostics: ResourceDiagnostic[] = [];
+      for (const [dir, scope] of roots) {
+        const scanned = loadSkillsFromDir({ dir, source: "auto" });
+        diagnostics.push(...scanned.diagnostics);
+        for (const skill of scanned.skills) {
+          const existing = byName.get(skill.name);
+          if (existing) {
+            diagnostics.push({
+              type: "collision",
+              message: `name "${skill.name}" collision`,
+              path: skill.filePath,
+              collision: { resourceType: "skill", name: skill.name, winnerPath: existing.filePath, loserPath: skill.filePath },
+            });
+            continue;
+          }
+          byName.set(skill.name, { ...skill, sourceInfo: { ...skill.sourceInfo, scope } });
+        }
+      }
+      return { skills: Array.from(byName.values()), diagnostics };
     });
   });
 
@@ -357,6 +383,13 @@ describe("PiSkillService lifecycle", () => {
 
   function managedRoot(scope: "user" | "project"): string {
     return scope === "user" ? join(root, "agent-dir", "skills") : join(cwd, ".pi", "skills");
+  }
+
+  // The second auto-discovered root of each scope: the cross-agent-tool
+  // `.agents/skills` convention directory (under the home dir for user scope,
+  // under the workspace for project scope).
+  function agentsRoot(scope: "user" | "project"): string {
+    return scope === "user" ? join(root, "home", ".agents", "skills") : join(cwd, ".agents", "skills");
   }
 
   function disabledRoot(scope: "user" | "project"): string {
@@ -461,6 +494,107 @@ describe("PiSkillService lifecycle", () => {
       expect(existsSync(join(unmanagedDir, "SKILL.md"))).toBe(true);
       expect(existsSync(disabledRoot("project"))).toBe(false);
     });
+
+    // Pi scans two auto-discovered roots per scope (see managedSkillsRoots in
+    // skill-service.ts). These pin down what that means for enable/disable.
+    describe("across both auto-discovered roots of a scope", () => {
+      it.each(["user", "project"] as const)(
+        "disables a %s-scope skill that lives only in the .agents root into that root's own sibling holding directory, and restores it there rather than relocating it",
+        async (scope) => {
+          await writeSkillFixture(join(agentsRoot(scope), "math-coach"), { name: "math-coach", description: "Tutor, don't just answer." });
+          const service = new PiSkillService();
+
+          const disableResult = await service.setEnabled("math-coach", scope, cwd, false);
+          expect(disableResult.diagnostics).toEqual([]);
+          expect(disableResult.skill?.path).toBe(join(`${agentsRoot(scope)}-disabled`, "math-coach", "SKILL.md"));
+          expect(existsSync(join(agentsRoot(scope), "math-coach"))).toBe(false);
+          expect(existsSync(disabledRoot(scope))).toBe(false);
+          expect((await service.list(cwd)).skills.find((skill) => skill.name === "math-coach")).toBeUndefined();
+          expect((await service.listDisabled(cwd)).map((skill) => skill.name)).toEqual(["math-coach"]);
+
+          const enableResult = await service.setEnabled("math-coach", scope, cwd, true);
+          expect(enableResult.diagnostics).toEqual([]);
+          expect(enableResult.skill?.path).toBe(join(agentsRoot(scope), "math-coach", "SKILL.md"));
+          expect(existsSync(join(managedRoot(scope), "math-coach"))).toBe(false);
+          expect(existsSync(join(`${agentsRoot(scope)}-disabled`, "math-coach"))).toBe(false);
+          expect((await service.list(cwd)).skills.find((skill) => skill.name === "math-coach")?.path).toBe(join(agentsRoot(scope), "math-coach", "SKILL.md"));
+        },
+      );
+
+      // The reported bug: the same skill name in both roots. Pi reports the
+      // `.pi` copy as the collision winner and hides the `.agents` copy, so
+      // moving only the winner made the loser surface — still "Enabled" — and
+      // a second disable then collided on the single per-scope holding path.
+      it("disables every same-named copy in one go so a hidden collision loser cannot surface, and re-enables each back into its own root", async () => {
+        await writeSkillFixture(join(managedRoot("user"), "agents-sdk"), { name: "agents-sdk", description: "The pi-agent copy." });
+        await writeSkillFixture(join(agentsRoot("user"), "agents-sdk"), { name: "agents-sdk", description: "The .agents copy." });
+        const service = new PiSkillService();
+        expect((await service.list(cwd)).skills.filter((skill) => skill.name === "agents-sdk")).toEqual([
+          expect.objectContaining({ description: "The pi-agent copy.", path: join(managedRoot("user"), "agents-sdk", "SKILL.md") }),
+        ]);
+
+        const disableResult = await service.setEnabled("agents-sdk", "user", cwd, false);
+        expect(disableResult.diagnostics).toEqual([]);
+        expect(disableResult.skill).toEqual(
+          expect.objectContaining({ description: "The pi-agent copy.", path: join(disabledRoot("user"), "agents-sdk", "SKILL.md") }),
+        );
+        expect(existsSync(join(managedRoot("user"), "agents-sdk"))).toBe(false);
+        expect(existsSync(join(agentsRoot("user"), "agents-sdk"))).toBe(false);
+        expect(existsSync(join(disabledRoot("user"), "agents-sdk", "SKILL.md"))).toBe(true);
+        expect(existsSync(join(`${agentsRoot("user")}-disabled`, "agents-sdk", "SKILL.md"))).toBe(true);
+        // Nothing named agents-sdk is discoverable any more, from either root.
+        expect((await service.list(cwd)).skills.find((skill) => skill.name === "agents-sdk")).toBeUndefined();
+        // And the disabled list reports it once, not once per root.
+        expect((await service.listDisabled(cwd)).map((skill) => skill.path)).toEqual([join(disabledRoot("user"), "agents-sdk", "SKILL.md")]);
+
+        const enableResult = await service.setEnabled("agents-sdk", "user", cwd, true);
+        expect(enableResult.diagnostics).toEqual([]);
+        expect(enableResult.skill?.path).toBe(join(managedRoot("user"), "agents-sdk", "SKILL.md"));
+        expect(await readFile(join(managedRoot("user"), "agents-sdk", "SKILL.md"), "utf8")).toContain("The pi-agent copy.");
+        expect(await readFile(join(agentsRoot("user"), "agents-sdk", "SKILL.md"), "utf8")).toContain("The .agents copy.");
+        expect(existsSync(join(disabledRoot("user"), "agents-sdk"))).toBe(false);
+        expect(existsSync(join(`${agentsRoot("user")}-disabled`, "agents-sdk"))).toBe(false);
+        expect(await service.listDisabled(cwd)).toEqual([]);
+      });
+
+      it("refuses to disable when any copy's holding path is already occupied, naming that path and leaving every copy in place", async () => {
+        await writeSkillFixture(join(managedRoot("user"), "agents-sdk"), { name: "agents-sdk", description: "The pi-agent copy." });
+        await writeSkillFixture(join(agentsRoot("user"), "agents-sdk"), { name: "agents-sdk", description: "The .agents copy." });
+        // Something unrelated already sitting where the .agents copy would go.
+        const occupied = join(`${agentsRoot("user")}-disabled`, "agents-sdk");
+        await writeSkillFixture(occupied, { name: "agents-sdk", description: "An older, stranded copy." });
+        const service = new PiSkillService();
+
+        const result = await service.setEnabled("agents-sdk", "user", cwd, false);
+
+        expect(result.skill).toBeUndefined();
+        expect(result.diagnostics).toEqual([
+          {
+            type: "error",
+            message: `Apple Pi could not move "agents-sdk": something already exists at "${occupied}".`,
+            path: join(agentsRoot("user"), "agents-sdk"),
+          },
+        ]);
+        expect(existsSync(join(managedRoot("user"), "agents-sdk", "SKILL.md"))).toBe(true);
+        expect(existsSync(join(agentsRoot("user"), "agents-sdk", "SKILL.md"))).toBe(true);
+        expect(existsSync(join(disabledRoot("user"), "agents-sdk"))).toBe(false);
+        expect(await readFile(join(occupied, "SKILL.md"), "utf8")).toContain("An older, stranded copy.");
+      });
+
+      it("preserves a skill's nesting below its root across a disable/enable round trip", async () => {
+        await writeSkillFixture(join(agentsRoot("user"), "cloudflare", "wrangler"), { name: "wrangler", description: "Nested under a group directory." });
+        const service = new PiSkillService();
+
+        const disableResult = await service.setEnabled("wrangler", "user", cwd, false);
+        expect(disableResult.diagnostics).toEqual([]);
+        expect(existsSync(join(`${agentsRoot("user")}-disabled`, "cloudflare", "wrangler", "SKILL.md"))).toBe(true);
+
+        const enableResult = await service.setEnabled("wrangler", "user", cwd, true);
+        expect(enableResult.diagnostics).toEqual([]);
+        expect(existsSync(join(agentsRoot("user"), "cloudflare", "wrangler", "SKILL.md"))).toBe(true);
+        expect(existsSync(join(`${agentsRoot("user")}-disabled`, "cloudflare", "wrangler"))).toBe(false);
+      });
+    });
   });
 
   describe("listDisabled", () => {
@@ -526,6 +660,33 @@ describe("PiSkillService lifecycle", () => {
       expect(result.diagnostics).toEqual([]);
       expect(result.skill?.name).toBe("pdf-forms");
       expect(existsSync(join(managedRoot("user"), "pdf-forms"))).toBe(false);
+    });
+
+    it("deletes a disabled skill from its holding directory, reporting the SKILL.md path it was deleted from", async () => {
+      await writeSkillFixture(join(agentsRoot("user"), "math-coach"), { name: "math-coach", description: "Tutor, don't just answer." });
+      const service = new PiSkillService();
+      await service.setEnabled("math-coach", "user", cwd, false);
+
+      const result = await service.remove("math-coach", "user", cwd);
+
+      expect(result.diagnostics).toEqual([]);
+      expect(result.skill?.path).toBe(join(`${agentsRoot("user")}-disabled`, "math-coach", "SKILL.md"));
+      expect(existsSync(join(`${agentsRoot("user")}-disabled`, "math-coach"))).toBe(false);
+      expect(await service.listDisabled(cwd)).toEqual([]);
+    });
+
+    it("deletes only the copy whose path the catalog showed, so a hidden same-named copy surfaces with its own path instead of being deleted unseen", async () => {
+      await writeSkillFixture(join(managedRoot("user"), "agents-sdk"), { name: "agents-sdk", description: "The pi-agent copy." });
+      await writeSkillFixture(join(agentsRoot("user"), "agents-sdk"), { name: "agents-sdk", description: "The .agents copy." });
+      const service = new PiSkillService();
+
+      const result = await service.remove("agents-sdk", "user", cwd);
+
+      expect(result.diagnostics).toEqual([]);
+      expect(result.skill?.path).toBe(join(managedRoot("user"), "agents-sdk", "SKILL.md"));
+      expect(existsSync(join(managedRoot("user"), "agents-sdk"))).toBe(false);
+      expect(existsSync(join(agentsRoot("user"), "agents-sdk", "SKILL.md"))).toBe(true);
+      expect((await service.list(cwd)).skills.find((skill) => skill.name === "agents-sdk")?.path).toBe(join(agentsRoot("user"), "agents-sdk", "SKILL.md"));
     });
 
     it("rejects removing a skill Apple Pi does not manage, with no filesystem change", async () => {
