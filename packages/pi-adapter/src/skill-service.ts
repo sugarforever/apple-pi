@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { cp, mkdir, rename, rm, stat } from "node:fs/promises";
 import { homedir } from "node:os";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { CONFIG_DIR_NAME, DefaultResourceLoader, getAgentDir, loadSkillsFromDir, type ResourceDiagnostic, type Skill } from "@earendil-works/pi-coding-agent";
 import {
   decodeSkillCatalog,
@@ -36,26 +36,63 @@ export async function createSkillResourceLoader(cwd: string): Promise<DefaultRes
   return loader;
 }
 
-// The two directory roots Pi's own DefaultResourceLoader treats as `source:
-// "auto"` (see getDefaultSourceInfoForPath/addAutoDiscoveredResources in the
-// SDK's core/resource-loader.ts and core/package-manager.ts) — i.e. exactly
-// what mapPiSkill (mappers.ts) reports as `managed: true`. Apple Pi's
-// install/setEnabled/remove below only ever read or write inside these roots
-// (or their sibling "-disabled" holding directories, see disabledSkillsRoot),
-// never a `settings.json` skills-array entry or a package-provided skill.
+// The directory root Apple Pi *installs* into for a scope: Pi's own primary
+// managed root (`<agentDir>/skills` or `<cwd>/.pi/skills`), which is also the
+// first root Pi's DefaultResourceLoader scans for that scope and therefore
+// the collision winner should a same-named skill exist elsewhere.
 function managedSkillsRoot(scope: SkillScope, cwd: string): string {
   return scope === "user" ? join(getAgentDir(), "skills") : join(cwd, CONFIG_DIR_NAME, "skills");
 }
 
+// Mirrors collectAncestorAgentsSkillDirs in the SDK's core/package-manager.ts
+// (not exported): `<dir>/.agents/skills` for `cwd` and each ancestor up to and
+// including the nearest git repository root (or the filesystem root).
+function ancestorAgentsSkillsRoots(cwd: string): string[] {
+  const roots: string[] = [];
+  let dir = resolve(cwd);
+  while (true) {
+    roots.push(join(dir, ".agents", "skills"));
+    if (existsSync(join(dir, ".git"))) break;
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return roots;
+}
+
+// Every directory root Pi's own DefaultResourceLoader treats as `source:
+// "auto"` for a scope, in Pi's own scan order (see addAutoDiscoveredResources
+// in the SDK's core/package-manager.ts) — i.e. exactly what mapPiSkill
+// (mappers.ts) reports as `managed: true`. There is more than one per scope:
+// user scope is `<agentDir>/skills` plus the cross-agent-tool `~/.agents/skills`
+// convention root; project scope is `<cwd>/.pi/skills` plus `.agents/skills`
+// in `cwd` and each ancestor up to the git root (excluding the user one).
+// A same-named skill in two of these roots is a Pi collision: the earlier
+// root wins and the later copy is silently dropped from discovery — which is
+// why setEnabled below acts on *all* copies in the scope, not just the
+// winner, or disabling the winner would just surface the loser in its place.
+// Apple Pi's install/setEnabled/remove only ever read or write inside these
+// roots (or their sibling "-disabled" holding directories, see
+// disabledSkillsRoot), never a `settings.json` skills-array entry or a
+// package-provided skill.
+function managedSkillsRoots(scope: SkillScope, cwd: string): string[] {
+  if (scope === "user") return userScopeSkillsRoots();
+  const userAgentsRoot = resolve(join(homedir(), ".agents", "skills"));
+  return [managedSkillsRoot(scope, cwd), ...ancestorAgentsSkillsRoots(cwd).filter((dir) => resolve(dir) !== userAgentsRoot)];
+}
+
 // A holding directory Apple Pi invents itself, sibling to the managed skills
 // root it corresponds to (e.g. "<agentDir>/skills-disabled" next to
-// "<agentDir>/skills"). This is not part of Pi's own file layout: it exists
+// "<agentDir>/skills", "~/.agents/skills-disabled" next to
+// "~/.agents/skills"). This is not part of Pi's own file layout: it exists
 // purely so a "disabled" skill can be moved fully out of Pi's own scanner
-// (which only ever walks the managed root itself) while Apple Pi retains the
-// files and can move them straight back on re-enable, preserving the original
-// directory/file name so nothing else about the skill needs to be recorded.
-function disabledSkillsRoot(scope: SkillScope, cwd: string): string {
-  return `${managedSkillsRoot(scope, cwd)}-disabled`;
+// (which only ever walks the managed roots themselves) while Apple Pi retains
+// the files and can move them straight back on re-enable. One holding
+// directory per root, rather than one per scope, is what lets a skill go back
+// to exactly the root it came from, and lets two same-named copies from two
+// roots be disabled at once without colliding on a single holding path.
+function disabledSkillsRoot(root: string): string {
+  return `${root}-disabled`;
 }
 
 // The on-disk unit that owns a skill's `filePath`, mirroring loadSkillsFromDir's
@@ -70,6 +107,40 @@ function skillUnit(filePath: string): { path: string; name: string } {
     return { path: directory, name: basename(directory) };
   }
   return { path: filePath, name: basename(filePath) };
+}
+
+// A skill unit together with the managed root it was discovered under and its
+// location relative to that root's scan directory (`dir` is the root itself
+// for an enabled skill, or the root's holding directory for a disabled one),
+// so it can be moved between the two while preserving any nesting below the
+// root (loadSkillsFromDir scans recursively, so `<root>/group/name/SKILL.md`
+// is a valid skill).
+interface LocatedSkill {
+  skill: Skill;
+  unit: { path: string; name: string };
+  root: string;
+  relativePath: string;
+}
+
+// Scans each managed root of a scope (or, with `holding`, each root's
+// disabled holding directory) with Pi's own loadSkillsFromDir and returns
+// every unit whose skill is named `name`, in Pi's own root order.
+function locateSkillUnits(name: string, roots: string[], holding: boolean): LocatedSkill[] {
+  const located: LocatedSkill[] = [];
+  for (const root of roots) {
+    const dir = holding ? disabledSkillsRoot(root) : root;
+    const scan = loadSkillsFromDir({ dir, source: holding ? "disabled" : "auto" });
+    for (const skill of scan.skills) {
+      if (skill.name !== name) continue;
+      const unit = skillUnit(skill.filePath);
+      const relativePath = relative(dir, unit.path);
+      // loadSkillsFromDir only ever reports paths under `dir`, so this is a
+      // pure guard against ever computing a destination outside the root.
+      if (!relativePath || relativePath.startsWith("..") || isAbsolute(relativePath)) continue;
+      located.push({ skill, unit, root, relativePath });
+    }
+  }
+  return located;
 }
 
 function skillDiagnostic(message: string, path?: string): SkillDiagnostic {
@@ -91,25 +162,37 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-// Moves a skill unit (see skillUnit) into `destinationRoot`, keeping its
-// existing basename. Refuses (leaving both sides untouched) when something
-// already occupies that name at the destination, since that would either
-// silently overwrite an unrelated skill or collide two skills into one name.
-async function moveSkillUnit(
-  unit: { path: string; name: string },
-  destinationRoot: string,
-): Promise<{ ok: true; path: string } | { ok: false; message: string }> {
-  const destination = join(destinationRoot, unit.name);
-  if (existsSync(destination)) {
-    return { ok: false, message: `Apple Pi could not move "${unit.name}": something already exists at the destination.` };
+// Moves each located skill unit (see locateSkillUnits) to the same relative
+// location under `destinationFor(root)`. Refuses up front (leaving every unit
+// untouched) when something already occupies any destination, since that
+// would either silently overwrite an unrelated skill or collide two skills
+// into one name; this is also what turns a half-applied earlier move (e.g.
+// one copy already in its holding directory) into a clear message naming the
+// exact path in the way rather than a second, confusing failure.
+async function moveSkillUnits(
+  located: LocatedSkill[],
+  destinationFor: (root: string) => string,
+): Promise<{ ok: true; paths: string[] } | { ok: false; message: string; path: string }> {
+  const moves = located.map((entry) => ({ from: entry.unit.path, to: join(destinationFor(entry.root), entry.relativePath) }));
+  const blocked = moves.find((move) => existsSync(move.to));
+  if (blocked) {
+    return {
+      ok: false,
+      message: `Apple Pi could not move "${basename(blocked.from)}": something already exists at "${blocked.to}".`,
+      path: blocked.from,
+    };
   }
-  await mkdir(destinationRoot, { recursive: true });
-  try {
-    await rename(unit.path, destination);
-  } catch (error) {
-    return { ok: false, message: `Apple Pi could not move "${unit.name}": ${errorMessage(error)}` };
+  const paths: string[] = [];
+  for (const move of moves) {
+    try {
+      await mkdir(dirname(move.to), { recursive: true });
+      await rename(move.from, move.to);
+    } catch (error) {
+      return { ok: false, message: `Apple Pi could not move "${basename(move.from)}": ${errorMessage(error)}`, path: move.from };
+    }
+    paths.push(move.to);
   }
-  return { ok: true, path: destination };
+  return { ok: true, paths };
 }
 
 function skillItemFromUnit(input: {
@@ -298,91 +381,131 @@ export class PiSkillService {
     return enabled ? this.enable(name, scope, cwd) : this.disable(name, scope, cwd);
   }
 
-  // Moves a currently-discovered managed skill out to its scope's disabled
+  // Moves a currently-discovered managed skill out to its root's disabled
   // holding directory (see disabledSkillsRoot), so Pi's own scanner stops
   // seeing it while Apple Pi retains it for a later `setEnabled(..., true)`.
+  // Every same-named copy in the scope's managed roots moves, not just the
+  // collision winner the catalog reports: a copy Pi had been silently
+  // dropping as a collision loser would otherwise become the winner the
+  // moment the original moved, leaving the skill visibly still enabled.
   private async disable(name: string, scope: SkillScope, cwd: string): Promise<SkillOperationResult> {
     const catalog = await this.list(cwd);
     const found = catalog.skills.find((skill) => skill.name === name && skill.scope === scope);
     if (!found) return decodeSkillOperationResult({ diagnostics: [notFoundDiagnostic(name, scope)] });
     if (!found.managed) return decodeSkillOperationResult({ diagnostics: [notManagedDiagnostic(name, scope, found.path)] });
 
-    const unit = skillUnit(found.path);
-    const moved = await moveSkillUnit(unit, disabledSkillsRoot(scope, cwd));
-    if (!moved.ok) return decodeSkillOperationResult({ diagnostics: [skillDiagnostic(moved.message, unit.path)] });
+    const located = locateSkillUnits(name, managedSkillsRoots(scope, cwd), false);
+    if (located.length === 0) {
+      // The catalog says it is auto-discovered, yet none of the roots this
+      // file knows about hold it: refuse rather than guess at a holding
+      // directory for a path we cannot map back to a root.
+      return decodeSkillOperationResult({
+        diagnostics: [skillDiagnostic(`Apple Pi could not find which managed skills directory "${name}" is stored in, so it was left unchanged.`, found.path)],
+      });
+    }
+    const moved = await moveSkillUnits(located, disabledSkillsRoot);
+    if (!moved.ok) {
+      await this.refreshActiveLoader(cwd);
+      return decodeSkillOperationResult({ diagnostics: [skillDiagnostic(moved.message, moved.path)] });
+    }
 
+    // Report the copy that had been the collision winner (or the only copy),
+    // i.e. the one whose path the catalog showed the user.
+    const shown = located.findIndex((entry) => entry.skill.filePath === found.path);
+    const index = shown === -1 ? 0 : shown;
+    const primary = located[index] as LocatedSkill;
     const skill = skillItemFromUnit({
       name: found.name,
       description: found.description,
       scope,
-      unitPath: moved.path,
-      wasDirectory: unit.path !== found.path,
+      unitPath: moved.paths[index] as string,
+      wasDirectory: primary.unit.path !== primary.skill.filePath,
       disableModelInvocation: found.disableModelInvocation,
     });
     await this.refreshActiveLoader(cwd);
     return decodeSkillOperationResult({ skill, diagnostics: [] });
   }
 
-  // Moves a previously-disabled skill back from the holding directory into
-  // the managed root, restoring it to Pi's own discovery.
+  // Moves a previously-disabled skill back from each root's holding directory
+  // into that same root, restoring it to Pi's own discovery exactly where it
+  // was before; a skill that was in two roots (a Pi collision) goes back to
+  // both, so the same copy wins again afterwards.
   private async enable(name: string, scope: SkillScope, cwd: string): Promise<SkillOperationResult> {
-    const disabledDir = disabledSkillsRoot(scope, cwd);
-    const scan = loadSkillsFromDir({ dir: disabledDir, source: "disabled" });
-    const found = scan.skills.find((skill) => skill.name === name);
-    if (!found) return decodeSkillOperationResult({ diagnostics: [skillDiagnostic(`No disabled skill named "${name}" was found in the ${scope} scope.`)] });
+    const located = locateSkillUnits(name, managedSkillsRoots(scope, cwd), true);
+    if (located.length === 0) {
+      return decodeSkillOperationResult({ diagnostics: [skillDiagnostic(`No disabled skill named "${name}" was found in the ${scope} scope.`)] });
+    }
+    const moved = await moveSkillUnits(located, (root) => root);
+    if (!moved.ok) {
+      await this.refreshActiveLoader(cwd);
+      return decodeSkillOperationResult({ diagnostics: [skillDiagnostic(moved.message, moved.path)] });
+    }
 
-    const unit = skillUnit(found.filePath);
-    const moved = await moveSkillUnit(unit, managedSkillsRoot(scope, cwd));
-    if (!moved.ok) return decodeSkillOperationResult({ diagnostics: [skillDiagnostic(moved.message, unit.path)] });
-
+    // Roots are in Pi's own scan order, so the first copy is the one Pi's
+    // collision handling will report from now on.
+    const primary = located[0] as LocatedSkill;
     const skill = skillItemFromUnit({
-      name: found.name,
-      description: found.description,
+      name: primary.skill.name,
+      description: primary.skill.description,
       scope,
-      unitPath: moved.path,
-      wasDirectory: basename(found.filePath) === "SKILL.md",
-      disableModelInvocation: found.disableModelInvocation,
+      unitPath: moved.paths[0] as string,
+      wasDirectory: primary.unit.path !== primary.skill.filePath,
+      disableModelInvocation: primary.skill.disableModelInvocation,
     });
     await this.refreshActiveLoader(cwd);
     return decodeSkillOperationResult({ skill, diagnostics: [] });
   }
 
-  // Reports what is currently sitting in each scope's disabled holding
+  // Reports what is currently sitting in each managed root's disabled holding
   // directory (see disabledSkillsRoot), deliberately kept separate from
   // list()/SkillCatalog rather than folded into it: list() exists specifically
   // to mirror Pi's own discovery exactly (see the class-level comment on
   // list()), and a disabled skill is, by design, invisible to that discovery.
   // This lets a UI show a disabled skill (and offer to re-enable it) without
   // ever breaking that "matches exactly what the session would discover"
-  // guarantee for list() itself.
+  // guarantee for list() itself. Like Pi's own collision handling, a name
+  // held in two roots of one scope is reported once, from the earlier root.
   async listDisabled(cwd: string): Promise<SkillItem[]> {
     const scopes: SkillScope[] = ["user", "project"];
     return scopes.flatMap((scope) => {
-      const scan = loadSkillsFromDir({ dir: disabledSkillsRoot(scope, cwd), source: "disabled" });
-      return scan.skills.map((found) => {
-        // `found.filePath` always points at the SKILL.md file itself; skillUnit
-        // resolves it back to the unit's own root (its containing directory for
-        // a SKILL.md-wrapped skill, or that same file otherwise), matching what
-        // skillItemFromUnit expects as `unitPath` everywhere else in this file.
-        const unit = skillUnit(found.filePath);
-        return skillItemFromUnit({
-          name: found.name,
-          description: found.description,
-          scope,
-          unitPath: unit.path,
-          wasDirectory: unit.path !== found.filePath,
-          // Sitting in Apple Pi's own disabled holding directory *is* the
-          // disabled state, regardless of what the skill's own frontmatter
-          // says: force this true so the UI's `isSkillEnabled()` check
-          // (`!skill.disableModelInvocation`) always reports it as disabled.
-          disableModelInvocation: true,
-        });
-      });
+      const seen = new Set<string>();
+      const items: SkillItem[] = [];
+      for (const root of managedSkillsRoots(scope, cwd)) {
+        const scan = loadSkillsFromDir({ dir: disabledSkillsRoot(root), source: "disabled" });
+        for (const found of scan.skills) {
+          if (seen.has(found.name)) continue;
+          seen.add(found.name);
+          // `found.filePath` always points at the SKILL.md file itself; skillUnit
+          // resolves it back to the unit's own root (its containing directory for
+          // a SKILL.md-wrapped skill, or that same file otherwise), matching what
+          // skillItemFromUnit expects as `unitPath` everywhere else in this file.
+          const unit = skillUnit(found.filePath);
+          items.push(
+            skillItemFromUnit({
+              name: found.name,
+              description: found.description,
+              scope,
+              unitPath: unit.path,
+              wasDirectory: unit.path !== found.filePath,
+              // Sitting in Apple Pi's own disabled holding directory *is* the
+              // disabled state, regardless of what the skill's own frontmatter
+              // says: force this true so the UI's `isSkillEnabled()` check
+              // (`!skill.disableModelInvocation`) always reports it as disabled.
+              disableModelInvocation: true,
+            }),
+          );
+        }
+      }
+      return items;
     });
   }
 
-  // Deletes a managed skill entirely, whether it is currently discovered
-  // (enabled) or sitting in the disabled holding directory.
+  // Deletes a managed skill, whether it is currently discovered (enabled) or
+  // sitting in a disabled holding directory. Unlike setEnabled, this is
+  // irreversible, so it deletes only the single unit whose path the catalog
+  // (or listDisabled) showed the user; a same-named copy Pi had been hiding
+  // as a collision loser then surfaces with its own path and can be removed
+  // on its own, rather than being deleted sight unseen.
   async remove(name: string, scope: SkillScope, cwd: string): Promise<SkillOperationResult> {
     const catalog = await this.list(cwd);
     const found = catalog.skills.find((skill) => skill.name === name && skill.scope === scope);
@@ -394,20 +517,17 @@ export class PiSkillService {
       return decodeSkillOperationResult({ skill: found, diagnostics: [] });
     }
 
-    const disabledDir = disabledSkillsRoot(scope, cwd);
-    const scan = loadSkillsFromDir({ dir: disabledDir, source: "disabled" });
-    const disabledFound = scan.skills.find((skill) => skill.name === name);
+    const disabledFound = locateSkillUnits(name, managedSkillsRoots(scope, cwd), true)[0];
     if (!disabledFound) return decodeSkillOperationResult({ diagnostics: [notFoundDiagnostic(name, scope)] });
 
-    const unit = skillUnit(disabledFound.filePath);
-    await rm(unit.path, { recursive: true, force: true });
+    await rm(disabledFound.unit.path, { recursive: true, force: true });
     const skill = skillItemFromUnit({
-      name: disabledFound.name,
-      description: disabledFound.description,
+      name: disabledFound.skill.name,
+      description: disabledFound.skill.description,
       scope,
-      unitPath: disabledFound.filePath,
-      wasDirectory: basename(disabledFound.filePath) === "SKILL.md",
-      disableModelInvocation: disabledFound.disableModelInvocation,
+      unitPath: disabledFound.unit.path,
+      wasDirectory: disabledFound.unit.path !== disabledFound.skill.filePath,
+      disableModelInvocation: disabledFound.skill.disableModelInvocation,
     });
     await this.refreshActiveLoader(cwd);
     return decodeSkillOperationResult({ skill, diagnostics: [] });
