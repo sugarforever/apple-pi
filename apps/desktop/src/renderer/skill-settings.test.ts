@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { SkillItem, SkillOperationResult } from "@apple-pi/protocol";
-import { diagnosticRole, firstActionableSkillDiagnostic, isSkillEnabled, projectScopeNotice, skillKey } from "./src/skill-settings.js";
+import { diagnosticRole, firstActionableSkillDiagnostic, isSkillEnabled, mergeSkillLists, projectScopeNotice, skillKey } from "./src/skill-settings.js";
 
 const skill = (overrides: Partial<SkillItem> = {}): SkillItem => ({
   name: "pdf-forms",
@@ -78,5 +78,24 @@ describe("firstActionableSkillDiagnostic", () => {
 
   it("is undefined when there are no diagnostics at all", () => {
     expect(firstActionableSkillDiagnostic({ diagnostics: [] })).toBeUndefined();
+  });
+});
+
+describe("mergeSkillLists", () => {
+  it("sorts enabled and disabled skills into one list by name, then scope", () => {
+    const merged = mergeSkillLists(
+      [skill({ name: "zip", scope: "user" }), skill({ name: "alpha", scope: "project" })],
+      [skill({ name: "alpha", scope: "user", disableModelInvocation: true })],
+    );
+    expect(merged.map((item) => skillKey(item.scope, item.name))).toEqual(["project:alpha", "user:alpha", "user:zip"]);
+  });
+
+  it("renders one row per scope+name, the discovered (enabled) entry winning over a disabled one with the same key", () => {
+    const enabled = skill({ name: "hyperframes", path: "/home/user/.agents/skills/hyperframes/SKILL.md" });
+    const held = skill({ name: "hyperframes", path: "/home/user/.pi/agent/skills-disabled/hyperframes/SKILL.md", disableModelInvocation: true });
+
+    const merged = mergeSkillLists([enabled], [held]);
+
+    expect(merged).toEqual([enabled]);
   });
 });

@@ -636,6 +636,40 @@ describe("PiSkillService lifecycle", () => {
       expect(disabled).toHaveLength(2);
     });
 
+    // The on-disk state the original single-root bug left behind: one copy
+    // already in `~/.pi/agent/skills-disabled`, the other still live in
+    // `~/.agents/skills`. Pi discovers the live copy, so the skill *is*
+    // enabled; reporting the held copy as well gave the UI two same-keyed
+    // rows ("Enabled" and "Disabled") for one skill.
+    it("omits a held copy whose name list() still discovers from another root, and a disable/enable cycle from there heals both copies", async () => {
+      await writeSkillFixture(join(disabledRoot("user"), "hyperframes"), { name: "hyperframes", description: "The held pi-agent copy." });
+      await writeSkillFixture(join(agentsRoot("user"), "hyperframes"), { name: "hyperframes", description: "The live .agents copy." });
+      const service = new PiSkillService();
+
+      expect((await service.list(cwd)).skills.map((skill) => skill.name)).toEqual(["hyperframes"]);
+      expect(await service.listDisabled(cwd)).toEqual([]);
+
+      const disableResult = await service.setEnabled("hyperframes", "user", cwd, false);
+      expect(disableResult.diagnostics).toEqual([]);
+      expect((await service.list(cwd)).skills).toEqual([]);
+      expect((await service.listDisabled(cwd)).map((skill) => skill.path)).toEqual([join(disabledRoot("user"), "hyperframes", "SKILL.md")]);
+      expect(existsSync(join(`${agentsRoot("user")}-disabled`, "hyperframes", "SKILL.md"))).toBe(true);
+
+      const enableResult = await service.setEnabled("hyperframes", "user", cwd, true);
+      expect(enableResult.diagnostics).toEqual([]);
+      expect(await readFile(join(managedRoot("user"), "hyperframes", "SKILL.md"), "utf8")).toContain("The held pi-agent copy.");
+      expect(await readFile(join(agentsRoot("user"), "hyperframes", "SKILL.md"), "utf8")).toContain("The live .agents copy.");
+      expect(await service.listDisabled(cwd)).toEqual([]);
+    });
+
+    it("still reports a held copy when the same name is discovered only in the other scope", async () => {
+      await writeSkillFixture(join(disabledRoot("user"), "release-notes"), { name: "release-notes", description: "Held user copy." });
+      await writeSkillFixture(join(managedRoot("project"), "release-notes"), { name: "release-notes", description: "Live project copy." });
+      const service = new PiSkillService();
+
+      expect((await service.listDisabled(cwd)).map((skill) => [skill.name, skill.scope])).toEqual([["release-notes", "user"]]);
+    });
+
     it("never overlaps with list(), mirroring exactly what disabling a skill removed from Pi's own discovery", async () => {
       await writeSkillFixture(join(managedRoot("user"), "pdf-forms"), { name: "pdf-forms", description: "Fill and flatten PDF forms." });
       const service = new PiSkillService();

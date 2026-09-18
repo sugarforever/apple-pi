@@ -312,8 +312,12 @@ describe("renderer skills settings contract", () => {
     expect(skills).not.toContain("skill-disabled-section");
     expect(skills).not.toContain("const enableSkill");
     expect(skills).not.toContain("const visibleDisabled");
-    expect(skills).toContain("const combined = useMemo(() => {");
-    expect(skills).toContain("[...props.skills, ...props.disabledSkills].sort((a, b) => a.name.localeCompare(b.name) || a.scope.localeCompare(b.scope))");
+    // The merge lives in an exported, unit-tested helper (see
+    // skill-settings.test.ts): one row per scope+name, the discovered
+    // (enabled) entry winning, so two same-keyed cards can never render.
+    expect(skills).toContain("const combined = useMemo(() => mergeSkillLists(props.skills, props.disabledSkills), [props.skills, props.disabledSkills]);");
+    expect(skills).toContain("export function mergeSkillLists(skills: SkillItem[], disabledSkills: SkillItem[]): SkillItem[]");
+    expect(skills).toContain("if (!byKey.has(key)) byKey.set(key, skill);");
   });
 
   it("filters the combined list by the same search query, and re-enabling a disabled skill reuses the same toggle", () => {
