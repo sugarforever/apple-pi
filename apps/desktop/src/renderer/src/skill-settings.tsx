@@ -1,5 +1,5 @@
-import React, { useMemo, useState } from "react";
-import { AlertCircle, FolderOpen, Plus, Search, ToggleLeft, ToggleRight, Trash2 } from "lucide-react";
+import React, { startTransition, useMemo, useState, useTransition } from "react";
+import { AlertCircle, CircleDashed, FolderOpen, Plus, Search, ToggleLeft, ToggleRight, Trash2 } from "lucide-react";
 import type { SkillDiagnostic, SkillItem, SkillOperationResult, SkillScope } from "@apple-pi/protocol";
 
 export type SkillActivity = "idle" | "checking";
@@ -76,6 +76,18 @@ export function SkillSettings(props: SkillSettingsProps) {
   const [query, setQuery] = useState("");
   const [activity, setActivity] = useState<Record<string, SkillActivity>>({});
   const [feedback, setFeedback] = useState<Record<string, SkillDiagnostic | undefined>>({});
+  // The state a toggle is *heading to* while its setEnabled round trip (move
+  // on disk, then re-fetch both lists) is still in flight, keyed like
+  // `activity`. The card shows this target straight away rather than the
+  // stale pre-click state, so a click reads as an immediate flip with a
+  // brief "settling" effect instead of a frozen button; it is cleared once
+  // the refreshed lists (the real state) arrive, which for a rejected
+  // operation simply snaps the toggle back next to its diagnostic.
+  const [pendingEnabled, setPendingEnabled] = useState<Record<string, boolean | undefined>>({});
+  // Marks the post-operation list refresh as a React Transition, so React
+  // keeps the current cards interactive and never blocks the toggle's own
+  // settling effect on the (potentially large) re-render that follows.
+  const [, startToggleTransition] = useTransition();
   // Two-step "arm, then confirm" pattern for Remove: the first click swaps
   // the button for an inline "Remove ‘x’? Yes / Cancel" prompt (role="status"
   // announces the swap to assistive tech) rather than firing the destructive
@@ -115,7 +127,16 @@ export function SkillSettings(props: SkillSettingsProps) {
   };
 
   const toggleEnabled = (skill: SkillItem): void => {
-    void run(skillKey(skill.scope, skill.name), () => props.onSetEnabled(skill.name, skill.scope, !isSkillEnabled(skill)));
+    const key = skillKey(skill.scope, skill.name);
+    if (pendingEnabled[key] !== undefined) return;
+    const target = !isSkillEnabled(skill);
+    setPendingEnabled((current) => ({ ...current, [key]: target }));
+    startToggleTransition(async () => {
+      await run(key, () => props.onSetEnabled(skill.name, skill.scope, target));
+      // React 19 only treats updates *before* the first await as part of
+      // the transition; the clear after it has to opt in again.
+      startTransition(() => setPendingEnabled((current) => ({ ...current, [key]: undefined })));
+    });
   };
 
   const removeSkill = (skill: SkillItem): void => {
@@ -232,14 +253,16 @@ export function SkillSettings(props: SkillSettingsProps) {
           {visible.map((skill) => {
             const key = skillKey(skill.scope, skill.name);
             const checking = activity[key] === "checking";
-            const enabled = isSkillEnabled(skill);
+            const settling = pendingEnabled[key] !== undefined;
+            // While settling, the toggle already shows where it is heading.
+            const enabled = pendingEnabled[key] ?? isSkillEnabled(skill);
             const diagnostic = feedback[key];
             const confirming = confirmingRemove[key] ?? false;
             return (
               <article className="skill-card" key={key} aria-busy={checking}>
                 <div className="skill-summary">
                   <div className="skill-name">
-                    <h3>{skill.name}</h3>
+                    <h3 title={skill.path}>{skill.name}</h3>
                     <p>
                       {skill.scope} · {skill.managed ? "Apple Pi managed" : "Not managed by Apple Pi"}
                     </p>
@@ -249,16 +272,19 @@ export function SkillSettings(props: SkillSettingsProps) {
                     className="skill-toggle"
                     aria-label={enabled ? `Disable ${skill.name}` : `Enable ${skill.name}`}
                     aria-pressed={enabled}
+                    aria-busy={settling}
                     onClick={() => toggleEnabled(skill)}
-                    disabled={checking || !skill.managed}
+                    // Stays enabled (and focusable) while settling: toggleEnabled
+                    // ignores the repeat click itself, and a disabled button would
+                    // drop keyboard focus mid-operation and dim the effect.
+                    disabled={!skill.managed}
                     title={!skill.managed ? NOT_MANAGED_TITLE : undefined}
                   >
-                    {enabled ? <ToggleRight size={16} /> : <ToggleLeft size={16} />}
-                    {enabled ? "Enabled" : "Disabled"}
+                    {settling ? <CircleDashed size={16} className="skill-toggle-settling" /> : enabled ? <ToggleRight size={16} /> : <ToggleLeft size={16} />}
+                    {settling ? (enabled ? "Enabling…" : "Disabling…") : enabled ? "Enabled" : "Disabled"}
                   </button>
                 </div>
                 <p className="skill-description">{skill.description}</p>
-                <p className="skill-path">{skill.path}</p>
                 {diagnostic && (
                   <p className={`skill-diagnostic ${diagnostic.type}`} role={diagnosticRole(diagnostic.type)}>
                     {diagnostic.message}

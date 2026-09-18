@@ -1254,9 +1254,20 @@ main > header {
   color: var(--text-secondary);
   cursor: pointer;
   font-size: 11px;
+  transition:
+    color 160ms ease,
+    border-color 160ms ease,
+    opacity 160ms ease;
 }
 .skill-toggle[aria-pressed="true"] {
   color: #dff5a0;
+}
+.skill-toggle[aria-busy="true"] {
+  opacity: 0.75;
+  cursor: progress;
+}
+.skill-toggle-settling {
+  animation: status-spin 1s linear infinite;
 }
 .skill-toggle:disabled {
   opacity: 0.55;
@@ -1267,12 +1278,6 @@ main > header {
   color: var(--text-secondary);
   font-size: 12px;
   line-height: 1.5;
-}
-.skill-path {
-  margin: 6px 0 0;
-  color: var(--text-tertiary);
-  font: 10px/15px var(--font-mono);
-  word-break: break-all;
 }
 .skill-diagnostic {
   margin-top: 12px;

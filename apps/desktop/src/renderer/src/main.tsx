@@ -83,6 +83,15 @@ function App() {
   const [customProviders, setCustomProviders] = useState<CustomProviderDefinition[]>([]);
   const [skillCatalog, setSkillCatalog] = useState<SkillCatalog>({ skills: [], diagnostics: [] });
   const [disabledSkills, setDisabledSkills] = useState<SkillItem[]>([]);
+  // After a skill mutation both lists are stale at once. Fetching them
+  // together and committing in one go keeps a skill that just moved between
+  // them from vanishing for a frame (gone from `skills`, not yet in
+  // `disabledSkills`), which would unmount its card mid-settle.
+  const refreshSkillLists = async (): Promise<void> => {
+    const [catalog, disabled] = await Promise.all([window.applePi.skill.list(), window.applePi.skill.listDisabled()]);
+    setSkillCatalog(catalog);
+    setDisabledSkills(disabled);
+  };
   const [draft, setDraft] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [activeSessionId, setActiveSessionId] = useState("");
@@ -510,14 +519,12 @@ function App() {
               }}
               onSetEnabled={async (name, scope, enabled) => {
                 const result = await window.applePi.skill.setEnabled(name, scope, enabled);
-                setSkillCatalog(await window.applePi.skill.list());
-                setDisabledSkills(await window.applePi.skill.listDisabled());
+                await refreshSkillLists();
                 return result;
               }}
               onRemove={async (name, scope) => {
                 const result = await window.applePi.skill.remove(name, scope);
-                setSkillCatalog(await window.applePi.skill.list());
-                setDisabledSkills(await window.applePi.skill.listDisabled());
+                await refreshSkillLists();
                 return result;
               }}
               onPickDirectory={() => window.applePi.skill.pickDirectory()}
