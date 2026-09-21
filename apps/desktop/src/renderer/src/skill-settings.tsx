@@ -1,6 +1,7 @@
 import React, { startTransition, useMemo, useState, useTransition } from "react";
-import { AlertCircle, CircleDashed, FolderOpen, Plus, Search, ToggleLeft, ToggleRight, Trash2 } from "lucide-react";
+import { AlertCircle, CircleDashed, FolderOpen, Plus, ToggleLeft, ToggleRight, Trash2 } from "lucide-react";
 import type { SkillDiagnostic, SkillItem, SkillOperationResult, SkillScope } from "@apple-pi/protocol";
+import { Notice, SearchField, SectionHeading } from "./ui-primitives.js";
 
 export type SkillActivity = "idle" | "checking";
 
@@ -225,17 +226,12 @@ export function SkillSettings(props: SkillSettingsProps) {
 
   return (
     <section className="skill-settings" aria-labelledby="skills-title">
-      <div className="skill-heading">
-        <div>
-          <h2 id="skills-title">Skills</h2>
-          <p>Extend Apple Pi with reusable skills the model can invoke, installed per user or per project.</p>
-        </div>
-        <label className="skill-search">
-          <span className="sr-only">Search skills</span>
-          <Search size={15} aria-hidden="true" />
-          <input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search skills" />
-        </label>
-      </div>
+      <SectionHeading
+        id="skills-title"
+        title="Skills"
+        description="Extend Apple Pi with reusable skills the model can invoke, installed per user or per project."
+        actions={<SearchField label="Search skills" placeholder="Search skills" value={query} onChange={setQuery} />}
+      />
       {groupSkillDiagnostics(props.diagnostics).map((group) => (
         <details key={`catalog-diagnostic-${group.type}`} className={`skill-diagnostic skill-diagnostic-group ${group.type}`}>
           <summary role={diagnosticRole(group.type)}>{group.headline}</summary>
@@ -296,16 +292,16 @@ export function SkillSettings(props: SkillSettingsProps) {
         )}
       </div>
       {combined.length === 0 ? (
-        <div className="skill-empty">
+        <Notice className="skill-empty">
           <AlertCircle size={22} />
           <strong>No skills installed</strong>
           <p>Install a skill directory to make it available to the model.</p>
-        </div>
+        </Notice>
       ) : visible.length === 0 ? (
-        <div className="skill-empty">
+        <Notice className="skill-empty">
           <strong>No matching skills</strong>
           <p>Try a different search term.</p>
-        </div>
+        </Notice>
       ) : (
         <div className="skill-list">
           {visible.map((skill) => {

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { AlertCircle, Check, CircleDashed, KeyRound, Pencil, Plus, Search, Trash2, X } from "lucide-react";
+import { AlertCircle, Check, CircleDashed, KeyRound, Pencil, Plus, Trash2, X } from "lucide-react";
 import type {
   CustomProviderDefinition,
   CustomModelDefinition,
@@ -10,6 +10,7 @@ import type {
   ProviderItem,
   ProviderOperationResult,
 } from "@apple-pi/protocol";
+import { Notice, SearchField, SectionHeading, StatusBadge } from "./ui-primitives.js";
 
 export type ProviderActivity = "idle" | "checking";
 
@@ -475,25 +476,24 @@ export function ProviderSettings(props: ProviderSettingsProps) {
 
   return (
     <section className="provider-settings" aria-labelledby="providers-title">
-      <div className="provider-heading">
-        <div>
-          <h2 id="providers-title">Models &amp; Providers</h2>
-          <p>Connect a built-in provider, then choose the model Apple Pi uses by default.</p>
-        </div>
-        <label className="provider-search">
-          <span className="sr-only">Search providers</span>
-          <Search size={15} aria-hidden="true" />
-          <input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search providers" />
-        </label>
-        <button
-          type="button"
-          className="secondary"
-          onClick={() => setCustomProviderForm(customProviderForm === "add" ? null : "add")}
-          aria-expanded={customProviderForm === "add"}
-        >
-          <Plus size={14} /> Add custom provider
-        </button>
-      </div>
+      <SectionHeading
+        id="providers-title"
+        title="Models & Providers"
+        description="Connect a built-in provider, then choose the model Apple Pi uses by default."
+        actions={
+          <>
+            <SearchField label="Search providers" placeholder="Search providers" value={query} onChange={setQuery} />
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => setCustomProviderForm(customProviderForm === "add" ? null : "add")}
+              aria-expanded={customProviderForm === "add"}
+            >
+              <Plus size={14} /> Add custom provider
+            </button>
+          </>
+        }
+      />
       {customProviderForm === "add" && (
         <CustomProviderForm
           busy={customProviderBusy}
@@ -513,16 +513,16 @@ export function ProviderSettings(props: ProviderSettingsProps) {
         />
       )}
       {props.providers.length === 0 ? (
-        <div className="provider-empty">
+        <Notice className="provider-empty">
           <KeyRound size={22} />
           <strong>No providers available</strong>
           <p>Apple Pi could not load its built-in provider list. Restart the app and try again.</p>
-        </div>
+        </Notice>
       ) : visible.length === 0 ? (
-        <div className="provider-empty">
+        <Notice className="provider-empty">
           <strong>No matching providers</strong>
           <p>Try a provider name such as DeepSeek.</p>
-        </div>
+        </Notice>
       ) : (
         <div className="provider-list">
           {visible.map((provider) => {
@@ -547,7 +547,10 @@ export function ProviderSettings(props: ProviderSettingsProps) {
                       <p>{provider.id}</p>
                     </div>
                   </div>
-                  <span className="provider-status">
+                  <StatusBadge
+                    className="provider-status"
+                    tone={provider.status === "connected" ? "success" : provider.status === "error" ? "danger" : "neutral"}
+                  >
                     {checking ? (
                       <>
                         <CircleDashed size={13} />
@@ -566,7 +569,7 @@ export function ProviderSettings(props: ProviderSettingsProps) {
                     ) : (
                       "Disconnected"
                     )}
-                  </span>
+                  </StatusBadge>
                 </div>
                 <dl className="provider-meta">
                   <div>

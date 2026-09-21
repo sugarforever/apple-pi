@@ -20,18 +20,14 @@ import type { CustomProviderDefinition, ProviderItem, SessionSnapshot, SkillCata
 import { runSessionResync } from "../session-resync.js";
 import { initialSessionState, reduceSession } from "../session-state.js";
 import { toTimelineItems, type ToolItem } from "../tool-activity.js";
-import type { Catalog, ModelItem, ModelRef, SessionItem, WorkspaceOpenResult } from "../global.js";
-import { ProviderSettings, modelUnavailable } from "./provider-settings.js";
-import { SkillSettings } from "./skill-settings.js";
+import type { Catalog, ModelItem, SessionItem, WorkspaceOpenResult } from "../global.js";
+import { ModelSelect, modelKey, parseModelKey } from "./model-select.js";
+import { modelUnavailable } from "./provider-settings.js";
+import { SettingsShell } from "./settings-shell.js";
+import { IconButton } from "./ui-primitives.js";
 import "./styles.css";
 
 type UiSessionItem = SessionItem & { persisted: boolean };
-
-const modelKey = (model: ModelRef) => `${model.provider}::${model.modelId}`;
-const parseModelKey = (value: string): ModelRef => {
-  const [provider, modelId] = value.split("::");
-  return { provider: provider!, modelId: modelId! };
-};
 
 const escapeHtml = (value: string): string =>
   value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
@@ -420,9 +416,9 @@ function App() {
           </div>
           <div className="header-actions">
             {settingsOpen && (
-              <button className="icon-button" aria-label="Close settings" onClick={() => setSettingsOpen(false)}>
+              <IconButton aria-label="Close settings" onClick={() => setSettingsOpen(false)}>
                 <X size={17} />
-              </button>
+              </IconButton>
             )}
             {state.running && (
               <button className="cancel" onClick={() => void snapshotOp(window.applePi.session.cancel())}>
@@ -432,62 +428,35 @@ function App() {
           </div>
         </header>
         {settingsOpen ? (
-          <section className="settings">
-            <div className="settings-intro">
-              <div>
-                <h1>Make Apple Pi Yours</h1>
-                <p>Choose how new sessions begin. Changes are saved automatically.</p>
-              </div>
-            </div>
-            <div className="settings-card">
-              <div>
-                <h2>Default Model</h2>
-                <p>Used when you create a workspace or begin a new session. You can still switch models from the composer.</p>
-              </div>
-              {models.length === 0 ? (
-                <div className="model-empty">
-                  <strong>No usable models yet.</strong>
-                  <span>
-                    <a href="#providers-title">Connect a provider</a> to choose a default model.
-                  </span>
-                </div>
-              ) : (
-                <div className="settings-control">
-                  <label htmlFor="default-model">Model</label>
-                  <ModelSelect
-                    id="default-model"
-                    models={groupedModels}
-                    value={catalog.defaultModel ? modelKey(catalog.defaultModel) : ""}
-                    onChange={(value) => void changeDefaultModel(value)}
-                    emptyLabel="Use pi default"
-                  />
-                </div>
-              )}
-            </div>
-            <ProviderSettings
-              providers={providers}
-              models={models}
-              defaultModel={catalog.defaultModel}
-              customProviders={customProviders}
-              onConnect={(providerId, apiKey) => window.applePi.provider.connectApiKey(providerId, apiKey)}
-              onDisconnect={(providerId) => window.applePi.provider.disconnect(providerId)}
-              onVerify={(providerId) => window.applePi.provider.verify(providerId)}
-              onAddCustomProvider={async (definition) => {
+          <SettingsShell
+            models={models}
+            groupedModels={groupedModels}
+            defaultModel={catalog.defaultModel}
+            onDefaultModel={(value) => void changeDefaultModel(value)}
+            providerSettings={{
+              providers,
+              models,
+              defaultModel: catalog.defaultModel,
+              customProviders,
+              onConnect: (providerId, apiKey) => window.applePi.provider.connectApiKey(providerId, apiKey),
+              onDisconnect: (providerId) => window.applePi.provider.disconnect(providerId),
+              onVerify: (providerId) => window.applePi.provider.verify(providerId),
+              onAddCustomProvider: async (definition) => {
                 const result = await window.applePi.provider.addCustom(definition);
                 setCustomProviders(await window.applePi.provider.listCustom());
                 return result;
-              }}
-              onUpdateCustomProvider={async (id, definition) => {
+              },
+              onUpdateCustomProvider: async (id, definition) => {
                 const result = await window.applePi.provider.updateCustom(id, definition);
                 setCustomProviders(await window.applePi.provider.listCustom());
                 return result;
-              }}
-              onRemoveCustomProvider={async (id) => {
+              },
+              onRemoveCustomProvider: async (id) => {
                 const result = await window.applePi.provider.removeCustom(id);
                 setCustomProviders(await window.applePi.provider.listCustom());
                 return result;
-              }}
-              onRefresh={async (providerId) => {
+              },
+              onRefresh: async (providerId) => {
                 const token = ++modelsRefreshToken.current;
                 const refreshed = await window.applePi.provider.refreshModels([providerId]);
                 // A newer refresh already landed while this one was in flight; applying
@@ -495,41 +464,41 @@ function App() {
                 if (modelsRefreshToken.current !== token) return;
                 setProviders(refreshed.providers);
                 setModels(refreshed.models);
-              }}
-              onDefaultModel={async (model) => {
+              },
+              onDefaultModel: async (model) => {
                 setCatalog(await window.applePi.model.setDefault(model));
                 setNotice("Default model saved");
-              }}
-              oauth={{
+              },
+              oauth: {
                 start: (providerId) => window.applePi.provider.startOAuthLogin(providerId),
                 respond: (operationId, promptId, value) => window.applePi.provider.respondOAuthPrompt(operationId, promptId, value),
                 cancel: (operationId) => window.applePi.operation.cancel(operationId),
                 subscribe: (listener) => window.applePi.provider.subscribeAuthEvent(listener),
-              }}
-            />
-            <SkillSettings
-              skills={skillCatalog.skills}
-              diagnostics={skillCatalog.diagnostics}
-              disabledSkills={disabledSkills}
-              canInstallToProject={Boolean(workspacePath)}
-              onInstall={async (scope, sourcePath) => {
+              },
+            }}
+            skillSettings={{
+              skills: skillCatalog.skills,
+              diagnostics: skillCatalog.diagnostics,
+              disabledSkills,
+              canInstallToProject: Boolean(workspacePath),
+              onInstall: async (scope, sourcePath) => {
                 const result = await window.applePi.skill.install(scope, sourcePath);
                 setSkillCatalog(await window.applePi.skill.list());
                 return result;
-              }}
-              onSetEnabled={async (name, scope, enabled) => {
+              },
+              onSetEnabled: async (name, scope, enabled) => {
                 const result = await window.applePi.skill.setEnabled(name, scope, enabled);
                 await refreshSkillLists();
                 return result;
-              }}
-              onRemove={async (name, scope) => {
+              },
+              onRemove: async (name, scope) => {
                 const result = await window.applePi.skill.remove(name, scope);
                 await refreshSkillLists();
                 return result;
-              }}
-              onPickDirectory={() => window.applePi.skill.pickDirectory()}
-            />
-          </section>
+              },
+              onPickDirectory: () => window.applePi.skill.pickDirectory(),
+            }}
+          />
         ) : (
           <>
             <section className="timeline" id="conversation" aria-label="Conversation" role="log" aria-live="polite" tabIndex={-1}>
@@ -689,39 +658,6 @@ function ToolActivity({ item }: { item: ToolItem }) {
         )}
       </div>
     </details>
-  );
-}
-
-function ModelSelect({
-  id,
-  ariaLabel,
-  models,
-  value,
-  onChange,
-  emptyLabel = "Select model",
-  disabled = false,
-}: {
-  id?: string;
-  ariaLabel?: string;
-  models: Map<string, ModelItem[]>;
-  value: string;
-  onChange(value: string): void;
-  emptyLabel?: string;
-  disabled?: boolean;
-}) {
-  return (
-    <select id={id} aria-label={ariaLabel} className="model-select" value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)}>
-      <option value="">{emptyLabel}</option>
-      {[...models].map(([provider, items]) => (
-        <optgroup key={provider} label={provider}>
-          {items.map((model) => (
-            <option key={modelKey(model)} value={modelKey(model)}>
-              {model.name}
-            </option>
-          ))}
-        </optgroup>
-      ))}
-    </select>
   );
 }
 
