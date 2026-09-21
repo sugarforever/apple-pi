@@ -13,6 +13,7 @@ import type {
 import { Notice, SearchField, SectionHeading, StatusBadge } from "./ui-primitives.js";
 
 export type ProviderActivity = "idle" | "checking";
+export type ProviderFilter = "all" | "connected" | "custom";
 
 // Bridges the OAuth sign-in flow: `start` kicks off `provider.startOAuthLogin`
 // and returns its operationId immediately (before the login itself completes)
@@ -47,6 +48,21 @@ export interface ProviderSettingsProps {
 // Edit/Remove only where they make sense.
 export function isCustomProvider(providerId: string, customProviders: CustomProviderDefinition[]): boolean {
   return customProviders.some((definition) => definition.id === providerId);
+}
+
+export function filterProviders(providers: ProviderItem[], customProviders: CustomProviderDefinition[], query: string, filter: ProviderFilter): ProviderItem[] {
+  const needle = query.trim().toLocaleLowerCase();
+  return providers.filter((provider) => {
+    if (needle && !`${provider.name} ${provider.id}`.toLocaleLowerCase().includes(needle)) return false;
+    if (filter === "connected") return provider.status === "connected";
+    if (filter === "custom") return isCustomProvider(provider.id, customProviders);
+    return true;
+  });
+}
+
+export function nextSelectedProviderId(providers: ProviderItem[], selectedProviderId: string | null): string | null {
+  if (selectedProviderId && providers.some((provider) => provider.id === selectedProviderId)) return selectedProviderId;
+  return providers[0]?.id ?? null;
 }
 
 interface OAuthLoginState {
@@ -380,6 +396,8 @@ function CustomProviderForm(props: {
 
 export function ProviderSettings(props: ProviderSettingsProps) {
   const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState<ProviderFilter>("all");
+  const [selectedProviderId, setSelectedProviderId] = useState<string | null>(() => nextSelectedProviderId(props.providers, null));
   const [editing, setEditing] = useState<string | null>(null);
   const [apiKeys, setApiKeys] = useState<Record<string, string>>({});
   const [activity, setActivity] = useState<Record<string, ProviderActivity>>({});
@@ -391,10 +409,12 @@ export function ProviderSettings(props: ProviderSettingsProps) {
   const [customProviderForm, setCustomProviderForm] = useState<"add" | string | null>(null);
   const [customProviderBusy, setCustomProviderBusy] = useState(false);
 
-  const visible = useMemo(() => {
-    const needle = query.trim().toLocaleLowerCase();
-    return needle ? props.providers.filter((provider) => `${provider.name} ${provider.id}`.toLocaleLowerCase().includes(needle)) : props.providers;
-  }, [props.providers, query]);
+  const visible = useMemo(
+    () => filterProviders(props.providers, props.customProviders, query, filter),
+    [props.providers, props.customProviders, query, filter],
+  );
+  const effectiveSelectedProviderId = nextSelectedProviderId(props.providers, selectedProviderId);
+  const selectedProvider = props.providers.find((provider) => provider.id === effectiveSelectedProviderId);
 
   useEffect(() => {
     return props.oauth.subscribe((event) => {
@@ -483,6 +503,14 @@ export function ProviderSettings(props: ProviderSettingsProps) {
         actions={
           <>
             <SearchField label="Search providers" placeholder="Search providers" value={query} onChange={setQuery} />
+            <label className="provider-filter">
+              <span className="sr-only">Filter providers</span>
+              <select value={filter} onChange={(event) => setFilter(event.target.value as ProviderFilter)} aria-label="Filter providers">
+                <option value="all">All providers</option>
+                <option value="connected">Connected</option>
+                <option value="custom">Custom</option>
+              </select>
+            </label>
             <button
               type="button"
               className="secondary"
@@ -524,213 +552,242 @@ export function ProviderSettings(props: ProviderSettingsProps) {
           <p>Try a provider name such as DeepSeek.</p>
         </Notice>
       ) : (
-        <div className="provider-list">
-          {visible.map((provider) => {
-            const checking = activity[provider.id] === "checking";
-            const diagnostic = feedback[provider.id] ?? (provider.status === "error" ? provider.diagnostics[0] : undefined);
-            const providerModels = props.models.filter((model) => model.provider === provider.id);
-            const canManage =
-              provider.authMethods.includes("api_key") && (provider.credentialSource === "apple_pi" || provider.credentialSource === "unavailable");
-            const isEditing = editing === provider.id;
-            const isOAuthActive = oauthLogin?.providerId === provider.id;
-            const isCustom = isCustomProvider(provider.id, props.customProviders);
-            const isEditingCustomProvider = customProviderForm === provider.id;
-            return (
-              <article className={`provider-card status-${checking ? "checking" : provider.status}`} key={provider.id} aria-busy={checking}>
-                <div className="provider-summary">
-                  <div className="provider-name">
-                    <span className="provider-logo" aria-hidden="true">
-                      {provider.name.slice(0, 1).toUpperCase()}
-                    </span>
-                    <div>
-                      <h3>{provider.name}</h3>
-                      <p>{provider.id}</p>
-                    </div>
-                  </div>
-                  <StatusBadge
-                    className="provider-status"
-                    tone={provider.status === "connected" ? "success" : provider.status === "error" ? "danger" : "neutral"}
-                  >
-                    {checking ? (
-                      <>
-                        <CircleDashed size={13} />
-                        Checking
-                      </>
-                    ) : provider.status === "connected" ? (
-                      <>
-                        <Check size={13} />
-                        Connected
-                      </>
-                    ) : provider.status === "error" ? (
-                      <>
-                        <AlertCircle size={13} />
-                        Error
-                      </>
-                    ) : (
-                      "Disconnected"
-                    )}
+        <div className="provider-browser">
+          <div className="provider-list" role="listbox" aria-label="Providers">
+            {visible.map((provider) => {
+              const checking = activity[provider.id] === "checking";
+              const modelCount = props.models.filter((model) => model.provider === provider.id).length || provider.availableModelCount;
+              return (
+                <button
+                  type="button"
+                  className="provider-row"
+                  key={provider.id}
+                  role="option"
+                  aria-selected={effectiveSelectedProviderId === provider.id}
+                  aria-controls="provider-detail"
+                  onClick={() => setSelectedProviderId(provider.id)}
+                >
+                  <span className="provider-logo" aria-hidden="true">
+                    {provider.name.slice(0, 1).toUpperCase()}
+                  </span>
+                  <span className="provider-identity">
+                    <strong>{provider.name}</strong>
+                    <small>{provider.id}</small>
+                  </span>
+                  <StatusBadge tone={provider.status === "connected" ? "success" : provider.status === "error" ? "danger" : "neutral"}>
+                    {checking ? "Checking" : provider.status === "connected" ? "Connected" : provider.status === "error" ? "Error" : "Disconnected"}
                   </StatusBadge>
-                </div>
-                <dl className="provider-meta">
-                  <div>
-                    <dt>Credential</dt>
-                    <dd>{sourceLabels[provider.credentialSource]}</dd>
+                  <span className="provider-credential">{sourceLabels[provider.credentialSource]}</span>
+                  <span className="provider-model-count">{modelCount} models</span>
+                </button>
+              );
+            })}
+          </div>
+          {selectedProvider &&
+            (() => {
+              const provider = selectedProvider;
+              const checking = activity[provider.id] === "checking";
+              const diagnostic = feedback[provider.id] ?? (provider.status === "error" ? provider.diagnostics[0] : undefined);
+              const providerModels = props.models.filter((model) => model.provider === provider.id);
+              const canManage =
+                provider.authMethods.includes("api_key") && (provider.credentialSource === "apple_pi" || provider.credentialSource === "unavailable");
+              const isEditing = editing === provider.id;
+              const isOAuthActive = oauthLogin?.providerId === provider.id;
+              const isCustom = isCustomProvider(provider.id, props.customProviders);
+              const isEditingCustomProvider = customProviderForm === provider.id;
+              return (
+                <article id="provider-detail" className={`provider-detail status-${checking ? "checking" : provider.status}`} aria-busy={checking}>
+                  <div className="provider-summary">
+                    <div className="provider-name">
+                      <span className="provider-logo" aria-hidden="true">
+                        {provider.name.slice(0, 1).toUpperCase()}
+                      </span>
+                      <div>
+                        <h3>{provider.name}</h3>
+                        <p>{provider.id}</p>
+                      </div>
+                    </div>
+                    <StatusBadge
+                      className="provider-status"
+                      tone={provider.status === "connected" ? "success" : provider.status === "error" ? "danger" : "neutral"}
+                    >
+                      {checking ? (
+                        <>
+                          <CircleDashed size={13} /> Checking
+                        </>
+                      ) : provider.status === "connected" ? (
+                        <>
+                          <Check size={13} /> Connected
+                        </>
+                      ) : provider.status === "error" ? (
+                        <>
+                          <AlertCircle size={13} /> Error
+                        </>
+                      ) : (
+                        "Disconnected"
+                      )}
+                    </StatusBadge>
                   </div>
-                  <div>
-                    <dt>Models</dt>
-                    <dd>{providerModels.length || provider.availableModelCount}</dd>
-                  </div>
-                </dl>
-                {diagnostic && (
-                  <p className={`provider-diagnostic ${diagnostic.severity}`} role={diagnostic.severity === "error" ? "alert" : "status"}>
-                    {diagnostic.message}
-                  </p>
-                )}
-                {isOAuthActive && oauthLogin && (
-                  <OAuthLoginPanel
-                    state={oauthLogin}
-                    onCancel={cancelOAuthLogin}
-                    onSubmit={submitOAuthPrompt}
-                    onPromptValueChange={(value) => setOauthLogin((current) => (current ? { ...current, promptValue: value } : current))}
-                  />
-                )}
-                {isEditing && canManage && (
-                  <form
-                    className="provider-key-form"
-                    onSubmit={(event) => {
-                      event.preventDefault();
-                      void connect(provider);
-                    }}
-                  >
-                    <label htmlFor={`provider-key-${provider.id}`}>{provider.status === "connected" ? "Replacement API key" : "API key"}</label>
+                  <dl className="provider-meta">
                     <div>
-                      <input
-                        id={`provider-key-${provider.id}`}
-                        type="password"
-                        autoComplete="off"
-                        spellCheck={false}
-                        value={apiKeys[provider.id] ?? ""}
-                        onChange={(event) => setApiKeys((current) => ({ ...current, [provider.id]: event.target.value }))}
+                      <dt>Credential</dt>
+                      <dd>{sourceLabels[provider.credentialSource]}</dd>
+                    </div>
+                    <div>
+                      <dt>Models</dt>
+                      <dd>{providerModels.length || provider.availableModelCount}</dd>
+                    </div>
+                  </dl>
+                  {diagnostic && (
+                    <p className={`provider-diagnostic ${diagnostic.severity}`} role={diagnostic.severity === "error" ? "alert" : "status"}>
+                      {diagnostic.message}
+                    </p>
+                  )}
+                  {isOAuthActive && oauthLogin && (
+                    <OAuthLoginPanel
+                      state={oauthLogin}
+                      onCancel={cancelOAuthLogin}
+                      onSubmit={submitOAuthPrompt}
+                      onPromptValueChange={(value) => setOauthLogin((current) => (current ? { ...current, promptValue: value } : current))}
+                    />
+                  )}
+                  {isEditing && canManage && (
+                    <form
+                      className="provider-key-form"
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        void connect(provider);
+                      }}
+                    >
+                      <label htmlFor={`provider-key-${provider.id}`}>{provider.status === "connected" ? "Replacement API key" : "API key"}</label>
+                      <div>
+                        <input
+                          id={`provider-key-${provider.id}`}
+                          type="password"
+                          autoComplete="off"
+                          spellCheck={false}
+                          value={apiKeys[provider.id] ?? ""}
+                          onChange={(event) => setApiKeys((current) => ({ ...current, [provider.id]: event.target.value }))}
+                          disabled={checking}
+                          autoFocus
+                        />
+                        <button type="submit" disabled={checking || !apiKeys[provider.id]?.trim()}>
+                          {provider.status === "connected" ? "Replace key" : "Connect"}
+                        </button>
+                        <button
+                          type="button"
+                          className="secondary"
+                          onClick={() => {
+                            setEditing(null);
+                            setApiKeys((current) => ({ ...current, [provider.id]: "" }));
+                          }}
+                          disabled={checking}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </form>
+                  )}
+                  {isEditingCustomProvider && (
+                    <CustomProviderForm
+                      initial={props.customProviders.find((definition) => definition.id === provider.id)}
+                      busy={customProviderBusy}
+                      onCancel={() => setCustomProviderForm(null)}
+                      onSaved={(id) => {
+                        setCustomProviderForm(null);
+                        void props.onRefresh(id);
+                      }}
+                      onSubmit={async (definition) => {
+                        setCustomProviderBusy(true);
+                        try {
+                          return await props.onUpdateCustomProvider(provider.id, definition);
+                        } finally {
+                          setCustomProviderBusy(false);
+                        }
+                      }}
+                    />
+                  )}
+                  {provider.status === "connected" && providerModels.length > 0 && (
+                    <div className="provider-models">
+                      <label htmlFor={`provider-model-${provider.id}`}>Default model</label>
+                      <select
+                        id={`provider-model-${provider.id}`}
+                        value={props.defaultModel?.provider === provider.id ? `${props.defaultModel.provider}::${props.defaultModel.modelId}` : ""}
+                        onChange={(event) => {
+                          const [, modelId] = event.target.value.split("::");
+                          if (modelId) void props.onDefaultModel({ provider: provider.id, modelId });
+                        }}
+                      >
+                        <option value="">Choose a model</option>
+                        {providerModels.map((model) => (
+                          <option key={model.modelId} value={`${provider.id}::${model.modelId}`}>
+                            {model.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                  {provider.status === "connected" && providerModels.length === 0 && (
+                    <div className="provider-no-models">
+                      <strong>No models available yet.</strong>
+                      <span>Verify the credential, then retry loading this provider’s models.</span>
+                    </div>
+                  )}
+                  <div className="provider-actions">
+                    {canManage && !isEditing && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditing(provider.id);
+                          setFeedback((current) => ({ ...current, [provider.id]: undefined }));
+                        }}
                         disabled={checking}
-                        autoFocus
-                      />
-                      <button type="submit" disabled={checking || !apiKeys[provider.id]?.trim()}>
+                      >
                         {provider.status === "connected" ? "Replace key" : "Connect"}
                       </button>
+                    )}
+                    {canStartOAuthLogin(provider) && !isOAuthActive && (
+                      <button type="button" onClick={() => startOAuthLogin(provider)} disabled={checking}>
+                        Sign in
+                      </button>
+                    )}
+                    {provider.status === "connected" && (
+                      <button type="button" className="secondary" onClick={() => void run(provider.id, () => props.onVerify(provider.id))} disabled={checking}>
+                        Verify
+                      </button>
+                    )}
+                    {provider.status === "connected" && provider.credentialSource === "apple_pi" && (
+                      <button
+                        type="button"
+                        className="danger-button"
+                        onClick={() => void run(provider.id, () => props.onDisconnect(provider.id), true)}
+                        disabled={checking}
+                      >
+                        Disconnect
+                      </button>
+                    )}
+                    {isCustom && !isEditingCustomProvider && (
                       <button
                         type="button"
                         className="secondary"
                         onClick={() => {
-                          setEditing(null);
-                          setApiKeys((current) => ({ ...current, [provider.id]: "" }));
+                          setCustomProviderForm(provider.id);
+                          setFeedback((current) => ({ ...current, [provider.id]: undefined }));
                         }}
                         disabled={checking}
                       >
-                        Cancel
+                        <Pencil size={13} /> Edit
                       </button>
-                    </div>
-                  </form>
-                )}
-                {isEditingCustomProvider && (
-                  <CustomProviderForm
-                    initial={props.customProviders.find((definition) => definition.id === provider.id)}
-                    busy={customProviderBusy}
-                    onCancel={() => setCustomProviderForm(null)}
-                    onSaved={(id) => {
-                      setCustomProviderForm(null);
-                      void props.onRefresh(id);
-                    }}
-                    onSubmit={async (definition) => {
-                      setCustomProviderBusy(true);
-                      try {
-                        return await props.onUpdateCustomProvider(provider.id, definition);
-                      } finally {
-                        setCustomProviderBusy(false);
-                      }
-                    }}
-                  />
-                )}
-                {provider.status === "connected" && providerModels.length > 0 && (
-                  <div className="provider-models">
-                    <label htmlFor={`provider-model-${provider.id}`}>Default model</label>
-                    <select
-                      id={`provider-model-${provider.id}`}
-                      value={props.defaultModel?.provider === provider.id ? `${props.defaultModel.provider}::${props.defaultModel.modelId}` : ""}
-                      onChange={(event) => {
-                        const [, modelId] = event.target.value.split("::");
-                        if (modelId) void props.onDefaultModel({ provider: provider.id, modelId });
-                      }}
-                    >
-                      <option value="">Choose a model</option>
-                      {providerModels.map((model) => (
-                        <option key={model.modelId} value={`${provider.id}::${model.modelId}`}>
-                          {model.name}
-                        </option>
-                      ))}
-                    </select>
+                    )}
+                    {isCustom && (
+                      <button type="button" className="danger-button" onClick={() => void removeCustomProvider(provider)} disabled={checking}>
+                        <X size={13} /> Remove
+                      </button>
+                    )}
                   </div>
-                )}
-                {provider.status === "connected" && providerModels.length === 0 && (
-                  <div className="provider-no-models">
-                    <strong>No models available yet.</strong>
-                    <span>Verify the credential, then retry loading this provider’s models.</span>
-                  </div>
-                )}
-                <div className="provider-actions">
-                  {canManage && !isEditing && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setEditing(provider.id);
-                        setFeedback((current) => ({ ...current, [provider.id]: undefined }));
-                      }}
-                      disabled={checking}
-                    >
-                      {provider.status === "connected" ? "Replace key" : "Connect"}
-                    </button>
-                  )}
-                  {canStartOAuthLogin(provider) && !isOAuthActive && (
-                    <button type="button" onClick={() => startOAuthLogin(provider)} disabled={checking}>
-                      Sign in
-                    </button>
-                  )}
-                  {provider.status === "connected" && (
-                    <button type="button" className="secondary" onClick={() => void run(provider.id, () => props.onVerify(provider.id))} disabled={checking}>
-                      Verify
-                    </button>
-                  )}
-                  {provider.status === "connected" && provider.credentialSource === "apple_pi" && (
-                    <button
-                      type="button"
-                      className="danger-button"
-                      onClick={() => void run(provider.id, () => props.onDisconnect(provider.id), true)}
-                      disabled={checking}
-                    >
-                      Disconnect
-                    </button>
-                  )}
-                  {isCustom && !isEditingCustomProvider && (
-                    <button
-                      type="button"
-                      className="secondary"
-                      onClick={() => {
-                        setCustomProviderForm(provider.id);
-                        setFeedback((current) => ({ ...current, [provider.id]: undefined }));
-                      }}
-                      disabled={checking}
-                    >
-                      <Pencil size={13} /> Edit
-                    </button>
-                  )}
-                  {isCustom && (
-                    <button type="button" className="danger-button" onClick={() => void removeCustomProvider(provider)} disabled={checking}>
-                      <X size={13} /> Remove
-                    </button>
-                  )}
-                </div>
-              </article>
-            );
-          })}
+                </article>
+              );
+            })()}
         </div>
       )}
     </section>
