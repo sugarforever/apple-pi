@@ -1,6 +1,14 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import type { CustomProviderDefinition, ProviderItem } from "@apple-pi/protocol";
-import { canStartOAuthLogin, firstActionableDiagnostic, isCustomProvider, modelUnavailable } from "./src/provider-settings.js";
+import {
+  canStartOAuthLogin,
+  filterProviders,
+  firstActionableDiagnostic,
+  isCustomProvider,
+  modelUnavailable,
+  nextSelectedProviderId,
+} from "./src/provider-settings.js";
 
 const model = (provider: string, modelId: string) => ({ provider, modelId, name: modelId });
 
@@ -89,5 +97,47 @@ describe("isCustomProvider", () => {
 
   it("is false when there are no custom providers at all", () => {
     expect(isCustomProvider("my-local-llm", [])).toBe(false);
+  });
+});
+
+describe("provider browser", () => {
+  const customDefinition: CustomProviderDefinition = {
+    id: "local",
+    name: "Local Models",
+    baseUrl: "https://localhost:8080/v1",
+    api: "openai-completions",
+    models: [{ id: "local-model" }],
+  };
+  const providers = [
+    provider({ id: "anthropic", name: "Anthropic", authMethods: ["api_key"], status: "connected", credentialSource: "apple_pi" }),
+    provider({ id: "openai", name: "OpenAI", authMethods: ["api_key"] }),
+    provider({ id: "local", name: "Local Models", authMethods: ["api_key"] }),
+  ];
+
+  it("searches by provider identity and applies connected/custom filters", () => {
+    expect(filterProviders(providers, [customDefinition], "OPEN", "all").map((item) => item.id)).toEqual(["openai"]);
+    expect(filterProviders(providers, [customDefinition], "", "connected").map((item) => item.id)).toEqual(["anthropic"]);
+    expect(filterProviders(providers, [customDefinition], "", "custom").map((item) => item.id)).toEqual(["local"]);
+  });
+
+  it("keeps the selected provider across refreshes and falls back after removal", () => {
+    expect(nextSelectedProviderId(providers, "openai")).toBe("openai");
+    expect(
+      nextSelectedProviderId(
+        providers.filter((item) => item.id !== "openai"),
+        "openai",
+      ),
+    ).toBe("anthropic");
+    expect(nextSelectedProviderId([], "openai")).toBeNull();
+  });
+
+  it("renders one selectable directory and one busy detail surface", () => {
+    const source = readFileSync(new URL("./src/provider-settings.tsx", import.meta.url), "utf8");
+    expect(source).toContain('role="listbox"');
+    expect(source).toContain("aria-selected={effectiveSelectedProviderId === provider.id}");
+    expect(source).toContain('id="provider-detail"');
+    expect(source).toContain("aria-busy={checking}");
+    expect(source).toContain("disabled={checking}");
+    expect(source).not.toContain("className={`provider-card");
   });
 });
