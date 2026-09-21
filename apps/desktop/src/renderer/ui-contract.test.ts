@@ -3,6 +3,9 @@ import { describe, expect, it } from "vitest";
 
 const source = readFileSync(new URL("./src/main.tsx", import.meta.url), "utf8");
 const styles = readFileSync(new URL("./src/styles.css", import.meta.url), "utf8");
+const settings = readFileSync(new URL("./src/settings-shell.tsx", import.meta.url), "utf8");
+const primitives = readFileSync(new URL("./src/ui-primitives.tsx", import.meta.url), "utf8");
+const modelSelect = readFileSync(new URL("./src/model-select.tsx", import.meta.url), "utf8");
 const document = readFileSync(new URL("./index.html", import.meta.url), "utf8");
 const rule = (selector: string, source = styles): string => {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -23,17 +26,18 @@ describe("renderer accessibility contract", () => {
     expect(source).toContain('name="message"');
     expect(source).toContain('autoComplete="off"');
     expect(source).toContain('ariaLabel="Session model"');
-    expect(source).toContain("aria-label={ariaLabel}");
+    expect(modelSelect).toContain("aria-label={props.ariaLabel}");
     expect(source).toContain('aria-label="Send message"');
   });
 
   it("provides an accessible provider onboarding flow", () => {
     const providers = readFileSync(new URL("./src/provider-settings.tsx", import.meta.url), "utf8");
     expect(providers).toContain('type="password"');
-    expect(providers).toContain('type="search"');
+    expect(providers).toContain("<SearchField");
+    expect(primitives).toContain('type="search"');
     expect(providers).toContain("aria-busy={checking}");
     expect(providers).toContain('role={diagnostic.severity === "error" ? "alert" : "status"}');
-    expect(source).toContain('<a href="#providers-title">Connect a provider</a>');
+    expect(settings).toContain('<a href="#providers-title">Connect a provider</a>');
   });
 
   it("announces conversation updates and errors", () => {
@@ -135,9 +139,11 @@ describe("renderer visual contract", () => {
 
   it("uses a local system type stack and explicit readable type tokens", () => {
     expect(styles).not.toContain("fonts.googleapis.com");
-    expect(styles).toContain("--text-body: 15px");
-    expect(styles).toContain("--text-ui: 14px");
-    expect(styles).toContain("--text-meta: 12px");
+    expect(styles).toContain("--text-body: 14px");
+    expect(styles).toContain("--text-ui: 13px");
+    expect(styles).toContain("--text-meta: 11px");
+    expect(styles).toContain("--control-height: 34px");
+    expect(styles).toContain("--content-width: 620px");
   });
 
   it("provides component-level focus treatments", () => {
@@ -262,7 +268,7 @@ describe("renderer skills settings contract", () => {
 
   it("provides an accessible, searchable skills list with per-item busy state", () => {
     expect(skills).toContain('<section className="skill-settings" aria-labelledby="skills-title">');
-    expect(skills).toContain('type="search"');
+    expect(skills).toContain("<SearchField");
     expect(skills).toContain("aria-busy={checking}");
   });
 
@@ -378,17 +384,19 @@ describe("renderer skills settings contract", () => {
 });
 
 describe("renderer skills settings mounting contract", () => {
-  it("mounts SkillSettings alongside ProviderSettings, wired to window.applePi.skill and refreshed with Settings", () => {
-    expect(source).toContain("<SkillSettings");
+  it("mounts the typed Settings shell with Provider and Skill settings wired to their existing owners", () => {
+    expect(source).toContain("<SettingsShell");
+    expect(settings).toContain("<ProviderSettings {...props.providerSettings} />");
+    expect(settings).toContain("<SkillSettings {...props.skillSettings} />");
     expect(source).toContain("window.applePi.skill.list()");
-    expect(source).toContain("onInstall={async (scope, sourcePath) => {");
-    expect(source).toContain("onPickDirectory={() => window.applePi.skill.pickDirectory()}");
-    expect(source).toContain("canInstallToProject={Boolean(workspacePath)}");
+    expect(source).toContain("onInstall: async (scope, sourcePath) => {");
+    expect(source).toContain("onPickDirectory: () => window.applePi.skill.pickDirectory()");
+    expect(source).toContain("canInstallToProject: Boolean(workspacePath)");
   });
 
   it("fetches and passes disabled skills alongside the enabled catalog, refreshed at the same points", () => {
     expect(source).toContain("window.applePi.skill.listDisabled()");
-    expect(source).toContain("disabledSkills={disabledSkills}");
+    expect(source).toContain("disabledSkills,");
     // Refreshed on mount and whenever Settings opens, matching skillCatalog's own refresh points.
     expect(source).toContain("setDisabledSkills");
   });
