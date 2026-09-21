@@ -8,6 +8,7 @@ export type SkillActivity = "idle" | "checking";
 export interface SkillSettingsProps {
   skills: SkillItem[];
   diagnostics: SkillDiagnostic[];
+  unscopedDiagnostics?: SkillDiagnostic[];
   // Skills currently sitting in Apple Pi's disabled holding directory (see
   // `PiSkillService.listDisabled` in `@apple-pi/pi-adapter`'s skill-service.ts).
   // Deliberately a separate list rather than folded into `skills`: a disabled
@@ -235,6 +236,16 @@ export function SkillSettings(props: SkillSettingsProps) {
       {groupSkillDiagnostics(props.diagnostics).map((group) => (
         <details key={`catalog-diagnostic-${group.type}`} className={`skill-diagnostic skill-diagnostic-group ${group.type}`}>
           <summary role={diagnosticRole(group.type)}>{group.headline}</summary>
+          <ul>
+            {group.items.map((item, index) => (
+              <li key={`${group.type}-${index}`}>{item}</li>
+            ))}
+          </ul>
+        </details>
+      ))}
+      {groupSkillDiagnostics(props.unscopedDiagnostics ?? []).map((group) => (
+        <details key={`unscoped-catalog-diagnostic-${group.type}`} className={`skill-diagnostic skill-diagnostic-group ${group.type}`}>
+          <summary role={diagnosticRole(group.type)}>Unscoped: {group.headline}</summary>
           <ul>
             {group.items.map((item, index) => (
               <li key={`${group.type}-${index}`}>{item}</li>

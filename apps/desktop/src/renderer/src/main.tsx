@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useReducer, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   AlertCircle,
@@ -24,6 +24,7 @@ import type { Catalog, ModelItem, SessionItem, WorkspaceOpenResult } from "../gl
 import { ModelSelect, modelKey, parseModelKey } from "./model-select.js";
 import { modelUnavailable } from "./provider-settings.js";
 import { SettingsShell } from "./settings-shell.js";
+import { buildSkillScopeViewModel } from "./skill-scope-view-model.js";
 import { IconButton } from "./ui-primitives.js";
 import "./styles.css";
 
@@ -79,15 +80,20 @@ function App() {
   const [customProviders, setCustomProviders] = useState<CustomProviderDefinition[]>([]);
   const [skillCatalog, setSkillCatalog] = useState<SkillCatalog>({ skills: [], diagnostics: [] });
   const [disabledSkills, setDisabledSkills] = useState<SkillItem[]>([]);
+  const [skillCatalogWorkspacePath, setSkillCatalogWorkspacePath] = useState<string | undefined>(undefined);
+  const skillRefreshToken = useRef(0);
   // After a skill mutation both lists are stale at once. Fetching them
   // together and committing in one go keeps a skill that just moved between
   // them from vanishing for a frame (gone from `skills`, not yet in
   // `disabledSkills`), which would unmount its card mid-settle.
-  const refreshSkillLists = async (): Promise<void> => {
+  const refreshSkillLists = useCallback(async (catalogWorkspacePath: string): Promise<void> => {
+    const token = ++skillRefreshToken.current;
     const [catalog, disabled] = await Promise.all([window.applePi.skill.list(), window.applePi.skill.listDisabled()]);
+    if (skillRefreshToken.current !== token) return;
     setSkillCatalog(catalog);
     setDisabledSkills(disabled);
-  };
+    setSkillCatalogWorkspacePath(catalogWorkspacePath || undefined);
+  }, []);
   const [draft, setDraft] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [activeSessionId, setActiveSessionId] = useState("");
@@ -104,6 +110,16 @@ function App() {
     }, new Map<string, ModelItem[]>());
   }, [models]);
   const timelineItems = useMemo(() => toTimelineItems(state.messages), [state.messages]);
+  const skillScopeViewModel = useMemo(
+    () =>
+      buildSkillScopeViewModel({
+        catalog: skillCatalog,
+        disabled: disabledSkills,
+        workspacePath: workspacePath || undefined,
+        catalogWorkspacePath: skillCatalogWorkspacePath,
+      }),
+    [disabledSkills, skillCatalog, skillCatalogWorkspacePath, workspacePath],
+  );
   const activeModelUnavailable = state.opened && modelUnavailable(models, state.model);
   const workspaceName = workspacePath.split("/").filter(Boolean).at(-1) ?? "No workspace";
   const activeSessionName = activeSessionId ? (sessions.find((session) => session.id === activeSessionId)?.name ?? "New session") : "Welcome to Apple Pi";
@@ -143,18 +159,15 @@ function App() {
       .listCustom()
       .then(setCustomProviders)
       .catch(() => setCustomProviders([]));
-    void window.applePi.skill
-      .list()
-      .then(setSkillCatalog)
-      .catch(() => setSkillCatalog({ skills: [], diagnostics: [] }));
-    void window.applePi.skill
-      .listDisabled()
-      .then(setDisabledSkills)
-      .catch(() => setDisabledSkills([]));
+    void refreshSkillLists("").catch(() => {
+      setSkillCatalog({ skills: [], diagnostics: [] });
+      setDisabledSkills([]);
+      setSkillCatalogWorkspacePath(undefined);
+    });
     return window.applePi.session.subscribe((event) => {
       if (event.type === "session.event") dispatch({ type: "event", sequence: event.sequence, payload: event.payload });
     });
-  }, []);
+  }, [refreshSkillLists]);
 
   // Reusing compatible Pi CLI credentials means a `pi auth login`/`logout` or a
   // models.json edit made in a terminal, while this app stayed open, should not
@@ -175,15 +188,8 @@ function App() {
       .listCustom()
       .then(setCustomProviders)
       .catch(() => undefined);
-    void window.applePi.skill
-      .list()
-      .then(setSkillCatalog)
-      .catch(() => undefined);
-    void window.applePi.skill
-      .listDisabled()
-      .then(setDisabledSkills)
-      .catch(() => undefined);
-  }, [settingsOpen]);
+    void refreshSkillLists(workspacePath).catch(() => undefined);
+  }, [refreshSkillLists, settingsOpen, workspacePath]);
 
   // Runs after any authoritative model list load (startup, or a live refresh
   // below), so a default model whose provider was disconnected or removed
@@ -207,10 +213,12 @@ function App() {
     if (!result) return;
     if (result.catalog) setCatalog(result.catalog);
     setWorkspacePath(result.workspacePath);
+    setSkillCatalogWorkspacePath(undefined);
     setSessions(result.sessions.map((session) => ({ ...session, persisted: true })));
     updateActiveSessionFromSnapshot(result.session);
     dispatch({ type: "operation_snapshot", snapshot: result.session });
     void refreshSessions();
+    void refreshSkillLists(result.workspacePath).catch(() => undefined);
   };
 
   const snapshotOp = async (operation: Promise<SessionSnapshot>, label = "Updating session…"): Promise<void> => {
@@ -477,23 +485,24 @@ function App() {
               },
             }}
             skillSettings={{
-              skills: skillCatalog.skills,
-              diagnostics: skillCatalog.diagnostics,
-              disabledSkills,
+              skills: skillScopeViewModel.settings.enabled,
+              diagnostics: skillScopeViewModel.settings.diagnostics,
+              unscopedDiagnostics: skillScopeViewModel.unscopedDiagnostics,
+              disabledSkills: skillScopeViewModel.settings.disabled,
               canInstallToProject: Boolean(workspacePath),
               onInstall: async (scope, sourcePath) => {
                 const result = await window.applePi.skill.install(scope, sourcePath);
-                setSkillCatalog(await window.applePi.skill.list());
+                await refreshSkillLists(workspacePath);
                 return result;
               },
               onSetEnabled: async (name, scope, enabled) => {
                 const result = await window.applePi.skill.setEnabled(name, scope, enabled);
-                await refreshSkillLists();
+                await refreshSkillLists(workspacePath);
                 return result;
               },
               onRemove: async (name, scope) => {
                 const result = await window.applePi.skill.remove(name, scope);
-                await refreshSkillLists();
+                await refreshSkillLists(workspacePath);
                 return result;
               },
               onPickDirectory: () => window.applePi.skill.pickDirectory(),

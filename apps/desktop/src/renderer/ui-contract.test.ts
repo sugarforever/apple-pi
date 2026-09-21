@@ -184,7 +184,7 @@ describe("renderer credential reuse contract", () => {
   it("reloads provider and model state whenever Settings is opened, to reflect external CLI credential and models.json changes", () => {
     expect(source).toContain("if (!settingsOpen) return;");
     expect(source).toContain("window.applePi.provider\n      .refreshModels()");
-    expect(source).toContain("}, [settingsOpen]);");
+    expect(source).toContain("}, [refreshSkillLists, settingsOpen, workspacePath]);");
   });
 
   it("labels a shell-command-backed credential distinctly from a stored key or environment variable", () => {
@@ -392,6 +392,9 @@ describe("renderer skills settings mounting contract", () => {
     expect(source).toContain("onInstall: async (scope, sourcePath) => {");
     expect(source).toContain("onPickDirectory: () => window.applePi.skill.pickDirectory()");
     expect(source).toContain("canInstallToProject: Boolean(workspacePath)");
+    expect(source).toContain("skills: skillScopeViewModel.settings.enabled");
+    expect(source).toContain("disabledSkills: skillScopeViewModel.settings.disabled");
+    expect(source).toContain("unscopedDiagnostics: skillScopeViewModel.unscopedDiagnostics");
   });
 
   it("fetches and passes disabled skills alongside the enabled catalog, refreshed at the same points", () => {
@@ -403,8 +406,10 @@ describe("renderer skills settings mounting contract", () => {
 
   it("refreshes both skill lists together after a mutation, so a skill moving between them never vanishes for a frame", () => {
     expect(source).toContain("const [catalog, disabled] = await Promise.all([window.applePi.skill.list(), window.applePi.skill.listDisabled()]);");
-    expect(source).toContain("const result = await window.applePi.skill.setEnabled(name, scope, enabled);\n                await refreshSkillLists();");
-    expect(source).toContain("const result = await window.applePi.skill.remove(name, scope);\n                await refreshSkillLists();");
+    expect(source).toContain(
+      "const result = await window.applePi.skill.setEnabled(name, scope, enabled);\n                await refreshSkillLists(workspacePath);",
+    );
+    expect(source).toContain("const result = await window.applePi.skill.remove(name, scope);\n                await refreshSkillLists(workspacePath);");
   });
 });
 
