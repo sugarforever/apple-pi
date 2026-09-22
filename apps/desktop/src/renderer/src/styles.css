@@ -273,7 +273,8 @@ button {
   padding-top: 8px;
   border-top: 0;
 }
-.settings-button {
+.settings-button,
+.workspace-skills-button {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -289,8 +290,13 @@ button {
   text-align: left;
   cursor: pointer;
 }
+.workspace-skills-button {
+  margin-top: 8px;
+}
 .settings-button:hover,
-.settings-button[aria-pressed="true"] {
+.settings-button[aria-pressed="true"],
+.workspace-skills-button:hover,
+.workspace-skills-button[aria-pressed="true"] {
   background: var(--selected);
   color: #fff;
 }

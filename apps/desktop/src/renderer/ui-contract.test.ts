@@ -285,21 +285,17 @@ describe("renderer skills settings contract", () => {
     expect(rule(".skill-diagnostic-group summary")).toContain("cursor: pointer");
   });
 
-  it("offers a labelled install control that drives a native directory picker with a scope choice", () => {
+  it("offers a labelled install control fixed to the surface's explicit scope", () => {
     expect(skills).toContain('aria-label="Install skill"');
     expect(skills).toContain("onClick={() => void pickDirectory()}");
     expect(skills).toContain("props.onPickDirectory()");
-    expect(skills).toContain("props.canInstallToProject &&");
+    expect(skills).toContain("props.onInstall(props.scope, pickedPath)");
+    expect(skills).toContain('Install for: {props.scope === "user" ? "User" : "Workspace"}');
   });
 
-  // Issue #68: with no workspace open, the panel used to just show fewer
-  // skills with no explanation. Now it says so explicitly, reusing the same
-  // `canInstallToProject` flag the install form's project-scope radio
-  // already keys off (see the test above), rather than adding a second
-  // "is a workspace open" signal.
-  it("explains when project-scope skill management isn't available, instead of silently showing fewer skills", () => {
-    expect(skills).toContain("export function projectScopeNotice(canInstallToProject: boolean): string | undefined {");
-    expect(skills).toContain("projectScopeNotice(props.canInstallToProject)");
+  it("makes scoped deletion explicit and preserves a same-name copy in the other scope", () => {
+    expect(skills).toContain('export function removalConfirmation(skill: Pick<SkillItem, "name" | "scope">, existsInOtherScope: boolean): string {');
+    expect(skills).toContain("removalConfirmation(skill, props.duplicateNames?.has(skill.name) ?? false)");
   });
 
   it("offers a per-skill enable/disable toggle wired to onSetEnabled", () => {
@@ -388,28 +384,36 @@ describe("renderer skills settings mounting contract", () => {
     expect(source).toContain("<SettingsShell");
     expect(settings).toContain("<ProviderSettings {...props.providerSettings} />");
     expect(settings).toContain("<SkillSettings {...props.skillSettings} />");
-    expect(source).toContain("window.applePi.skill.list()");
+    expect(source).toContain("window.applePi.skill.list(scopes)");
     expect(source).toContain("onInstall: async (scope, sourcePath) => {");
     expect(source).toContain("onPickDirectory: () => window.applePi.skill.pickDirectory()");
-    expect(source).toContain("canInstallToProject: Boolean(workspacePath)");
+    expect(source).toContain('scope: "user"');
     expect(source).toContain("skills: skillScopeViewModel.settings.enabled");
     expect(source).toContain("disabledSkills: skillScopeViewModel.settings.disabled");
     expect(source).toContain("unscopedDiagnostics: skillScopeViewModel.unscopedDiagnostics");
   });
 
   it("fetches and passes disabled skills alongside the enabled catalog, refreshed at the same points", () => {
-    expect(source).toContain("window.applePi.skill.listDisabled()");
+    expect(source).toContain("window.applePi.skill.listDisabled(scopes)");
     expect(source).toContain("disabledSkills,");
     // Refreshed on mount and whenever Settings opens, matching skillCatalog's own refresh points.
     expect(source).toContain("setDisabledSkills");
   });
 
   it("refreshes both skill lists together after a mutation, so a skill moving between them never vanishes for a frame", () => {
-    expect(source).toContain("const [catalog, disabled] = await Promise.all([window.applePi.skill.list(), window.applePi.skill.listDisabled()]);");
+    expect(source).toContain("const [catalog, disabled] = await Promise.all([window.applePi.skill.list(scopes), window.applePi.skill.listDisabled(scopes)]);");
     expect(source).toContain(
       "const result = await window.applePi.skill.setEnabled(name, scope, enabled);\n                await refreshSkillLists(workspacePath);",
     );
     expect(source).toContain("const result = await window.applePi.skill.remove(name, scope);\n                await refreshSkillLists(workspacePath);");
+  });
+
+  it("mounts a project-only Skill manager while a current workspace catalog is available", () => {
+    expect(source).toContain('scope="project"');
+    expect(source).toContain('title="Workspace Skills"');
+    expect(source).toContain("skills={skillScopeViewModel.workspace.enabled}");
+    expect(source).toContain("disabledSkills={skillScopeViewModel.workspace.disabled}");
+    expect(source).toContain("workspaceSkillsOpen && skillScopeViewModel.workspace");
   });
 });
 

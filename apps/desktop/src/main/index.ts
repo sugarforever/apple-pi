@@ -10,7 +10,7 @@ import { ProviderCredentialController } from "./provider-credential-controller.j
 import { attachFileLogging, log } from "./logger.js";
 import { applyProcessHardening, applySessionPolicy, applyWindowPolicy } from "./security.js";
 import { startAutoUpdater, type AutoUpdateHandle } from "./updater.js";
-import type { CustomProviderDefinition, SessionSnapshot } from "@apple-pi/protocol";
+import type { CustomProviderDefinition, SessionSnapshot, SkillScope } from "@apple-pi/protocol";
 
 // Must run before `app.whenReady()` resolves.
 //
@@ -282,22 +282,30 @@ handle("provider:removeCustom", async (_event, value: unknown) => {
 // `skill.list`'s `cwd` is optional for exactly this reason: omitting it (as
 // opposed to the old hardcoded empty catalog below) tells the skill service
 // to skip project-scope discovery and report user-scope skills only.
-handle("skill:list", () => host.request("skill.list", workspacePath ? { cwd: workspacePath } : {}));
-handle("skill:listDisabled", () => (workspacePath ? host.request("skill.listDisabled", { cwd: workspacePath }) : []));
+handle("skill:list", (_event, value: unknown) => {
+  const scopes = skillScopesInput(value);
+  requireWorkspaceForProjectScopes(scopes);
+  return host.request("skill.list", { ...(workspacePath ? { cwd: workspacePath } : {}), scopes });
+});
+handle("skill:listDisabled", (_event, value: unknown) => {
+  const scopes = skillScopesInput(value);
+  requireWorkspaceForProjectScopes(scopes);
+  return host.request("skill.listDisabled", { ...(workspacePath ? { cwd: workspacePath } : {}), scopes });
+});
 handle("skill:install", (_event, value: unknown) => {
-  if (!workspacePath) throw new Error("Select a workspace first");
   const { scope, sourcePath } = skillInstallInput(value);
-  return host.request("skill.install", { cwd: workspacePath, scope, sourcePath });
+  requireWorkspaceForProjectScopes([scope]);
+  return host.request("skill.install", { ...(workspacePath ? { cwd: workspacePath } : {}), scope, sourcePath });
 });
 handle("skill:setEnabled", (_event, value: unknown) => {
-  if (!workspacePath) throw new Error("Select a workspace first");
   const { name, scope, enabled } = skillSetEnabledInput(value);
-  return host.request("skill.setEnabled", { cwd: workspacePath, name, scope, enabled });
+  requireWorkspaceForProjectScopes([scope]);
+  return host.request("skill.setEnabled", { ...(workspacePath ? { cwd: workspacePath } : {}), name, scope, enabled });
 });
 handle("skill:remove", (_event, value: unknown) => {
-  if (!workspacePath) throw new Error("Select a workspace first");
   const { name, scope } = skillNameInput(value);
-  return host.request("skill.remove", { cwd: workspacePath, name, scope });
+  requireWorkspaceForProjectScopes([scope]);
+  return host.request("skill.remove", { ...(workspacePath ? { cwd: workspacePath } : {}), name, scope });
 });
 // Mirrors only the dialog portion of `workspace:pick` above: this never sets
 // `workspacePath`, touches the workspace catalog, or opens a session -- it
@@ -349,6 +357,17 @@ function providerOperation(value: unknown, withApiKey = false): { providerId: st
 function skillScope(value: unknown): "user" | "project" {
   if (value !== "user" && value !== "project") throw new Error("Invalid skill scope");
   return value;
+}
+
+function skillScopesInput(value: unknown): SkillScope[] {
+  if (!Array.isArray(value) || value.length === 0 || value.length > 2) throw new Error("Invalid skill scopes");
+  const scopes = value.map(skillScope);
+  if (new Set(scopes).size !== scopes.length) throw new Error("Invalid skill scopes");
+  return scopes;
+}
+
+function requireWorkspaceForProjectScopes(scopes: SkillScope[]): void {
+  if (scopes.includes("project") && !workspacePath) throw new Error("Select a workspace first");
 }
 
 function skillNameInput(value: unknown): { name: string; scope: "user" | "project" } {

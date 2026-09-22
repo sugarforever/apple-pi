@@ -306,13 +306,18 @@ describe("HostServer", () => {
 
   it("lists skills from the skill service", async () => {
     const server = new HostServer();
-    const service = (server as unknown as { pi: { skills: { list: (cwd: string) => Promise<unknown> } } }).pi.skills;
+    const service = (server as unknown as { pi: { skills: { list: (cwd: string, scopes: string[]) => Promise<unknown> } } }).pi.skills;
     service.list = vi.fn(async () => ({ skills: [sampleSkill], diagnostics: [] }));
 
-    const response = await server.handle({ protocolVersion: 1, requestId: "skill-list", type: "skill.list", payload: { cwd: "/workspace" } });
+    const response = await server.handle({
+      protocolVersion: 1,
+      requestId: "skill-list",
+      type: "skill.list",
+      payload: { cwd: "/workspace", scopes: ["project"] },
+    });
 
     expect(response).toEqual({ protocolVersion: 1, requestId: "skill-list", ok: true, result: { skills: [sampleSkill], diagnostics: [] } });
-    expect(service.list).toHaveBeenCalledWith("/workspace");
+    expect(service.list).toHaveBeenCalledWith("/workspace", ["project"]);
   });
 
   // `cwd` is optional on skill.list -- unlike every other skill.* command --
@@ -324,14 +329,14 @@ describe("HostServer", () => {
   // to report user-scope skills only.
   it("routes a skill.list payload with no cwd to the skill service as undefined, for user-scope-only discovery", async () => {
     const server = new HostServer();
-    const service = (server as unknown as { pi: { skills: { list: (cwd?: string) => Promise<unknown> } } }).pi.skills;
+    const service = (server as unknown as { pi: { skills: { list: (cwd: string | undefined, scopes: string[]) => Promise<unknown> } } }).pi.skills;
     const userSkill = { ...sampleSkill, scope: "user" as const, path: "/home/jane/.pi/agent/skills/my-skill/SKILL.md" };
     service.list = vi.fn(async () => ({ skills: [userSkill], diagnostics: [] }));
 
-    const response = await server.handle({ protocolVersion: 1, requestId: "skill-list-no-cwd", type: "skill.list", payload: {} });
+    const response = await server.handle({ protocolVersion: 1, requestId: "skill-list-no-cwd", type: "skill.list", payload: { scopes: ["user"] } });
 
     expect(response).toEqual({ protocolVersion: 1, requestId: "skill-list-no-cwd", ok: true, result: { skills: [userSkill], diagnostics: [] } });
-    expect(service.list).toHaveBeenCalledExactlyOnceWith(undefined);
+    expect(service.list).toHaveBeenCalledExactlyOnceWith(undefined, ["user"]);
   });
 
   it("rejects a genuinely malformed skill.list payload (an empty-string cwd) before it reaches the skill service", async () => {
@@ -339,7 +344,7 @@ describe("HostServer", () => {
     const service = (server as unknown as { pi: { skills: { list: (cwd?: string) => Promise<unknown> } } }).pi.skills;
     service.list = vi.fn(async () => ({ skills: [], diagnostics: [] }));
 
-    const response = await server.handle({ protocolVersion: 1, requestId: "skill-list-bad", type: "skill.list", payload: { cwd: "" } });
+    const response = await server.handle({ protocolVersion: 1, requestId: "skill-list-bad", type: "skill.list", payload: { cwd: "", scopes: ["user"] } });
 
     expect(response).toMatchObject({ ok: false });
     expect(service.list).not.toHaveBeenCalled();
@@ -347,7 +352,7 @@ describe("HostServer", () => {
 
   it("lists disabled skills from the skill service, kept separate from skill.list", async () => {
     const server = new HostServer();
-    const service = (server as unknown as { pi: { skills: { listDisabled: (cwd: string) => Promise<unknown> } } }).pi.skills;
+    const service = (server as unknown as { pi: { skills: { listDisabled: (cwd: string, scopes: string[]) => Promise<unknown> } } }).pi.skills;
     const disabledSkill = { ...sampleSkill, disableModelInvocation: true };
     service.listDisabled = vi.fn(async () => [disabledSkill]);
 
@@ -355,11 +360,11 @@ describe("HostServer", () => {
       protocolVersion: 1,
       requestId: "skill-list-disabled",
       type: "skill.listDisabled",
-      payload: { cwd: "/workspace" },
+      payload: { cwd: "/workspace", scopes: ["project"] },
     });
 
     expect(response).toEqual({ protocolVersion: 1, requestId: "skill-list-disabled", ok: true, result: [disabledSkill] });
-    expect(service.listDisabled).toHaveBeenCalledWith("/workspace");
+    expect(service.listDisabled).toHaveBeenCalledWith("/workspace", ["project"]);
   });
 
   it("rejects a malformed skill.listDisabled payload before it reaches the skill service", async () => {
@@ -367,7 +372,7 @@ describe("HostServer", () => {
     const service = (server as unknown as { pi: { skills: { listDisabled: (cwd: string) => Promise<unknown> } } }).pi.skills;
     service.listDisabled = vi.fn(async () => []);
 
-    const response = await server.handle({ protocolVersion: 1, requestId: "skill-list-disabled-bad", type: "skill.listDisabled", payload: {} });
+    const response = await server.handle({ protocolVersion: 1, requestId: "skill-list-disabled-bad", type: "skill.listDisabled", payload: { scopes: [] } });
 
     expect(response).toMatchObject({ ok: false });
     expect(service.listDisabled).not.toHaveBeenCalled();
@@ -384,7 +389,7 @@ describe("HostServer", () => {
       protocolVersion: 1,
       requestId: "skill-list-disabled-fail",
       type: "skill.listDisabled",
-      payload: { cwd: "/workspace" },
+      payload: { cwd: "/workspace", scopes: ["project"] },
     });
 
     expect(response).toEqual({ protocolVersion: 1, requestId: "skill-list-disabled-fail", ok: false, error: "Skill operation failed" });
@@ -494,7 +499,12 @@ describe("HostServer", () => {
       throw new Error("/Users/private-user/secret-project/.pi/skills failure");
     });
 
-    const response = await server.handle({ protocolVersion: 1, requestId: "skill-list-fail", type: "skill.list", payload: { cwd: "/workspace" } });
+    const response = await server.handle({
+      protocolVersion: 1,
+      requestId: "skill-list-fail",
+      type: "skill.list",
+      payload: { cwd: "/workspace", scopes: ["project"] },
+    });
 
     expect(response).toEqual({ protocolVersion: 1, requestId: "skill-list-fail", ok: false, error: "Skill operation failed" });
     expect(JSON.stringify(response)).not.toContain("private-user");

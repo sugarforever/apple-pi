@@ -272,22 +272,35 @@ export class PiSkillService {
     this.active = active;
   }
 
-  // With a `cwd`, mirrors exactly what a real Pi session would discover there
-  // (project + user scope, via a real or shared DefaultResourceLoader -- see
-  // createSkillResourceLoader). With no `cwd` at all -- Settings is reachable
-  // with zero workspaces open, unlike a real Pi session, which always has one
-  // -- project-scope discovery is skipped entirely rather than faked, and
-  // only the two global (user-scope) skill roots are scanned directly (see
-  // scanUserScopeSkills above), so this path never constructs a
-  // DefaultResourceLoader at all.
-  async list(cwd?: string): Promise<SkillCatalog> {
-    if (cwd === undefined) {
-      const { skills, diagnostics } = scanUserScopeSkills();
+  // Resolves only the requested ownership scopes. User roots are scanned
+  // independently from the project loader so Pi's combined name-collision
+  // winner cannot hide a same-name user copy from the management catalog.
+  // Project discovery still comes from the exact loader backing the session.
+  async list(cwd?: string, requestedScopes?: SkillScope[]): Promise<SkillCatalog> {
+    const scopes = requestedScopes ?? (cwd === undefined ? ["user"] : ["user", "project"]);
+    if (scopes.includes("project") && cwd === undefined) throw new Error("Project-scoped skills require a workspace");
+    if (requestedScopes === undefined && cwd !== undefined) {
+      const loader = this.active?.cwd === cwd ? this.active.loader : await createSkillResourceLoader(cwd);
+      const { skills, diagnostics } = loader.getSkills();
       return decodeSkillCatalog({ skills: skills.map(mapPiSkill), diagnostics: diagnostics.map(mapPiSkillDiagnostic) });
     }
-    const loader = this.active?.cwd === cwd ? this.active.loader : await createSkillResourceLoader(cwd);
-    const { skills, diagnostics } = loader.getSkills();
-    return decodeSkillCatalog({ skills: skills.map(mapPiSkill), diagnostics: diagnostics.map(mapPiSkillDiagnostic) });
+    const mappedSkills: SkillItem[] = [];
+    const mappedDiagnostics: SkillDiagnostic[] = [];
+
+    if (scopes.includes("user")) {
+      const { skills, diagnostics } = scanUserScopeSkills();
+      mappedSkills.push(...skills.map(mapPiSkill));
+      mappedDiagnostics.push(...diagnostics.map(mapPiSkillDiagnostic));
+    }
+
+    if (scopes.includes("project") && cwd !== undefined) {
+      const loader = this.active?.cwd === cwd ? this.active.loader : await createSkillResourceLoader(cwd);
+      const { skills, diagnostics } = loader.getSkills();
+      mappedSkills.push(...skills.map(mapPiSkill).filter((skill) => skill.scope === "project"));
+      mappedDiagnostics.push(...diagnostics.map(mapPiSkillDiagnostic));
+    }
+
+    return decodeSkillCatalog({ skills: mappedSkills, diagnostics: mappedDiagnostics });
   }
 
   // getSkills() is a pure cached getter (see createSkillResourceLoader's doc
@@ -297,8 +310,8 @@ export class PiSkillService {
   // both the next list() (used internally by disable()/remove() to find a
   // skill's current location, and externally by callers refreshing after a
   // mutation) and the live agent session itself see the change immediately.
-  private async refreshActiveLoader(cwd: string): Promise<void> {
-    if (this.active?.cwd === cwd) await this.active.loader.reload();
+  private async refreshActiveLoader(cwd?: string): Promise<void> {
+    if (cwd !== undefined && this.active?.cwd === cwd) await this.active.loader.reload();
   }
 
   // Validates `sourcePath` with Pi's own `loadSkillsFromDir` *before* touching
@@ -310,7 +323,9 @@ export class PiSkillService {
   // is ever visible in a partially-copied state; any failure before it is
   // reached (bad source, existing name, failed copy) leaves the managed root
   // completely untouched, and the staging directory is removed on the way out.
-  async install(sourcePath: string, scope: SkillScope, cwd: string): Promise<SkillOperationResult> {
+  async install(sourcePath: string, scope: SkillScope, cwd?: string): Promise<SkillOperationResult> {
+    if (scope === "project" && cwd === undefined)
+      return decodeSkillOperationResult({ diagnostics: [skillDiagnostic("Project-scoped skills require an open workspace.")] });
     let sourceStat;
     try {
       sourceStat = await stat(sourcePath);
@@ -342,7 +357,7 @@ export class PiSkillService {
       });
     }
 
-    const root = managedSkillsRoot(scope, cwd);
+    const root = managedSkillsRoot(scope, cwd ?? "");
     const targetPath = join(root, candidate.name);
     if (existsSync(targetPath)) {
       return decodeSkillOperationResult({
@@ -377,7 +392,9 @@ export class PiSkillService {
     return decodeSkillOperationResult({ skill, diagnostics: [] });
   }
 
-  async setEnabled(name: string, scope: SkillScope, cwd: string, enabled: boolean): Promise<SkillOperationResult> {
+  async setEnabled(name: string, scope: SkillScope, cwd: string | undefined, enabled: boolean): Promise<SkillOperationResult> {
+    if (scope === "project" && cwd === undefined)
+      return decodeSkillOperationResult({ diagnostics: [skillDiagnostic("Project-scoped skills require an open workspace.")] });
     return enabled ? this.enable(name, scope, cwd) : this.disable(name, scope, cwd);
   }
 
@@ -388,13 +405,13 @@ export class PiSkillService {
   // collision winner the catalog reports: a copy Pi had been silently
   // dropping as a collision loser would otherwise become the winner the
   // moment the original moved, leaving the skill visibly still enabled.
-  private async disable(name: string, scope: SkillScope, cwd: string): Promise<SkillOperationResult> {
-    const catalog = await this.list(cwd);
+  private async disable(name: string, scope: SkillScope, cwd?: string): Promise<SkillOperationResult> {
+    const catalog = await this.list(cwd, [scope]);
     const found = catalog.skills.find((skill) => skill.name === name && skill.scope === scope);
     if (!found) return decodeSkillOperationResult({ diagnostics: [notFoundDiagnostic(name, scope)] });
     if (!found.managed) return decodeSkillOperationResult({ diagnostics: [notManagedDiagnostic(name, scope, found.path)] });
 
-    const located = locateSkillUnits(name, managedSkillsRoots(scope, cwd), false);
+    const located = locateSkillUnits(name, managedSkillsRoots(scope, cwd ?? ""), false);
     if (located.length === 0) {
       // The catalog says it is auto-discovered, yet none of the roots this
       // file knows about hold it: refuse rather than guess at a holding
@@ -430,8 +447,8 @@ export class PiSkillService {
   // into that same root, restoring it to Pi's own discovery exactly where it
   // was before; a skill that was in two roots (a Pi collision) goes back to
   // both, so the same copy wins again afterwards.
-  private async enable(name: string, scope: SkillScope, cwd: string): Promise<SkillOperationResult> {
-    const located = locateSkillUnits(name, managedSkillsRoots(scope, cwd), true);
+  private async enable(name: string, scope: SkillScope, cwd?: string): Promise<SkillOperationResult> {
+    const located = locateSkillUnits(name, managedSkillsRoots(scope, cwd ?? ""), true);
     if (located.length === 0) {
       return decodeSkillOperationResult({ diagnostics: [skillDiagnostic(`No disabled skill named "${name}" was found in the ${scope} scope.`)] });
     }
@@ -476,14 +493,15 @@ export class PiSkillService {
   // (one "Enabled", one "Disabled") whose per-skill state then collides.
   // Disabling the live copy moves it too, after which the name shows up
   // here exactly once, and enabling restores every copy.
-  async listDisabled(cwd: string): Promise<SkillItem[]> {
-    const catalog = await this.list(cwd);
+  async listDisabled(cwd?: string, requestedScopes?: SkillScope[]): Promise<SkillItem[]> {
+    const scopes = requestedScopes ?? (cwd === undefined ? ["user"] : ["user", "project"]);
+    if (scopes.includes("project") && cwd === undefined) throw new Error("Project-scoped skills require a workspace");
+    const catalog = await this.list(cwd, scopes);
     const discovered = new Set(catalog.skills.map((skill) => `${skill.scope}:${skill.name}`));
-    const scopes: SkillScope[] = ["user", "project"];
     return scopes.flatMap((scope) => {
       const seen = new Set<string>();
       const items: SkillItem[] = [];
-      for (const root of managedSkillsRoots(scope, cwd)) {
+      for (const root of managedSkillsRoots(scope, cwd ?? "")) {
         const scan = loadSkillsFromDir({ dir: disabledSkillsRoot(root), source: "disabled" });
         for (const found of scan.skills) {
           if (seen.has(found.name) || discovered.has(`${scope}:${found.name}`)) continue;
@@ -519,8 +537,10 @@ export class PiSkillService {
   // (or listDisabled) showed the user; a same-named copy Pi had been hiding
   // as a collision loser then surfaces with its own path and can be removed
   // on its own, rather than being deleted sight unseen.
-  async remove(name: string, scope: SkillScope, cwd: string): Promise<SkillOperationResult> {
-    const catalog = await this.list(cwd);
+  async remove(name: string, scope: SkillScope, cwd?: string): Promise<SkillOperationResult> {
+    if (scope === "project" && cwd === undefined)
+      return decodeSkillOperationResult({ diagnostics: [skillDiagnostic("Project-scoped skills require an open workspace.")] });
+    const catalog = await this.list(cwd, [scope]);
     const found = catalog.skills.find((skill) => skill.name === name && skill.scope === scope);
     if (found) {
       if (!found.managed) return decodeSkillOperationResult({ diagnostics: [notManagedDiagnostic(name, scope, found.path)] });
@@ -530,7 +550,7 @@ export class PiSkillService {
       return decodeSkillOperationResult({ skill: found, diagnostics: [] });
     }
 
-    const disabledFound = locateSkillUnits(name, managedSkillsRoots(scope, cwd), true)[0];
+    const disabledFound = locateSkillUnits(name, managedSkillsRoots(scope, cwd ?? ""), true)[0];
     if (!disabledFound) return decodeSkillOperationResult({ diagnostics: [notFoundDiagnostic(name, scope)] });
 
     await rm(disabledFound.unit.path, { recursive: true, force: true });

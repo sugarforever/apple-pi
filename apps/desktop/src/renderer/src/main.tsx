@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useReducer, useRef, useState } 
 import { createRoot } from "react-dom/client";
 import {
   AlertCircle,
+  Blocks,
   Check,
   ChevronDown,
   CircleDashed,
@@ -16,7 +17,7 @@ import {
   Terminal,
   X,
 } from "lucide-react";
-import type { CustomProviderDefinition, ProviderItem, SessionSnapshot, SkillCatalog, SkillItem } from "@apple-pi/protocol";
+import type { CustomProviderDefinition, ProviderItem, SessionSnapshot, SkillCatalog, SkillItem, SkillScope } from "@apple-pi/protocol";
 import { runSessionResync } from "../session-resync.js";
 import { initialSessionState, reduceSession } from "../session-state.js";
 import { toTimelineItems, type ToolItem } from "../tool-activity.js";
@@ -25,6 +26,7 @@ import { ModelSelect, modelKey, parseModelKey } from "./model-select.js";
 import { modelUnavailable } from "./provider-settings.js";
 import { SettingsShell } from "./settings-shell.js";
 import { buildSkillScopeViewModel } from "./skill-scope-view-model.js";
+import { SkillSettings } from "./skill-settings.js";
 import { IconButton } from "./ui-primitives.js";
 import "./styles.css";
 
@@ -88,7 +90,8 @@ function App() {
   // `disabledSkills`), which would unmount its card mid-settle.
   const refreshSkillLists = useCallback(async (catalogWorkspacePath: string): Promise<void> => {
     const token = ++skillRefreshToken.current;
-    const [catalog, disabled] = await Promise.all([window.applePi.skill.list(), window.applePi.skill.listDisabled()]);
+    const scopes: SkillScope[] = catalogWorkspacePath ? ["user", "project"] : ["user"];
+    const [catalog, disabled] = await Promise.all([window.applePi.skill.list(scopes), window.applePi.skill.listDisabled(scopes)]);
     if (skillRefreshToken.current !== token) return;
     setSkillCatalog(catalog);
     setDisabledSkills(disabled);
@@ -96,6 +99,7 @@ function App() {
   }, []);
   const [draft, setDraft] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [workspaceSkillsOpen, setWorkspaceSkillsOpen] = useState(false);
   const [activeSessionId, setActiveSessionId] = useState("");
   const [draftSessionId, setDraftSessionId] = useState("");
   const [pendingLabel, setPendingLabel] = useState("");
@@ -121,6 +125,16 @@ function App() {
     [disabledSkills, skillCatalog, skillCatalogWorkspacePath, workspacePath],
   );
   const activeModelUnavailable = state.opened && modelUnavailable(models, state.model);
+  const duplicateSkillNames = useMemo(() => {
+    const userNames = new Set([...skillScopeViewModel.settings.enabled, ...skillScopeViewModel.settings.disabled].map((skill) => skill.name));
+    const projectNames = new Set(
+      [...(skillScopeViewModel.workspace?.enabled ?? []), ...(skillScopeViewModel.workspace?.disabled ?? [])].map((skill) => skill.name),
+    );
+    return {
+      user: new Set([...userNames].filter((name) => projectNames.has(name))),
+      project: new Set([...projectNames].filter((name) => userNames.has(name))),
+    };
+  }, [skillScopeViewModel]);
   const workspaceName = workspacePath.split("/").filter(Boolean).at(-1) ?? "No workspace";
   const activeSessionName = activeSessionId ? (sessions.find((session) => session.id === activeSessionId)?.name ?? "New session") : "Welcome to Apple Pi";
 
@@ -275,6 +289,7 @@ function App() {
   };
 
   const openSession = async (session: UiSessionItem): Promise<void> => {
+    setWorkspaceSkillsOpen(false);
     setActiveSessionId(session.id);
     if (!session.persisted) {
       setDraftSessionId(session.id);
@@ -399,10 +414,27 @@ function App() {
                 </button>
               ))}
             </nav>
+            <button
+              className="workspace-skills-button"
+              aria-pressed={workspaceSkillsOpen}
+              onClick={() => {
+                setSettingsOpen(false);
+                setWorkspaceSkillsOpen(!workspaceSkillsOpen);
+              }}
+            >
+              <Blocks size={15} /> Workspace Skills
+            </button>
           </>
         )}
         <div className="sidebar-footer">
-          <button className="settings-button" aria-pressed={settingsOpen} onClick={() => setSettingsOpen(!settingsOpen)}>
+          <button
+            className="settings-button"
+            aria-pressed={settingsOpen}
+            onClick={() => {
+              setWorkspaceSkillsOpen(false);
+              setSettingsOpen(!settingsOpen);
+            }}
+          >
             <Settings2 size={15} /> Settings
           </button>
         </div>
@@ -410,8 +442,8 @@ function App() {
       <main>
         <header>
           <div className="header-title">
-            {settingsOpen ? (
-              <strong>Settings</strong>
+            {settingsOpen || workspaceSkillsOpen ? (
+              <strong>{settingsOpen ? "Settings" : "Workspace Skills"}</strong>
             ) : (
               <>
                 <span className="header-context" title={workspacePath}>
@@ -423,8 +455,11 @@ function App() {
             )}
           </div>
           <div className="header-actions">
-            {settingsOpen && (
-              <IconButton aria-label="Close settings" onClick={() => setSettingsOpen(false)}>
+            {(settingsOpen || workspaceSkillsOpen) && (
+              <IconButton
+                aria-label={settingsOpen ? "Close settings" : "Close workspace skills"}
+                onClick={() => (settingsOpen ? setSettingsOpen(false) : setWorkspaceSkillsOpen(false))}
+              >
                 <X size={17} />
               </IconButton>
             )}
@@ -485,11 +520,13 @@ function App() {
               },
             }}
             skillSettings={{
+              scope: "user",
+              title: "User Skills",
               skills: skillScopeViewModel.settings.enabled,
               diagnostics: skillScopeViewModel.settings.diagnostics,
               unscopedDiagnostics: skillScopeViewModel.unscopedDiagnostics,
               disabledSkills: skillScopeViewModel.settings.disabled,
-              canInstallToProject: Boolean(workspacePath),
+              duplicateNames: duplicateSkillNames.user,
               onInstall: async (scope, sourcePath) => {
                 const result = await window.applePi.skill.install(scope, sourcePath);
                 await refreshSkillLists(workspacePath);
@@ -508,6 +545,34 @@ function App() {
               onPickDirectory: () => window.applePi.skill.pickDirectory(),
             }}
           />
+        ) : workspaceSkillsOpen && skillScopeViewModel.workspace ? (
+          <section className="settings workspace-skills">
+            <SkillSettings
+              scope="project"
+              title="Workspace Skills"
+              description={`Available only in ${workspaceName}.`}
+              skills={skillScopeViewModel.workspace.enabled}
+              diagnostics={skillScopeViewModel.workspace.diagnostics}
+              disabledSkills={skillScopeViewModel.workspace.disabled}
+              duplicateNames={duplicateSkillNames.project}
+              onInstall={async (scope, sourcePath) => {
+                const result = await window.applePi.skill.install(scope, sourcePath);
+                await refreshSkillLists(workspacePath);
+                return result;
+              }}
+              onSetEnabled={async (name, scope, enabled) => {
+                const result = await window.applePi.skill.setEnabled(name, scope, enabled);
+                await refreshSkillLists(workspacePath);
+                return result;
+              }}
+              onRemove={async (name, scope) => {
+                const result = await window.applePi.skill.remove(name, scope);
+                await refreshSkillLists(workspacePath);
+                return result;
+              }}
+              onPickDirectory={() => window.applePi.skill.pickDirectory()}
+            />
+          </section>
         ) : (
           <>
             <section className="timeline" id="conversation" aria-label="Conversation" role="log" aria-live="polite" tabIndex={-1}>

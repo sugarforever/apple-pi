@@ -101,31 +101,35 @@ export const Payloads = {
     { id: Type.String({ minLength: 1 }), operationId: Type.String({ minLength: 1 }), timeoutMs: Type.Integer({ minimum: 100, maximum: 30_000 }) },
     { additionalProperties: false },
   ),
-  // `cwd` is optional: project-scope skills live under `<cwd>/.pi/skills` and
+  // Callers select one or both persistent ownership scopes. `cwd` is optional:
+  // project-scope skills live under `<cwd>/.pi/skills` and
   // `<cwd>/.agents/skills`, but user-scope skills (`~/.pi/agent/skills/`,
   // `~/.agents/skills/`) have nothing to do with any project. Settings is an
   // app-level surface reachable with zero workspaces open, so a missing `cwd`
   // here means "skip project-scope discovery entirely, list user-scope only"
   // rather than an error (see `PiSkillService.list` in `@apple-pi/pi-adapter`).
-  "skill.list": Type.Object({ cwd: Type.Optional(Type.String({ minLength: 1 })) }, { additionalProperties: false }),
+  "skill.list": Type.Object(
+    { cwd: Type.Optional(Type.String({ minLength: 1 })), scopes: Type.Array(SkillScopeSchema, { minItems: 1, maxItems: 2, uniqueItems: true }) },
+    { additionalProperties: false },
+  ),
   // Deliberately its own command rather than an extra field on skill.list's
-  // SkillCatalog: skill.list exists specifically to mirror exactly what Pi's
-  // own session would discover (see PiSkillService.list's doc comment in
-  // @apple-pi/pi-adapter), and a disabled skill is, by design, invisible to
-  // that discovery. Same payload shape as skill.list (just a cwd) since it
-  // scans the same two scopes, only the sibling "-disabled" holding
-  // directories instead of the managed roots.
-  "skill.listDisabled": Type.Object({ cwd: Type.String({ minLength: 1 }) }, { additionalProperties: false }),
+  // SkillCatalog: a disabled skill is, by design, invisible to Pi discovery.
+  // It takes the same scope selection and optional workspace context while
+  // scanning Apple Pi's sibling "-disabled" holding directories.
+  "skill.listDisabled": Type.Object(
+    { cwd: Type.Optional(Type.String({ minLength: 1 })), scopes: Type.Array(SkillScopeSchema, { minItems: 1, maxItems: 2, uniqueItems: true }) },
+    { additionalProperties: false },
+  ),
   "skill.install": Type.Object(
-    { cwd: Type.String({ minLength: 1 }), scope: SkillScopeSchema, sourcePath: Type.String({ minLength: 1 }) },
+    { cwd: Type.Optional(Type.String({ minLength: 1 })), scope: SkillScopeSchema, sourcePath: Type.String({ minLength: 1 }) },
     { additionalProperties: false },
   ),
   "skill.setEnabled": Type.Object(
-    { cwd: Type.String({ minLength: 1 }), scope: SkillScopeSchema, name: Type.String({ minLength: 1 }), enabled: Type.Boolean() },
+    { cwd: Type.Optional(Type.String({ minLength: 1 })), scope: SkillScopeSchema, name: Type.String({ minLength: 1 }), enabled: Type.Boolean() },
     { additionalProperties: false },
   ),
   "skill.remove": Type.Object(
-    { cwd: Type.String({ minLength: 1 }), scope: SkillScopeSchema, name: Type.String({ minLength: 1 }) },
+    { cwd: Type.Optional(Type.String({ minLength: 1 })), scope: SkillScopeSchema, name: Type.String({ minLength: 1 }) },
     { additionalProperties: false },
   ),
 } as const;

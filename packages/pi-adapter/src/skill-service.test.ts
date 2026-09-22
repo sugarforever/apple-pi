@@ -146,6 +146,19 @@ describe("PiSkillService", () => {
     expect(catalog).toEqual({ skills: [], diagnostics: [missingDescriptionDiagnostic] });
   });
 
+  it("filters the session catalog to project scope when requested", async () => {
+    pi.resourceLoaderGetSkills.mockReturnValue({ skills: [userSkill, projectSkill], diagnostics: [] });
+    const service = new PiSkillService();
+
+    expect((await service.list("/workspace", ["project"])).skills.map((skill) => skill.scope)).toEqual(["project"]);
+  });
+
+  it("rejects project-scope resolution without workspace context", async () => {
+    const service = new PiSkillService();
+
+    await expect(service.list(undefined, ["project"])).rejects.toThrow("Project-scoped skills require a workspace");
+  });
+
   it("reuses the active session's loader instance for a matching cwd instead of scanning again", async () => {
     const activeLoader = { getSkills: vi.fn(() => ({ skills: [userSkill], diagnostics: [] })), reload: vi.fn(async () => {}) };
     const service = new PiSkillService();
@@ -397,6 +410,32 @@ describe("PiSkillService lifecycle", () => {
   }
 
   describe("install", () => {
+    it("keeps same-name user and project skills distinct when both scopes are requested", async () => {
+      await writeSkillFixture(join(managedRoot("user"), "release"), { name: "release", description: "User release workflow." });
+      await writeSkillFixture(join(managedRoot("project"), "release"), { name: "release", description: "Project release workflow." });
+      const service = new PiSkillService();
+
+      const catalog = await service.list(cwd, ["user", "project"]);
+
+      expect(catalog.skills.map((skill) => [skill.scope, skill.name, skill.description])).toEqual([
+        ["user", "release", "User release workflow."],
+        ["project", "release", "Project release workflow."],
+      ]);
+    });
+
+    it("supports the complete user-scope lifecycle without a workspace", async () => {
+      const source = join(root, "candidate");
+      await writeSkillFixture(source, { name: "pdf-forms", description: "Fill and flatten PDF forms." });
+      const service = new PiSkillService();
+
+      expect((await service.install(source, "user")).diagnostics).toEqual([]);
+      expect((await service.list(undefined, ["user"])).skills.map((skill) => skill.name)).toEqual(["pdf-forms"]);
+      expect((await service.setEnabled("pdf-forms", "user", undefined, false)).diagnostics).toEqual([]);
+      expect((await service.listDisabled(undefined, ["user"])).map((skill) => skill.name)).toEqual(["pdf-forms"]);
+      expect((await service.remove("pdf-forms", "user")).diagnostics).toEqual([]);
+      expect(await service.listDisabled(undefined, ["user"])).toEqual([]);
+    });
+
     it.each(["user", "project"] as const)("copies a valid skill directory into the %s managed root and it appears in list()", async (scope) => {
       const source = join(root, "candidate");
       await writeSkillFixture(source, { name: "pdf-forms", description: "Fill and flatten PDF forms." });
