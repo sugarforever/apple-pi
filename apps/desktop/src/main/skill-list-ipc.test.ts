@@ -12,14 +12,14 @@ import { describe, expect, it } from "vitest";
 const source = readFileSync(new URL("./index.ts", import.meta.url), "utf8");
 
 describe("skill:list IPC handler", () => {
-  it("forwards { cwd: workspacePath } when a workspace is open, and {} (not a hardcoded empty catalog) otherwise", () => {
-    expect(source).toContain('handle("skill:list", () => host.request("skill.list", workspacePath ? { cwd: workspacePath } : {}));');
-    // The old short-circuit -- which hid user-scope skills too whenever no
-    // workspace was open -- must be gone, not just unreachable.
-    expect(source).not.toContain("{ skills: [], diagnostics: [] }");
+  it("forwards explicit scopes and adds cwd only when a workspace is open", () => {
+    expect(source).toContain('handle("skill:list", (_event, value: unknown) => {');
+    expect(source).toContain('return host.request("skill.list", { ...(workspacePath ? { cwd: workspacePath } : {}), scopes });');
+    expect(source).toContain("requireWorkspaceForProjectScopes(scopes);");
   });
 
-  it("leaves skill:listDisabled's workspace-required short-circuit alone (disabled-holding-directory bookkeeping stays project-session-scoped)", () => {
-    expect(source).toContain('handle("skill:listDisabled", () => (workspacePath ? host.request("skill.listDisabled", { cwd: workspacePath }) : []));');
+  it("supports user disabled-skill bookkeeping without a workspace while guarding project requests", () => {
+    expect(source).toContain('handle("skill:listDisabled", (_event, value: unknown) => {');
+    expect(source).toContain('return host.request("skill.listDisabled", { ...(workspacePath ? { cwd: workspacePath } : {}), scopes });');
   });
 });

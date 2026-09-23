@@ -178,7 +178,8 @@ button {
   flex-direction: column;
   gap: 3px;
 }
-.sidebar nav button {
+.sidebar nav > button,
+.workspace-nav-button {
   position: relative;
   width: 100%;
   min-height: 34px;
@@ -199,16 +200,19 @@ button {
     color 0.16s,
     background-color 0.16s;
 }
-.sidebar nav button:hover {
+.sidebar nav > button:hover,
+.workspace-nav-button:hover {
   background: #191e1c;
   color: var(--text-primary);
 }
-.sidebar nav button.selected {
+.sidebar nav > button.selected,
+.workspace-nav-button.selected {
   background: transparent;
   color: #fff;
   font-weight: 600;
 }
-.sidebar nav button.selected::before {
+.sidebar nav > button.selected::before,
+.workspace-nav-button.selected::before {
   position: absolute;
   top: 8px;
   bottom: 8px;
@@ -217,6 +221,67 @@ button {
   border-radius: 2px;
   background: var(--accent);
   content: "";
+}
+.workspace-nav-item {
+  position: relative;
+  display: flex;
+  min-width: 0;
+}
+.workspace-nav-button {
+  padding-right: 38px;
+}
+.workspace-menu-trigger {
+  position: absolute;
+  z-index: 1;
+  top: 3px;
+  right: 3px;
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+.workspace-menu-trigger:hover,
+.workspace-menu-trigger[aria-expanded="true"] {
+  background: #262c29;
+  color: #fff;
+}
+.workspace-menu {
+  position: absolute;
+  z-index: 20;
+  top: 34px;
+  right: 3px;
+  min-width: 150px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #171b19;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.38);
+}
+.workspace-menu button {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 18px;
+  text-align: left;
+  cursor: pointer;
+}
+.workspace-menu button:hover,
+.workspace-menu button:focus-visible {
+  background: var(--selected);
+  color: #fff;
 }
 .aside-icon,
 .session-name {

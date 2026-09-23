@@ -6,7 +6,8 @@ import {
   groupSkillDiagnostics,
   isSkillEnabled,
   mergeSkillLists,
-  projectScopeNotice,
+  removalConfirmation,
+  skillScopeLabel,
   skillKey,
 } from "./src/skill-settings.js";
 
@@ -38,6 +39,13 @@ describe("isSkillEnabled", () => {
   });
 });
 
+describe("skillScopeLabel", () => {
+  it("uses user-facing ownership labels", () => {
+    expect(skillScopeLabel("user")).toBe("User");
+    expect(skillScopeLabel("project")).toBe("Workspace");
+  });
+});
+
 describe("diagnosticRole", () => {
   it("treats a warning as a quiet status announcement", () => {
     expect(diagnosticRole("warning")).toBe("status");
@@ -52,18 +60,18 @@ describe("diagnosticRole", () => {
   });
 });
 
-// See issue #68 ("Global (user-scope) skills are invisible in Settings
-// unless a workspace is open"): once user-scope skills show up with no
-// workspace open, the panel should say *why* project-scoped ones are
-// missing instead of silently showing fewer skills.
-describe("projectScopeNotice", () => {
-  it("is undefined once project-scope management is available (a workspace is open)", () => {
-    expect(projectScopeNotice(true)).toBeUndefined();
+describe("removalConfirmation", () => {
+  it("names the selected scope", () => {
+    expect(removalConfirmation(skill({ name: "release", scope: "user" }), false)).toBe("Remove “release” from your user Skills?");
+    expect(removalConfirmation(skill({ name: "release", scope: "project" }), false)).toBe("Remove “release” from this workspace?");
   });
 
-  it("explains that project-scoped skills aren't shown or manageable with no workspace open", () => {
-    expect(projectScopeNotice(false)).toBe(
-      "No workspace is open, so project-scoped skills aren't shown or manageable here. Only skills installed for this user are listed below.",
+  it("explains that a same-name copy in the other scope remains", () => {
+    expect(removalConfirmation(skill({ name: "release", scope: "user" }), true)).toBe(
+      "Remove “release” from your user Skills? The workspace copy will remain.",
+    );
+    expect(removalConfirmation(skill({ name: "release", scope: "project" }), true)).toBe(
+      "Remove “release” from this workspace? The user copy will remain available.",
     );
   });
 });

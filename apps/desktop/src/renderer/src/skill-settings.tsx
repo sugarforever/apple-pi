@@ -6,8 +6,12 @@ import { Notice, SearchField, SectionHeading } from "./ui-primitives.js";
 export type SkillActivity = "idle" | "checking";
 
 export interface SkillSettingsProps {
+  scope: SkillScope;
+  title?: string;
+  description?: string;
   skills: SkillItem[];
   diagnostics: SkillDiagnostic[];
+  unscopedDiagnostics?: SkillDiagnostic[];
   // Skills currently sitting in Apple Pi's disabled holding directory (see
   // `PiSkillService.listDisabled` in `@apple-pi/pi-adapter`'s skill-service.ts).
   // Deliberately a separate list rather than folded into `skills`: a disabled
@@ -15,9 +19,7 @@ export interface SkillSettingsProps {
   // that discovery exactly. This is Apple Pi's own bookkeeping layered on top,
   // so the panel can still show a disabled skill and offer to re-enable it.
   disabledSkills: SkillItem[];
-  // A project-scoped skill only makes sense while a workspace is open; the
-  // parent (main.tsx) is the one that knows whether that is currently true.
-  canInstallToProject: boolean;
+  duplicateNames?: ReadonlySet<string>;
   onInstall(scope: SkillScope, sourcePath: string): Promise<SkillOperationResult>;
   onSetEnabled(name: string, scope: SkillScope, enabled: boolean): Promise<SkillOperationResult>;
   onRemove(name: string, scope: SkillScope): Promise<SkillOperationResult>;
@@ -35,6 +37,10 @@ export function skillKey(scope: SkillScope, name: string): string {
 // false; the UI only ever shows this derived, human-facing state.
 export function isSkillEnabled(skill: SkillItem): boolean {
   return !skill.disableModelInvocation;
+}
+
+export function skillScopeLabel(scope: SkillScope): "User" | "Workspace" {
+  return scope === "user" ? "User" : "Workspace";
 }
 
 // `SkillDiagnostic` has no `severity` field (unlike `ProviderDiagnostic`) --
@@ -60,17 +66,14 @@ export function firstActionableSkillDiagnostic(result: SkillOperationResult): Sk
 // already known to fail.
 const NOT_MANAGED_TITLE = "Apple Pi doesn't manage this skill (it came from a settings.json entry or a bundled extension), so it can't be changed here.";
 
-// With no workspace open, `skills`/`disabledSkills` only ever contain
-// user-scope entries (see `skill:list`'s IPC handler in
-// `apps/desktop/src/main/index.ts` and `PiSkillService.list` in
-// `@apple-pi/pi-adapter`, which skip project-scope discovery entirely rather
-// than fake it). Silently showing fewer skills with no explanation is exactly
-// what made global skills look "invisible" instead of merely
-// project-skills-unavailable (see issue #68); this names the reason instead.
-export function projectScopeNotice(canInstallToProject: boolean): string | undefined {
-  return canInstallToProject
-    ? undefined
-    : "No workspace is open, so project-scoped skills aren't shown or manageable here. Only skills installed for this user are listed below.";
+// Removal is always initiated from one scoped row. When the other scope owns
+// the same name, say explicitly which copy remains instead of presenting an
+// ambiguous name-only confirmation.
+export function removalConfirmation(skill: Pick<SkillItem, "name" | "scope">, existsInOtherScope: boolean): string {
+  const target = skill.scope === "user" ? "your user Skills" : "this workspace";
+  if (!existsInOtherScope) return `Remove “${skill.name}” from ${target}?`;
+  const retained = skill.scope === "user" ? "The workspace copy will remain." : "The user copy will remain available.";
+  return `Remove “${skill.name}” from ${target}? ${retained}`;
 }
 
 // One row per scope+name. `skills` and `disabledSkills` are disjoint by
@@ -150,7 +153,6 @@ export function SkillSettings(props: SkillSettingsProps) {
   // call immediately or opening a separate dialog.
   const [confirmingRemove, setConfirmingRemove] = useState<Record<string, boolean>>({});
   const [pickedPath, setPickedPath] = useState<string | null>(null);
-  const [installScope, setInstallScope] = useState<SkillScope>("user");
   const [installBusy, setInstallBusy] = useState(false);
   const [installFeedback, setInstallFeedback] = useState<SkillDiagnostic | undefined>(undefined);
 
@@ -204,7 +206,6 @@ export function SkillSettings(props: SkillSettingsProps) {
     if (!path) return;
     setPickedPath(path);
     setInstallFeedback(undefined);
-    setInstallScope(props.canInstallToProject ? installScope : "user");
   };
 
   const submitInstall = async (event: React.FormEvent): Promise<void> => {
@@ -213,7 +214,7 @@ export function SkillSettings(props: SkillSettingsProps) {
     setInstallBusy(true);
     setInstallFeedback(undefined);
     try {
-      const result = await props.onInstall(installScope, pickedPath);
+      const result = await props.onInstall(props.scope, pickedPath);
       const diagnostic = firstActionableSkillDiagnostic(result);
       setInstallFeedback(diagnostic);
       if (!diagnostic || diagnostic.type === "warning") setPickedPath(null);
@@ -228,8 +229,8 @@ export function SkillSettings(props: SkillSettingsProps) {
     <section className="skill-settings" aria-labelledby="skills-title">
       <SectionHeading
         id="skills-title"
-        title="Skills"
-        description="Extend Apple Pi with reusable skills the model can invoke, installed per user or per project."
+        title={props.title ?? "Skills"}
+        description={props.description ?? (props.scope === "user" ? "Available across all workspaces." : "Available only in this workspace.")}
         actions={<SearchField label="Search skills" placeholder="Search skills" value={query} onChange={setQuery} />}
       />
       {groupSkillDiagnostics(props.diagnostics).map((group) => (
@@ -242,11 +243,16 @@ export function SkillSettings(props: SkillSettingsProps) {
           </ul>
         </details>
       ))}
-      {projectScopeNotice(props.canInstallToProject) && (
-        <p className="skill-scope-notice" role="status">
-          {projectScopeNotice(props.canInstallToProject)}
-        </p>
-      )}
+      {groupSkillDiagnostics(props.unscopedDiagnostics ?? []).map((group) => (
+        <details key={`unscoped-catalog-diagnostic-${group.type}`} className={`skill-diagnostic skill-diagnostic-group ${group.type}`}>
+          <summary role={diagnosticRole(group.type)}>Unscoped: {group.headline}</summary>
+          <ul>
+            {group.items.map((item, index) => (
+              <li key={`${group.type}-${index}`}>{item}</li>
+            ))}
+          </ul>
+        </details>
+      ))}
       <div className="skill-install">
         <button type="button" aria-label="Install skill" onClick={() => void pickDirectory()} disabled={installBusy}>
           <Plus size={14} /> Install skill
@@ -256,25 +262,7 @@ export function SkillSettings(props: SkillSettingsProps) {
             <p className="skill-install-path">
               <FolderOpen size={13} aria-hidden="true" /> {pickedPath}
             </p>
-            <fieldset disabled={installBusy}>
-              <legend>Install to</legend>
-              <label className="radio-field">
-                <input type="radio" name="skill-install-scope" value="user" checked={installScope === "user"} onChange={() => setInstallScope("user")} />
-                <span>This user (all workspaces)</span>
-              </label>
-              {props.canInstallToProject && (
-                <label className="radio-field">
-                  <input
-                    type="radio"
-                    name="skill-install-scope"
-                    value="project"
-                    checked={installScope === "project"}
-                    onChange={() => setInstallScope("project")}
-                  />
-                  <span>This project only</span>
-                </label>
-              )}
-            </fieldset>
+            <p className="skill-install-scope">Install for: {props.scope === "user" ? "User" : "Workspace"}</p>
             <div className="skill-install-actions">
               <button type="submit" disabled={installBusy}>
                 {installBusy ? "Installing…" : "Add skill"}
@@ -318,7 +306,7 @@ export function SkillSettings(props: SkillSettingsProps) {
                   <div className="skill-name">
                     <h3 title={skill.path}>{skill.name}</h3>
                     <p>
-                      {skill.scope} · {skill.managed ? "Apple Pi managed" : "Not managed by Apple Pi"}
+                      {skillScopeLabel(skill.scope)} · {skill.managed ? "Apple Pi managed" : "Not managed by Apple Pi"}
                     </p>
                   </div>
                   <div className="skill-controls">
@@ -354,7 +342,7 @@ export function SkillSettings(props: SkillSettingsProps) {
                       </button>
                     ) : (
                       <span className="skill-remove-confirm" role="status">
-                        Remove?
+                        {removalConfirmation(skill, props.duplicateNames?.has(skill.name) ?? false)}
                         <button type="button" className="danger-button" onClick={() => removeSkill(skill)} disabled={checking}>
                           Yes
                         </button>

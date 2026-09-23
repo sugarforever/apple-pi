@@ -161,9 +161,9 @@ export class HostServer {
             await this.pi.providers.removeCustomProvider(message.payload.id, message.payload.operationId, message.payload.timeoutMs),
           );
         case "skill.list":
-          return success("skill.list", message.requestId, await this.pi.skills.list(message.payload.cwd));
+          return success("skill.list", message.requestId, await this.pi.skills.list(message.payload.cwd, message.payload.scopes));
         case "skill.listDisabled":
-          return success("skill.listDisabled", message.requestId, await this.pi.skills.listDisabled(message.payload.cwd));
+          return success("skill.listDisabled", message.requestId, await this.pi.skills.listDisabled(message.payload.cwd, message.payload.scopes));
         case "skill.install":
           return success(
             "skill.install",

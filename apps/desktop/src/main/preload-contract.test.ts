@@ -49,6 +49,8 @@ describe("applePi preload API contract", () => {
     // Arity documents the call shape renderer code will use, matching
     // `install(scope, sourcePath)`, `setEnabled(name, scope, enabled)`, `remove(name, scope)`.
     expect(api.skill.install).toHaveLength(2);
+    expect(api.skill.list).toHaveLength(1);
+    expect(api.skill.listDisabled).toHaveLength(1);
     expect(api.skill.setEnabled).toHaveLength(3);
     expect(api.skill.remove).toHaveLength(2);
   });
@@ -57,11 +59,11 @@ describe("applePi preload API contract", () => {
     const invoke = vi.fn().mockResolvedValue({ ok: true });
     const api = await loadExposedApi(invoke);
 
-    await api.skill.list();
-    expect(invoke).toHaveBeenLastCalledWith("skill:list");
+    await api.skill.list(["user"]);
+    expect(invoke).toHaveBeenLastCalledWith("skill:list", ["user"]);
 
-    await api.skill.listDisabled();
-    expect(invoke).toHaveBeenLastCalledWith("skill:listDisabled");
+    await api.skill.listDisabled(["project"]);
+    expect(invoke).toHaveBeenLastCalledWith("skill:listDisabled", ["project"]);
 
     await api.skill.install("project", "/tmp/my-skill");
     expect(invoke).toHaveBeenLastCalledWith("skill:install", { scope: "project", sourcePath: "/tmp/my-skill" });

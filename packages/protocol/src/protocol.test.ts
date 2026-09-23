@@ -265,14 +265,16 @@ describe("host protocol", () => {
   });
 
   it("validates the skill.list command with cwd omitted, for listing user-scope skills with no workspace open", () => {
-    const withCwd = { protocolVersion: 1, requestId: "skill-list-1", type: "skill.list", payload: { cwd: "/workspace" } } as const;
+    const withCwd = { protocolVersion: 1, requestId: "skill-list-1", type: "skill.list", payload: { cwd: "/workspace", scopes: ["user", "project"] } } as const;
     expect(decodeHostMessage(withCwd)).toEqual(withCwd);
 
-    const withoutCwd = { protocolVersion: 1, requestId: "skill-list-2", type: "skill.list", payload: {} } as const;
+    const withoutCwd = { protocolVersion: 1, requestId: "skill-list-2", type: "skill.list", payload: { scopes: ["user"] } } as const;
     expect(decodeHostMessage(withoutCwd)).toEqual(withoutCwd);
 
-    expect(() => decodeHostMessage({ ...withCwd, payload: { cwd: "" } })).toThrow("Invalid host message payload");
-    expect(() => decodeHostMessage({ ...withCwd, payload: { cwd: "/workspace", extra: true } })).toThrow("Invalid host message payload");
+    expect(() => decodeHostMessage({ ...withCwd, payload: { cwd: "", scopes: ["user"] } })).toThrow("Invalid host message payload");
+    expect(() => decodeHostMessage({ ...withCwd, payload: { cwd: "/workspace", scopes: ["user"], extra: true } })).toThrow("Invalid host message payload");
+    expect(() => decodeHostMessage({ ...withCwd, payload: { cwd: "/workspace", scopes: [] } })).toThrow("Invalid host message payload");
+    expect(() => decodeHostMessage({ ...withCwd, payload: { cwd: "/workspace", scopes: ["user", "user"] } })).toThrow("Invalid host message payload");
 
     const userSkill = {
       name: "pdf-forms",
@@ -290,10 +292,10 @@ describe("host protocol", () => {
       protocolVersion: 1,
       requestId: "skill-list-disabled",
       type: "skill.listDisabled",
-      payload: { cwd: "/workspace" },
+      payload: { cwd: "/workspace", scopes: ["user", "project"] },
     } as const;
     expect(decodeHostMessage(message)).toEqual(message);
-    expect(() => decodeHostMessage({ ...message, payload: {} })).toThrow("Invalid host message payload");
+    expect(() => decodeHostMessage({ ...message, payload: { scopes: [] } })).toThrow("Invalid host message payload");
 
     const disabledSkill = {
       name: "pdf-forms",
