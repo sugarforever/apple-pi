@@ -14,7 +14,7 @@ const rule = (selector: string, source = styles): string => {
 
 describe("renderer accessibility contract", () => {
   it("exposes selected navigation state to assistive technology", () => {
-    expect(source).toContain('aria-current={workspacePath === workspace.path ? "page" : undefined}');
+    expect(source).toContain('aria-current={selected ? "page" : undefined}');
     expect(source).toContain('aria-current={activeSessionId === session.id ? "page" : undefined}');
   });
 
@@ -414,6 +414,18 @@ describe("renderer skills settings mounting contract", () => {
     expect(source).toContain("skills={skillScopeViewModel.workspace.enabled}");
     expect(source).toContain("disabledSkills={skillScopeViewModel.workspace.disabled}");
     expect(source).toContain("workspaceSkillsOpen && skillScopeViewModel.workspace");
+  });
+
+  it("opens workspace Skills from an accessible per-workspace overflow menu", () => {
+    expect(source).toContain('className="workspace-menu-trigger"');
+    expect(source).toContain('aria-haspopup="menu"');
+    expect(source).toContain("aria-expanded={menuOpen}");
+    expect(source).toContain('role="menu"');
+    expect(source).toContain('role="menuitem"');
+    expect(source).toContain('onOpenSkills={() => void openWorkspace(workspace.path, "skills")}');
+    expect(source).toContain('if (event.key !== "Escape") return;');
+    expect(source).toContain('document.addEventListener("pointerdown", closeOnOutsidePointer)');
+    expect(source).not.toContain('className="workspace-skills-button"');
   });
 });
 

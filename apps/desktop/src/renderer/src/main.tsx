@@ -6,6 +6,7 @@ import {
   Check,
   ChevronDown,
   CircleDashed,
+  Ellipsis,
   Folder,
   FolderInput,
   MessageSquare,
@@ -71,6 +72,83 @@ const makeDraftSession = (workspacePath: string): UiSessionItem => ({
   messageCount: 0,
   persisted: false,
 });
+
+function WorkspaceNavItem({
+  workspace,
+  selected,
+  onOpen,
+  onOpenSkills,
+}: {
+  workspace: Catalog["workspaces"][number];
+  selected: boolean;
+  onOpen: () => void;
+  onOpenSkills: () => void;
+}) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const itemRef = useRef<HTMLDivElement>(null);
+  const menuTriggerRef = useRef<HTMLButtonElement>(null);
+  const firstMenuItemRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    firstMenuItemRef.current?.focus();
+
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      if (!itemRef.current?.contains(event.target as Node)) setMenuOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setMenuOpen(false);
+      menuTriggerRef.current?.focus();
+    };
+
+    document.addEventListener("pointerdown", closeOnOutsidePointer);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutsidePointer);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [menuOpen]);
+
+  return (
+    <div className="workspace-nav-item" ref={itemRef}>
+      <button
+        title={workspace.path}
+        className={`workspace-nav-button${selected ? " selected" : ""}`}
+        aria-current={selected ? "page" : undefined}
+        onClick={onOpen}
+      >
+        <span className="aside-icon">
+          <Folder size={15} /> <span>{workspace.name}</span>
+        </span>
+      </button>
+      <button
+        ref={menuTriggerRef}
+        className="workspace-menu-trigger"
+        aria-label={`More actions for ${workspace.name}`}
+        aria-haspopup="menu"
+        aria-expanded={menuOpen}
+        onClick={() => setMenuOpen((open) => !open)}
+      >
+        <Ellipsis size={16} />
+      </button>
+      {menuOpen && (
+        <div className="workspace-menu" role="menu" aria-label={`${workspace.name} actions`}>
+          <button
+            ref={firstMenuItemRef}
+            role="menuitem"
+            onClick={() => {
+              setMenuOpen(false);
+              onOpenSkills();
+            }}
+          >
+            <Blocks size={15} /> Skills
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function App() {
   const [state, dispatch] = useReducer(reduceSession, initialSessionState);
@@ -251,13 +329,17 @@ function App() {
     }
   };
 
-  const openWorkspace = async (path?: string): Promise<void> => {
+  const openWorkspace = async (path?: string, view: "conversation" | "skills" = "conversation"): Promise<void> => {
     setPendingLabel(path ? "Opening workspace…" : "Choosing workspace…");
     setAppError("");
     setNotice("");
     try {
       const result = path ? await window.applePi.workspace.select(path) : await window.applePi.workspace.pick();
       applyWorkspace(result);
+      if (result) {
+        setSettingsOpen(false);
+        setWorkspaceSkillsOpen(view === "skills");
+      }
     } catch (error) {
       showError(error);
     } finally {
@@ -367,17 +449,13 @@ function App() {
         </div>
         <nav aria-label="Workspaces">
           {catalog.workspaces.map((workspace) => (
-            <button
+            <WorkspaceNavItem
               key={workspace.path}
-              title={workspace.path}
-              className={workspacePath === workspace.path ? "selected" : ""}
-              aria-current={workspacePath === workspace.path ? "page" : undefined}
-              onClick={() => void openWorkspace(workspace.path)}
-            >
-              <span className="aside-icon">
-                <Folder size={15} /> <span>{workspace.name}</span>
-              </span>
-            </button>
+              workspace={workspace}
+              selected={workspacePath === workspace.path}
+              onOpen={() => void openWorkspace(workspace.path)}
+              onOpenSkills={() => void openWorkspace(workspace.path, "skills")}
+            />
           ))}
         </nav>
         {workspacePath && (
@@ -414,16 +492,6 @@ function App() {
                 </button>
               ))}
             </nav>
-            <button
-              className="workspace-skills-button"
-              aria-pressed={workspaceSkillsOpen}
-              onClick={() => {
-                setSettingsOpen(false);
-                setWorkspaceSkillsOpen(!workspaceSkillsOpen);
-              }}
-            >
-              <Blocks size={15} /> Workspace Skills
-            </button>
           </>
         )}
         <div className="sidebar-footer">
