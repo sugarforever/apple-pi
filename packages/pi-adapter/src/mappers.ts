@@ -26,6 +26,7 @@ const printable = (value: unknown): string =>
   typeof value === "string" || typeof value === "number" || typeof value === "boolean" || typeof value === "bigint" ? String(value) : "unknown";
 
 const nonEmptyString = (value: unknown): value is string => typeof value === "string" && value.length > 0;
+const graphemeSegmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 
 function jsonObject(value: unknown): Record<string, JsonValue> {
   const mapped = jsonValue(value);
@@ -295,10 +296,21 @@ function authSelectOptions(value: unknown): Array<{ id: string; label: string; d
 
 export function mapPiSessionItem(value: unknown): SessionItem {
   const item = record(value);
+  const explicitName = nonEmptyString(item?.name) ? item.name : "";
+  const firstMessage = nonEmptyString(item?.firstMessage) ? item.firstMessage.trim() : "";
+  const messageLines = firstMessage
+    .split(/\r?\n/)
+    .map((line) => line.replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+  const firstLine = messageLines[0];
+  const fallbackSource = firstLine || "New session";
+  const fallbackGraphemes = [...graphemeSegmenter.segment(fallbackSource)].map(({ segment }) => segment);
+  const compactFallback = fallbackGraphemes.length > 48 ? `${fallbackGraphemes.slice(0, 47).join("").trimEnd()}…` : fallbackSource;
+  const hasMoreMessage = messageLines.length > 1;
   return decodeSessionItem({
     id: item?.id,
     path: item?.path,
-    name: item?.name || item?.firstMessage || "New session",
+    name: explicitName || `${compactFallback}${hasMoreMessage && !compactFallback.endsWith("…") ? "…" : ""}`,
     created: item?.created instanceof Date ? item.created.toISOString() : item?.created,
     modified: item?.modified instanceof Date ? item.modified.toISOString() : item?.modified,
     messageCount: item?.messageCount,
