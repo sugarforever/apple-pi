@@ -204,6 +204,67 @@ describe("Pi boundary mappers", () => {
     ).toEqual({ id: "s1", path: "/tmp/s1.jsonl", name: "First", created: "2026-09-12T10:00:00.000Z", modified: "2026-09-12T10:01:00.000Z", messageCount: 2 });
   });
 
+  it("turns a long first message into a compact fallback session title", () => {
+    expect(
+      mapPiSessionItem({
+        id: "s1",
+        path: "/tmp/s1.jsonl",
+        firstMessage:
+          "  Review the current VerySmallWoods Video Skill.\n\nIt uses or references the Record Terminal Skill, so please find when that is used and improve it.  ",
+        created: new Date("2026-09-12T10:00:00.000Z"),
+        modified: new Date("2026-09-12T10:01:00.000Z"),
+        messageCount: 2,
+      }),
+    ).toEqual({
+      id: "s1",
+      path: "/tmp/s1.jsonl",
+      name: "Review the current VerySmallWoods Video Skill.…",
+      created: "2026-09-12T10:00:00.000Z",
+      modified: "2026-09-12T10:01:00.000Z",
+      messageCount: 2,
+    });
+  });
+
+  it("preserves an explicit Pi session name exactly", () => {
+    expect(
+      mapPiSessionItem({
+        id: "s1",
+        path: "/tmp/s1.jsonl",
+        name: "  Release   plan  ",
+        firstMessage: "Fallback title",
+        created: new Date("2026-09-12T10:00:00.000Z"),
+        modified: new Date("2026-09-12T10:01:00.000Z"),
+        messageCount: 2,
+      }).name,
+    ).toBe("  Release   plan  ");
+  });
+
+  it("does not split a composed emoji when compacting a fallback title", () => {
+    const prefix = "a".repeat(46);
+    expect(
+      mapPiSessionItem({
+        id: "s1",
+        path: "/tmp/s1.jsonl",
+        firstMessage: `${prefix}👨‍👩‍👧‍👦 trailing text`,
+        created: new Date("2026-09-12T10:00:00.000Z"),
+        modified: new Date("2026-09-12T10:01:00.000Z"),
+        messageCount: 1,
+      }).name,
+    ).toBe(`${prefix}👨‍👩‍👧‍👦…`);
+  });
+
+  it("keeps the New session fallback when Pi has no usable title source", () => {
+    expect(
+      mapPiSessionItem({
+        id: "s1",
+        path: "/tmp/s1.jsonl",
+        created: new Date("2026-09-12T10:00:00.000Z"),
+        modified: new Date("2026-09-12T10:01:00.000Z"),
+        messageCount: 0,
+      }).name,
+    ).toBe("New session");
+  });
+
   it("uses explicit safe fallbacks for unsupported Pi values", () => {
     const cyclic: Record<string, unknown> = {};
     cyclic.self = cyclic;

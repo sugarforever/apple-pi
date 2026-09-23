@@ -370,6 +370,8 @@ main {
 }
 main > header {
   display: flex;
+  min-width: 0;
+  overflow: hidden;
   align-items: center;
   justify-content: space-between;
   padding: 0 24px;
@@ -379,6 +381,7 @@ main > header {
 .header-title {
   display: flex;
   min-width: 0;
+  flex: 1;
   align-items: baseline;
   flex-direction: row;
   gap: 7px;
@@ -396,6 +399,8 @@ main > header {
   font: 11px/16px var(--font-mono);
 }
 .header-title strong {
+  min-width: 0;
+  flex: 1;
   overflow: hidden;
   font-size: 15px;
   line-height: 20px;
@@ -404,6 +409,7 @@ main > header {
 }
 .header-actions {
   display: flex;
+  flex: 0 0 auto;
   gap: 8px;
   -webkit-app-region: no-drag;
 }

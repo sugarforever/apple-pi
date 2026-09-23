@@ -60,6 +60,15 @@ describe("renderer visual contract", () => {
     expect(rule(".header-title")).toContain("flex-direction: row");
   });
 
+  it("contains long session titles inside the conversation header", () => {
+    expect(rule("main > header")).toContain("min-width: 0");
+    expect(rule("main > header")).toContain("overflow: hidden");
+    expect(rule(".header-title")).toContain("flex: 1");
+    expect(rule(".header-title strong")).toContain("min-width: 0");
+    expect(rule(".header-title strong")).toContain("flex: 1");
+    expect(rule(".header-actions")).toContain("flex: 0 0 auto");
+  });
+
   it("renders ordinary messages without card chrome", () => {
     const userMessage = rule(".message.user .message-content");
     expect(userMessage).not.toContain("border:");
