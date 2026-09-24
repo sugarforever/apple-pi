@@ -1140,7 +1140,15 @@ main > header {
   color: var(--text-primary);
 }
 .provider-actions {
+  flex-wrap: wrap;
   margin-top: 15px;
+}
+.provider-action-confirm {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-secondary);
+  font-size: 11px;
 }
 .provider-actions button,
 .provider-key-form button {
@@ -1318,16 +1326,6 @@ main > header {
   color: var(--text-secondary);
   font-size: 11px;
   font-weight: 600;
-}
-.radio-field {
-  display: flex !important;
-  align-items: center;
-  gap: 7px;
-  color: var(--text-secondary);
-  font-size: 12px;
-}
-.radio-field input {
-  width: auto !important;
 }
 .skill-install-actions {
   display: flex;
@@ -1525,14 +1523,6 @@ main > header {
 .skill-diagnostic-group li + li {
   margin-top: 4px;
 }
-.skill-scope-notice {
-  margin: 10px 0 0;
-  padding: 9px 10px;
-  border-radius: 6px;
-  background: #242019;
-  color: var(--text-secondary);
-  font-size: 12px;
-}
 .skill-controls {
   display: flex;
   flex-shrink: 0;
@@ -1646,7 +1636,7 @@ main > header {
 
 @media (max-width: 800px) {
   .shell {
-    grid-template-columns: 232px minmax(0, 1fr);
+    grid-template-columns: 200px minmax(0, 1fr);
   }
   .send-hint {
     display: none;

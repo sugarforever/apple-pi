@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { AlertCircle, Check, CircleDashed, KeyRound, Pencil, Plus, Trash2, X } from "lucide-react";
 import type {
   CustomProviderDefinition,
@@ -63,6 +63,15 @@ export function filterProviders(providers: ProviderItem[], customProviders: Cust
 export function nextSelectedProviderId(providers: ProviderItem[], selectedProviderId: string | null): string | null {
   if (selectedProviderId && providers.some((provider) => provider.id === selectedProviderId)) return selectedProviderId;
   return providers[0]?.id ?? null;
+}
+
+export function adjacentProviderIndex(currentIndex: number, providerCount: number, key: string): number | null {
+  if (providerCount === 0) return null;
+  if (key === "Home") return 0;
+  if (key === "End") return providerCount - 1;
+  if (key === "ArrowDown") return Math.min(currentIndex + 1, providerCount - 1);
+  if (key === "ArrowUp") return Math.max(currentIndex - 1, 0);
+  return null;
 }
 
 interface OAuthLoginState {
@@ -408,6 +417,9 @@ export function ProviderSettings(props: ProviderSettingsProps) {
   // ever toggles a built-in provider's API-key entry.
   const [customProviderForm, setCustomProviderForm] = useState<"add" | string | null>(null);
   const [customProviderBusy, setCustomProviderBusy] = useState(false);
+  const [confirmingAction, setConfirmingAction] = useState<{ providerId: string; action: "disconnect" | "remove" } | null>(null);
+  const providerRowRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const destructiveTriggerRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 
   const visible = useMemo(
     () => filterProviders(props.providers, props.customProviders, query, filter),
@@ -491,7 +503,14 @@ export function ProviderSettings(props: ProviderSettingsProps) {
   };
 
   const removeCustomProvider = async (provider: ProviderItem): Promise<void> => {
+    setConfirmingAction(null);
     await run(provider.id, () => props.onRemoveCustomProvider(provider.id), true);
+  };
+
+  const cancelDestructiveAction = (): void => {
+    const key = confirmingAction ? `${confirmingAction.providerId}:${confirmingAction.action}` : "";
+    setConfirmingAction(null);
+    requestAnimationFrame(() => destructiveTriggerRefs.current[key]?.focus());
   };
 
   return (
@@ -554,18 +573,30 @@ export function ProviderSettings(props: ProviderSettingsProps) {
       ) : (
         <div className="provider-browser">
           <div className="provider-list" role="listbox" aria-label="Providers">
-            {visible.map((provider) => {
+            {visible.map((provider, index) => {
               const checking = activity[provider.id] === "checking";
               const modelCount = props.models.filter((model) => model.provider === provider.id).length || provider.availableModelCount;
               return (
                 <button
                   type="button"
+                  ref={(element) => {
+                    providerRowRefs.current[index] = element;
+                  }}
                   className="provider-row"
                   key={provider.id}
                   role="option"
                   aria-selected={effectiveSelectedProviderId === provider.id}
                   aria-controls="provider-detail"
                   onClick={() => setSelectedProviderId(provider.id)}
+                  onKeyDown={(event) => {
+                    const targetIndex = adjacentProviderIndex(index, visible.length, event.key);
+                    if (targetIndex === null || targetIndex === index) return;
+                    const targetProvider = visible[targetIndex];
+                    if (!targetProvider) return;
+                    event.preventDefault();
+                    setSelectedProviderId(targetProvider.id);
+                    providerRowRefs.current[targetIndex]?.focus();
+                  }}
                 >
                   <span className="provider-logo" aria-hidden="true">
                     {provider.name.slice(0, 1).toUpperCase()}
@@ -756,15 +787,39 @@ export function ProviderSettings(props: ProviderSettingsProps) {
                         Verify
                       </button>
                     )}
-                    {provider.status === "connected" && provider.credentialSource === "apple_pi" && (
-                      <button
-                        type="button"
-                        className="danger-button"
-                        onClick={() => void run(provider.id, () => props.onDisconnect(provider.id), true)}
-                        disabled={checking}
-                      >
-                        Disconnect
-                      </button>
+                    {provider.status === "connected" &&
+                      provider.credentialSource === "apple_pi" &&
+                      !(confirmingAction?.providerId === provider.id && confirmingAction.action === "disconnect") && (
+                        <button
+                          type="button"
+                          className="danger-button"
+                          ref={(element) => {
+                            destructiveTriggerRefs.current[`${provider.id}:disconnect`] = element;
+                          }}
+                          onClick={() => setConfirmingAction({ providerId: provider.id, action: "disconnect" })}
+                          disabled={checking}
+                        >
+                          Disconnect
+                        </button>
+                      )}
+                    {confirmingAction?.providerId === provider.id && confirmingAction.action === "disconnect" && (
+                      <span className="provider-action-confirm" role="status">
+                        Disconnect {provider.name}?
+                        <button
+                          type="button"
+                          className="danger-button"
+                          onClick={() => {
+                            setConfirmingAction(null);
+                            void run(provider.id, () => props.onDisconnect(provider.id), true);
+                          }}
+                          disabled={checking}
+                        >
+                          Yes
+                        </button>
+                        <button type="button" className="secondary" onClick={cancelDestructiveAction} disabled={checking}>
+                          Cancel
+                        </button>
+                      </span>
                     )}
                     {isCustom && !isEditingCustomProvider && (
                       <button
@@ -779,10 +834,29 @@ export function ProviderSettings(props: ProviderSettingsProps) {
                         <Pencil size={13} /> Edit
                       </button>
                     )}
-                    {isCustom && (
-                      <button type="button" className="danger-button" onClick={() => void removeCustomProvider(provider)} disabled={checking}>
+                    {isCustom && !(confirmingAction?.providerId === provider.id && confirmingAction.action === "remove") && (
+                      <button
+                        type="button"
+                        className="danger-button"
+                        ref={(element) => {
+                          destructiveTriggerRefs.current[`${provider.id}:remove`] = element;
+                        }}
+                        onClick={() => setConfirmingAction({ providerId: provider.id, action: "remove" })}
+                        disabled={checking}
+                      >
                         <X size={13} /> Remove
                       </button>
+                    )}
+                    {confirmingAction?.providerId === provider.id && confirmingAction.action === "remove" && (
+                      <span className="provider-action-confirm" role="status">
+                        Remove {provider.name}?
+                        <button type="button" className="danger-button" onClick={() => void removeCustomProvider(provider)} disabled={checking}>
+                          Yes
+                        </button>
+                        <button type="button" className="secondary" onClick={cancelDestructiveAction} disabled={checking}>
+                          Cancel
+                        </button>
+                      </span>
                     )}
                   </div>
                 </article>

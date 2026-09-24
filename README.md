@@ -40,6 +40,8 @@ This is a pnpm workspace with four main components:
 - `packages/protocol`: validated messages shared across process boundaries
 - `packages/pi-adapter`: the pinned pi SDK integration
 
+The renderer's compact typography, spacing, surfaces, controls, accessibility rules, and reusable patterns are documented in [Renderer UI conventions](docs/renderer-ui-conventions.md).
+
 Run commands from the repository root. `corepack pnpm dev` builds the shared
 packages and agent host before starting Electron with hot reload. When changing
 the process boundary, update the protocol first, then its producer and consumer.
