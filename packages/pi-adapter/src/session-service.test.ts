@@ -5,9 +5,11 @@ const pi = vi.hoisted(() => ({
   listSessions: vi.fn(async () => []),
   createManager: vi.fn((cwd: string) => ({ cwd })),
   openManager: vi.fn((path: string, _sessionDir: unknown, cwd: string) => ({ cwd, path })),
+  completeSimple: vi.fn(),
   createRuntime: vi.fn(async () => ({
     getAvailableSnapshot: () => [],
     getModel: (): { provider: string; id: string; name: string } | undefined => undefined,
+    completeSimple: pi.completeSimple,
   })),
   reloadResourceLoader: vi.fn(async () => {}),
 }));
@@ -37,6 +39,7 @@ describe("PiSessionService lifecycle ownership", () => {
     vi.clearAllMocks();
     pi.listSessions.mockResolvedValue([]);
     pi.createAgentSession.mockReset();
+    pi.completeSimple.mockReset();
   });
 
   it("releases a replaced streaming session once and blocks its stale events", async () => {
@@ -150,6 +153,7 @@ describe("PiSessionService lifecycle ownership", () => {
     pi.createRuntime.mockResolvedValueOnce({
       getAvailableSnapshot: () => [],
       getModel: () => ({ provider: "test", id: "next-model", name: "Next Model" }),
+      completeSimple: pi.completeSimple,
     });
     pi.createAgentSession.mockResolvedValueOnce({ session: first.session }).mockResolvedValueOnce({ session: second.session });
     const service = new PiSessionService();
@@ -182,6 +186,76 @@ describe("PiSessionService lifecycle ownership", () => {
     expect(events).not.toHaveBeenCalled();
   });
 
+  it("uses the selected model to assign a semantic name after the first completed turn", async () => {
+    const current = sessionDouble("current");
+    pi.completeSimple.mockResolvedValueOnce(assistantText("Record terminal shell setup"));
+    pi.createAgentSession.mockResolvedValueOnce({ session: current.session });
+    const service = new PiSessionService();
+    await service.open("/workspace", undefined, undefined, true);
+
+    await service.send("Can the record terminal skill use the current login shell?");
+
+    expect(pi.completeSimple).toHaveBeenCalledOnce();
+    expect(pi.completeSimple.mock.calls[0]?.[0]).toBe(current.session.model);
+    expect(pi.completeSimple.mock.calls[0]?.[1]).toMatchObject({
+      messages: [{ role: "user", content: expect.stringContaining("record terminal skill") }],
+    });
+    expect(current.session.setSessionName).toHaveBeenCalledWith("Record terminal shell setup");
+  });
+
+  it("requests a semantic title only for the first turn", async () => {
+    const current = sessionDouble("current");
+    pi.completeSimple.mockResolvedValueOnce(assistantText("First title"));
+    pi.createAgentSession.mockResolvedValueOnce({ session: current.session });
+    const service = new PiSessionService();
+    await service.open("/workspace", undefined, undefined, true);
+
+    await service.send("First request");
+    await service.send("Follow-up request");
+
+    expect(pi.completeSimple).toHaveBeenCalledOnce();
+    expect(current.session.setSessionName).toHaveBeenCalledOnce();
+  });
+
+  it("does not replace an explicit session name", async () => {
+    const current = sessionDouble("current", false, "Pinned name");
+    pi.createAgentSession.mockResolvedValueOnce({ session: current.session });
+    const service = new PiSessionService();
+    await service.open("/workspace", undefined, undefined, true);
+
+    await service.send("First request");
+
+    expect(pi.completeSimple).not.toHaveBeenCalled();
+    expect(current.session.setSessionName).not.toHaveBeenCalled();
+  });
+
+  it("does not replace an explicit name assigned during the first turn", async () => {
+    const current = sessionDouble("current");
+    current.session.prompt.mockImplementationOnce(async (text: string) => {
+      current.messages.push({ role: "user", content: text });
+      current.session.sessionName = "Named by extension";
+    });
+    pi.createAgentSession.mockResolvedValueOnce({ session: current.session });
+    const service = new PiSessionService();
+    await service.open("/workspace", undefined, undefined, true);
+
+    await service.send("First request");
+
+    expect(pi.completeSimple).not.toHaveBeenCalled();
+    expect(current.session.setSessionName).not.toHaveBeenCalled();
+  });
+
+  it("keeps a completed turn successful when semantic title generation fails", async () => {
+    const current = sessionDouble("current");
+    pi.completeSimple.mockRejectedValueOnce(new Error("title call failed"));
+    pi.createAgentSession.mockResolvedValueOnce({ session: current.session });
+    const service = new PiSessionService();
+    await service.open("/workspace", undefined, undefined, true);
+
+    await expect(service.send("First request")).resolves.toBeUndefined();
+    expect(current.session.setSessionName).not.toHaveBeenCalled();
+  });
+
   it("disposes a candidate whose subscription setup fails", async () => {
     const candidate = sessionDouble("candidate");
     candidate.session.subscribe.mockImplementationOnce(() => {
@@ -198,28 +272,34 @@ describe("PiSessionService lifecycle ownership", () => {
   });
 });
 
-function sessionDouble(sessionId: string, isStreaming = false) {
+function sessionDouble(sessionId: string, isStreaming = false, sessionName?: string) {
   let subscribed: ((event: { type: string }) => void) | undefined;
+  const messages: Array<{ role: "user"; content: string }> = [];
   const unsubscribe = vi.fn();
   const abort = vi.fn(async () => {});
   const dispose = vi.fn();
   const session = {
     sessionId,
     sessionFile: `/sessions/${sessionId}.jsonl`,
-    messages: [],
+    messages,
     isStreaming,
     model: { provider: "test", id: "test-model", name: "Test Model" },
+    sessionName,
     subscribe: vi.fn((listener: (event: { type: string }) => void) => {
       subscribed = listener;
       return unsubscribe;
     }),
-    prompt: vi.fn(async () => {}),
+    prompt: vi.fn(async (text: string) => {
+      messages.push({ role: "user", content: text });
+    }),
     abort,
     dispose,
     setModel: vi.fn(async () => {}),
+    setSessionName: vi.fn(),
   };
   return {
     session,
+    messages,
     unsubscribe,
     abort,
     dispose,
@@ -228,6 +308,10 @@ function sessionDouble(sessionId: string, isStreaming = false) {
       return subscribed;
     },
   };
+}
+
+function assistantText(text: string) {
+  return { content: [{ type: "text", text }] };
 }
 
 function deferred<T>() {

@@ -22,16 +22,15 @@ import type { CustomProviderDefinition, ProviderItem, SessionSnapshot, SkillCata
 import { runSessionResync } from "../session-resync.js";
 import { initialSessionState, reduceSession } from "../session-state.js";
 import { toTimelineItems, type ToolItem } from "../tool-activity.js";
-import type { Catalog, ModelItem, SessionItem, WorkspaceOpenResult } from "../global.js";
+import type { Catalog, ModelItem, WorkspaceOpenResult } from "../global.js";
 import { ModelSelect, modelKey, parseModelKey } from "./model-select.js";
 import { modelUnavailable } from "./provider-settings.js";
 import { SettingsShell } from "./settings-shell.js";
+import { materializeDraftSession, reconcileSessionList, shouldOpenSession, type UiSessionItem } from "../session-list.js";
 import { buildSkillScopeViewModel } from "./skill-scope-view-model.js";
 import { SkillSettings } from "./skill-settings.js";
 import { IconButton } from "./ui-primitives.js";
 import "./styles.css";
-
-type UiSessionItem = SessionItem & { persisted: boolean };
 
 const escapeHtml = (value: string): string =>
   value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
@@ -224,11 +223,7 @@ function App() {
 
   const refreshSessions = async (): Promise<void> => {
     const remoteSessions = await window.applePi.session.list();
-    setSessions((current) => {
-      const drafts = current.filter((session) => !session.persisted);
-      const remotePaths = new Set(remoteSessions.map((session) => session.path));
-      return [...remoteSessions.map((session) => ({ ...session, persisted: true })), ...drafts.filter((session) => !remotePaths.has(session.path))];
-    });
+    setSessions((current) => reconcileSessionList(current, remoteSessions));
   };
 
   const updateActiveSessionFromSnapshot = (snapshot: SessionSnapshot): void => {
@@ -313,7 +308,7 @@ function App() {
     void refreshSkillLists(result.workspacePath).catch(() => undefined);
   };
 
-  const snapshotOp = async (operation: Promise<SessionSnapshot>, label = "Updating session…"): Promise<void> => {
+  const snapshotOp = async (operation: Promise<SessionSnapshot>, label = "Updating session…"): Promise<SessionSnapshot | undefined> => {
     setPendingLabel(label);
     setAppError("");
     setNotice("");
@@ -322,6 +317,7 @@ function App() {
       dispatch({ type: "operation_snapshot", snapshot });
       updateActiveSessionFromSnapshot(snapshot);
       await refreshSessions();
+      return snapshot;
     } catch (error) {
       showError(error);
     } finally {
@@ -371,6 +367,7 @@ function App() {
   };
 
   const openSession = async (session: UiSessionItem): Promise<void> => {
+    if (!shouldOpenSession(activeSessionId, session.id)) return;
     setWorkspaceSkillsOpen(false);
     setActiveSessionId(session.id);
     if (!session.persisted) {
@@ -403,7 +400,10 @@ function App() {
     setDraft("");
 
     if (draftSessionId && draftSessionId === activeSessionId) {
-      await snapshotOp(window.applePi.session.create());
+      const materializedDraftId = draftSessionId;
+      const snapshot = await snapshotOp(window.applePi.session.create(), "Starting session…");
+      if (!snapshot?.opened) return;
+      setSessions((current) => materializeDraftSession(current, materializedDraftId, snapshot));
       dispatch({ type: "user_message", text });
       await snapshotOp(window.applePi.session.send(text));
       return;
