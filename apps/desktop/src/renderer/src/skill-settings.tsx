@@ -1,5 +1,5 @@
 import React, { startTransition, useMemo, useState, useTransition } from "react";
-import { AlertCircle, CircleDashed, FolderOpen, Plus, ToggleLeft, ToggleRight, Trash2 } from "lucide-react";
+import { AlertCircle, ChevronDown, CircleDashed, FolderOpen, Plus, ToggleLeft, ToggleRight, Trash2 } from "lucide-react";
 import type { SkillDiagnostic, SkillItem, SkillOperationResult, SkillScope } from "@apple-pi/protocol";
 import { Notice, SearchField, SectionHeading } from "./ui-primitives.js";
 
@@ -291,7 +291,7 @@ export function SkillSettings(props: SkillSettingsProps) {
           <p>Try a different search term.</p>
         </Notice>
       ) : (
-        <div className="skill-list">
+        <div className={`skill-list ${props.scope === "user" ? "skill-user-list" : "skill-card-list"}`}>
           {visible.map((skill) => {
             const key = skillKey(skill.scope, skill.name);
             const checking = activity[key] === "checking";
@@ -300,6 +300,79 @@ export function SkillSettings(props: SkillSettingsProps) {
             const enabled = pendingEnabled[key] ?? isSkillEnabled(skill);
             const diagnostic = feedback[key];
             const confirming = confirmingRemove[key] ?? false;
+            const enabledControl = (
+              <button
+                type="button"
+                className="skill-toggle"
+                aria-label={enabled ? `Disable ${skill.name}` : `Enable ${skill.name}`}
+                aria-pressed={enabled}
+                aria-busy={settling}
+                onClick={() => toggleEnabled(skill)}
+                disabled={!skill.managed}
+                title={!skill.managed ? NOT_MANAGED_TITLE : undefined}
+              >
+                {settling ? <CircleDashed size={16} className="skill-toggle-settling" /> : enabled ? <ToggleRight size={16} /> : <ToggleLeft size={16} />}
+                {settling ? (enabled ? "Enabling…" : "Disabling…") : enabled ? "Enabled" : "Disabled"}
+              </button>
+            );
+            const removeControl = !confirming ? (
+              <button
+                type="button"
+                className="skill-remove"
+                aria-label={`Remove ${skill.name}`}
+                onClick={() => setConfirmingRemove((current) => ({ ...current, [key]: true }))}
+                disabled={checking || !skill.managed}
+                title={!skill.managed ? NOT_MANAGED_TITLE : `Remove ${skill.name}`}
+              >
+                <Trash2 size={14} aria-hidden="true" />
+              </button>
+            ) : (
+              <span className="skill-remove-confirm" role="status">
+                {removalConfirmation(skill, props.duplicateNames?.has(skill.name) ?? false)}
+                <button type="button" className="danger-button" onClick={() => removeSkill(skill)} disabled={checking}>
+                  Yes
+                </button>
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() => setConfirmingRemove((current) => ({ ...current, [key]: false }))}
+                  disabled={checking}
+                >
+                  Cancel
+                </button>
+              </span>
+            );
+
+            if (props.scope === "user") {
+              return (
+                <article className="skill-row" key={key} aria-busy={checking}>
+                  <div className="skill-row-main">
+                    <div className="skill-row-copy">
+                      <h3 title={skill.path}>{skill.name}</h3>
+                      <p className="skill-description" title={skill.description}>
+                        {skill.description}
+                      </p>
+                    </div>
+                    <span className={`skill-managed-state ${skill.managed ? "managed" : "unmanaged"}`}>{skill.managed ? "Managed" : "Unmanaged"}</span>
+                    <div className="skill-controls">{enabledControl}</div>
+                  </div>
+                  <details className="skill-row-details">
+                    <summary aria-label={`More options for ${skill.name}`}>
+                      <ChevronDown size={13} aria-hidden="true" /> Details
+                    </summary>
+                    <div className="skill-row-detail-panel">
+                      <p>{skill.managed ? "Installed and managed by Apple Pi for your user account." : NOT_MANAGED_TITLE}</p>
+                      {diagnostic && (
+                        <p className={`skill-diagnostic ${diagnostic.type}`} role={diagnosticRole(diagnostic.type)}>
+                          {diagnostic.message}
+                        </p>
+                      )}
+                      <div className="skill-row-secondary-actions">{removeControl}</div>
+                    </div>
+                  </details>
+                </article>
+              );
+            }
             return (
               <article className="skill-card" key={key} aria-busy={checking}>
                 <div className="skill-summary">
@@ -310,52 +383,11 @@ export function SkillSettings(props: SkillSettingsProps) {
                     </p>
                   </div>
                   <div className="skill-controls">
-                    <button
-                      type="button"
-                      className="skill-toggle"
-                      aria-label={enabled ? `Disable ${skill.name}` : `Enable ${skill.name}`}
-                      aria-pressed={enabled}
-                      aria-busy={settling}
-                      onClick={() => toggleEnabled(skill)}
-                      // Stays enabled (and focusable) while settling: toggleEnabled
-                      // ignores the repeat click itself, and a disabled button would
-                      // drop keyboard focus mid-operation and dim the effect.
-                      disabled={!skill.managed}
-                      title={!skill.managed ? NOT_MANAGED_TITLE : undefined}
-                    >
-                      {settling ? <CircleDashed size={16} className="skill-toggle-settling" /> : enabled ? <ToggleRight size={16} /> : <ToggleLeft size={16} />}
-                      {settling ? (enabled ? "Enabling…" : "Disabling…") : enabled ? "Enabled" : "Disabled"}
-                    </button>
+                    {enabledControl}
                     {/* Remove lives in the header row as an icon-only button, so
                         a card costs no extra height for a rarely used action; the
                         two-step confirm swaps in beside the toggle, in place. */}
-                    {!confirming ? (
-                      <button
-                        type="button"
-                        className="skill-remove"
-                        aria-label={`Remove ${skill.name}`}
-                        onClick={() => setConfirmingRemove((current) => ({ ...current, [key]: true }))}
-                        disabled={checking || !skill.managed}
-                        title={!skill.managed ? NOT_MANAGED_TITLE : `Remove ${skill.name}`}
-                      >
-                        <Trash2 size={14} aria-hidden="true" />
-                      </button>
-                    ) : (
-                      <span className="skill-remove-confirm" role="status">
-                        {removalConfirmation(skill, props.duplicateNames?.has(skill.name) ?? false)}
-                        <button type="button" className="danger-button" onClick={() => removeSkill(skill)} disabled={checking}>
-                          Yes
-                        </button>
-                        <button
-                          type="button"
-                          className="secondary"
-                          onClick={() => setConfirmingRemove((current) => ({ ...current, [key]: false }))}
-                          disabled={checking}
-                        >
-                          Cancel
-                        </button>
-                      </span>
-                    )}
+                    {removeControl}
                   </div>
                 </div>
                 <p className="skill-description">{skill.description}</p>

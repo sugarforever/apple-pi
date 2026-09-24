@@ -286,6 +286,23 @@ describe("renderer skills settings contract", () => {
     expect(skills).toContain("aria-busy={checking}");
   });
 
+  it("renders user Skills as compact rows with predictable long-text treatment and progressive disclosure", () => {
+    expect(skills).toContain('props.scope === "user" ? "skill-user-list" : "skill-card-list"');
+    expect(skills).toContain('<article className="skill-row"');
+    expect(skills).toContain('className="skill-description" title={skill.description}');
+    expect(skills).toContain('<details className="skill-row-details">');
+    expect(skills).toContain("aria-label={`More options for ${skill.name}`}");
+    expect(rule(".skill-row-copy h3")).toContain("text-overflow: ellipsis");
+    expect(rule(".skill-row .skill-description")).toContain("-webkit-line-clamp: 2");
+  });
+
+  it("shows managed and enabled state in every compact row while keeping unmanaged Skills visible", () => {
+    expect(skills).toContain('{skill.managed ? "Managed" : "Unmanaged"}');
+    expect(skills).toContain("{enabledControl}");
+    expect(skills).toContain("disabled={!skill.managed}");
+    expect(skills).toContain('skill.managed ? "Installed and managed by Apple Pi for your user account." : NOT_MANAGED_TITLE');
+  });
+
   it("surfaces per-skill and catalog-level diagnostics with an accessible role, adapted from type instead of severity", () => {
     expect(skills).toContain('export function diagnosticRole(type: SkillDiagnostic["type"]): "alert" | "status" {');
     expect(skills).toContain("role={diagnosticRole(diagnostic.type)}");
@@ -402,6 +419,7 @@ describe("renderer skills settings mounting contract", () => {
     expect(source).toContain("onInstall: async (scope, sourcePath) => {");
     expect(source).toContain("onPickDirectory: () => window.applePi.skill.pickDirectory()");
     expect(source).toContain('scope: "user"');
+    expect(source).toContain('title: "User Skills"');
     expect(source).toContain("skills: skillScopeViewModel.settings.enabled");
     expect(source).toContain("disabledSkills: skillScopeViewModel.settings.disabled");
     expect(source).toContain("unscopedDiagnostics: skillScopeViewModel.unscopedDiagnostics");
