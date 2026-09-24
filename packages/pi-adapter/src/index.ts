@@ -14,6 +14,28 @@ export type PiEventListener = (event: ApplePiSessionEvent) => void;
 
 export const PI_VERSION = adapterPackage.dependencies["@earendil-works/pi-coding-agent"];
 
+const titleSegmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+const SESSION_TITLE_PROMPT =
+  "Create a concise title for this coding session. Preserve the user's language. Return only the title, with no quotes, label, markdown, or ending punctuation. Use at most 48 characters.";
+
+function semanticTitleText(content: unknown): string | undefined {
+  if (!content || typeof content !== "object") return undefined;
+  const parts = (content as { content?: unknown }).content;
+  if (!Array.isArray(parts)) return undefined;
+  const raw = parts
+    .flatMap((part) => (part && typeof part === "object" && (part as { type?: unknown }).type === "text" ? [(part as { text?: unknown }).text] : []))
+    .filter((text): text is string => typeof text === "string")
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^title\s*:\s*/i, "")
+    .replace(/^["'`]+|["'`]+$/g, "")
+    .trim();
+  if (!raw) return undefined;
+  const graphemes = [...titleSegmenter.segment(raw)].map(({ segment }) => segment);
+  return graphemes.length > 48 ? `${graphemes.slice(0, 47).join("").trimEnd()}…` : raw;
+}
+
 interface SessionOwner {
   session: AgentSession;
   cwd: string;
@@ -77,7 +99,27 @@ export class PiSessionService {
 
   async send(text: string): Promise<void> {
     if (!this.owner) throw new Error("Open a workspace first");
-    await this.owner.session.prompt(text);
+    const owner = this.owner;
+    const shouldGenerateTitle = !owner.session.sessionName && !owner.session.messages.some((message) => message.role === "user");
+    await owner.session.prompt(text);
+    if (!shouldGenerateTitle || owner.session.sessionName || !owner.session.model) return;
+    try {
+      const response = await (
+        await this.getRuntime()
+      ).completeSimple(
+        owner.session.model,
+        {
+          systemPrompt: SESSION_TITLE_PROMPT,
+          messages: [{ role: "user", content: text, timestamp: Date.now() }],
+        },
+        { maxTokens: 80, reasoning: "minimal" },
+      );
+      const title = semanticTitleText(response);
+      if (title && !owner.session.sessionName) owner.session.setSessionName(title);
+    } catch {
+      // Naming is best-effort: the completed coding turn remains successful and
+      // the session list keeps its deterministic first-message fallback.
+    }
   }
 
   async cancel(): Promise<void> {

@@ -125,6 +125,11 @@ describe("renderer visual contract", () => {
     expect(rule(".settings-card")).not.toContain("background:");
   });
 
+  it("uses bold navigation type only for the selected workspace or session", () => {
+    expect(rule(".sidebar nav > button,\n.workspace-nav-button")).toContain("font-weight: 400");
+    expect(rule(".sidebar nav > button.selected,\n.workspace-nav-button.selected")).toContain("font-weight: 600");
+  });
+
   it("omits implementation-status copy from the sidebar", () => {
     expect(source).not.toContain("Local agent");
     expect(source).not.toContain("Running locally");
