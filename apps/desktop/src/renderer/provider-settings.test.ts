@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import type { CustomProviderDefinition, ProviderItem } from "@apple-pi/protocol";
 import {
+  adjacentProviderIndex,
   canStartOAuthLogin,
   filterProviders,
   firstActionableDiagnostic,
@@ -131,6 +132,16 @@ describe("provider browser", () => {
     expect(nextSelectedProviderId([], "openai")).toBeNull();
   });
 
+  it("moves through the provider directory with conventional listbox keys", () => {
+    expect(adjacentProviderIndex(1, 4, "ArrowDown")).toBe(2);
+    expect(adjacentProviderIndex(1, 4, "ArrowUp")).toBe(0);
+    expect(adjacentProviderIndex(1, 4, "Home")).toBe(0);
+    expect(adjacentProviderIndex(1, 4, "End")).toBe(3);
+    expect(adjacentProviderIndex(0, 4, "ArrowUp")).toBe(0);
+    expect(adjacentProviderIndex(3, 4, "ArrowDown")).toBe(3);
+    expect(adjacentProviderIndex(1, 4, "Enter")).toBeNull();
+  });
+
   it("renders one selectable directory and one busy detail surface", () => {
     const source = readFileSync(new URL("./src/provider-settings.tsx", import.meta.url), "utf8");
     expect(source).toContain('role="listbox"');
@@ -138,6 +149,15 @@ describe("provider browser", () => {
     expect(source).toContain('id="provider-detail"');
     expect(source).toContain("aria-busy={checking}");
     expect(source).toContain("disabled={checking}");
+    expect(source).toContain("adjacentProviderIndex(index, visible.length, event.key)");
     expect(source).not.toContain("className={`provider-card");
+  });
+
+  it("guards Provider disconnect and removal behind explicit confirmation", () => {
+    const source = readFileSync(new URL("./src/provider-settings.tsx", import.meta.url), "utf8");
+    expect(source).toContain('action: "disconnect"');
+    expect(source).toContain('action: "remove"');
+    expect(source).toContain('className="provider-action-confirm" role="status"');
+    expect(source).toContain("requestAnimationFrame(() => destructiveTriggerRefs.current[key]?.focus())");
   });
 });

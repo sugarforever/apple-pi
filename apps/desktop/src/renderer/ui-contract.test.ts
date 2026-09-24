@@ -144,6 +144,16 @@ describe("renderer visual contract", () => {
     expect(rule(".header-context", narrowScreenRules)).toContain("display: none;");
   });
 
+  it("narrows the sidebar at the packaged app's compact window breakpoint", () => {
+    const compactWindowRules = styles.match(/@media \(max-width: 800px\) \{([\s\S]*?)\n\}/)?.[1] ?? "";
+    expect(rule(".shell", compactWindowRules)).toContain("grid-template-columns: 200px minmax(0, 1fr)");
+  });
+
+  it("does not retain superseded Skill install/scope selectors", () => {
+    expect(styles).not.toContain(".radio-field");
+    expect(styles).not.toContain(".skill-scope-notice");
+  });
+
   it("keeps the chat composer inside the viewport while messages scroll", () => {
     const mainRule = rule("main");
     const timelineRule = rule(".timeline");
@@ -265,7 +275,7 @@ describe("renderer custom provider contract", () => {
   it("only offers Edit and Remove for providers Apple Pi's custom-provider store manages", () => {
     expect(providers).toContain("const isCustom = isCustomProvider(provider.id, props.customProviders);");
     expect(providers).toContain("{isCustom && !isEditingCustomProvider && (");
-    expect(providers).toContain("{isCustom && (");
+    expect(providers).toContain('{isCustom && !(confirmingAction?.providerId === provider.id && confirmingAction.action === "remove") && (');
   });
 
   it("submits only the single supported OpenAI-compatible api type, without exposing a one-option picker", () => {
@@ -285,7 +295,8 @@ describe("renderer custom provider contract", () => {
   it("keeps a custom provider's connect/verify/disable flow identical to a built-in provider's", () => {
     // Custom providers reuse the same connect/verify/disconnect buttons as built-in
     // providers below this point in the file; only Edit/Remove are new.
-    expect(providers).toContain('{provider.status === "connected" && provider.credentialSource === "apple_pi" && (');
+    expect(providers).toContain('provider.credentialSource === "apple_pi" &&');
+    expect(providers).toContain("props.onDisconnect(provider.id)");
   });
 });
 
