@@ -24,6 +24,7 @@
     "test:scripts": "node --test scripts/*.test.mjs",
     "verify": "pnpm versions:check && pnpm format:check && pnpm lint && pnpm typecheck && pnpm test:scripts && pnpm test && pnpm docs:check",
     "package:mac": "pnpm --filter @apple-pi/desktop package:mac",
+    "test:mac-package-launch": "pnpm --filter @apple-pi/desktop test:mac-package-launch",
     "package:win": "pnpm --filter @apple-pi/desktop package:win",
     "package:linux": "pnpm --filter @apple-pi/desktop package:linux",
     "prepare": "husky"

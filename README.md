@@ -59,8 +59,10 @@ corepack pnpm docs:check
 ```
 
 `corepack pnpm verify` runs the lint, typecheck, unit test, and documentation gates in
-one command. `test:host-smoke` builds the desktop output, starts the staged agent host,
-checks the compatibility handshake, and shuts it down. Pull requests also run the
+one command, including from a checkout with no generated `out` directory. `test:host-smoke`
+builds the desktop output, starts the staged agent host, checks the compatibility handshake,
+and shuts it down. On macOS, `package:mac` consistently ad-hoc signs the local development
+package; run `test:mac-package-launch` afterward for a launch smoke check. Pull requests also run the
 [Pi compatibility workflow](.github/workflows/pi-compatibility.yml).
 
 ### Code style and commits
@@ -91,6 +93,12 @@ Run only the command for the current operating system:
 corepack pnpm package:mac
 corepack pnpm package:win
 corepack pnpm package:linux
+```
+
+After creating a local macOS package, verify that the unpacked app reaches a stable running state:
+
+```bash
+corepack pnpm test:mac-package-launch
 ```
 
 | Platform | Architecture                      | Outputs                      |
