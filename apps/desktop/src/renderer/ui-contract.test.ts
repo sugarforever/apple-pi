@@ -1,7 +1,10 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-const source = readFileSync(new URL("./src/main.tsx", import.meta.url), "utf8");
+const main = readFileSync(new URL("./src/main.tsx", import.meta.url), "utf8");
+const sidebar = readFileSync(new URL("./src/app-sidebar.tsx", import.meta.url), "utf8");
+const conversation = readFileSync(new URL("./src/conversation.tsx", import.meta.url), "utf8");
+const source = [main, sidebar, conversation].join("\n");
 const styles = readFileSync(new URL("./src/styles.css", import.meta.url), "utf8");
 const settings = readFileSync(new URL("./src/settings-shell.tsx", import.meta.url), "utf8");
 const primitives = readFileSync(new URL("./src/ui-primitives.tsx", import.meta.url), "utf8");
@@ -15,7 +18,7 @@ const rule = (selector: string, source = styles): string => {
 describe("renderer accessibility contract", () => {
   it("exposes selected navigation state to assistive technology", () => {
     expect(source).toContain('aria-current={selected ? "page" : undefined}');
-    expect(source).toContain('aria-current={activeSessionId === session.id ? "page" : undefined}');
+    expect(source).toContain('aria-current={props.activeSessionId === session.id ? "page" : undefined}');
   });
 
   it("keeps compact session counts meaningful to assistive technology", () => {
@@ -56,7 +59,7 @@ describe("renderer visual contract", () => {
   it("uses a compact single-line conversation header", () => {
     expect(source).not.toContain('state.opened ? "Active session"');
     expect(source).toContain('className="header-context"');
-    expect(rule("main")).toContain("grid-template-rows: 48px minmax(0, 1fr) auto");
+    expect(rule("main")).toContain("grid-template-rows: 44px minmax(0, 1fr) auto");
     expect(rule(".header-title")).toContain("flex-direction: row");
   });
 
@@ -74,7 +77,7 @@ describe("renderer visual contract", () => {
     expect(userMessage).not.toContain("border:");
     expect(userMessage).not.toContain("background:");
     expect(userMessage).not.toContain("padding:");
-    expect(rule(".message")).toContain("margin: 0 0 22px");
+    expect(rule(".message")).toContain("margin: 0 0 18px");
   });
 
   it("renders tool activity as a disclosure row rather than a card", () => {
@@ -102,7 +105,7 @@ describe("renderer visual contract", () => {
   });
 
   it("keeps collapsed tool activity visually subordinate to conversation text", () => {
-    expect(rule(".tool-activity")).toContain("margin: 0 0 14px");
+    expect(rule(".tool-activity")).toContain("margin: 0 0 var(--space-3)");
     expect(rule(".tool-activity summary")).toContain("padding: 2px 0");
     expect(rule(".tool-heading strong")).toContain("color: var(--text-tertiary)");
     expect(rule(".tool-heading strong")).toContain("font-size: 11px");
@@ -113,13 +116,13 @@ describe("renderer visual contract", () => {
   });
 
   it("keeps the composer compact and reserves emphasis for focus", () => {
-    expect(rule(".composer textarea")).toContain("min-height: 42px");
+    expect(rule(".composer textarea")).toContain("min-height: 38px");
     expect(rule(".composer")).not.toContain("box-shadow:");
     expect(rule(".composer:focus-within")).toContain("border-color:");
   });
 
   it("uses compact navigation and plain settings content", () => {
-    expect(rule(".shell")).toContain("grid-template-columns: 248px minmax(0, 1fr)");
+    expect(rule(".shell")).toContain("grid-template-columns: 224px minmax(0, 1fr)");
     expect(source).toContain('className="session-meta"');
     expect(rule(".settings-card")).not.toContain("border:");
     expect(rule(".settings-card")).not.toContain("background:");
@@ -168,6 +171,15 @@ describe("renderer visual contract", () => {
   it("optimizes long conversation rendering", () => {
     expect(styles).toContain("content-visibility: auto");
     expect(styles).toContain("contain-intrinsic-size");
+  });
+
+  it("keeps App focused on orchestration through shell-level component boundaries", () => {
+    expect(main).toContain("<AppSidebar");
+    expect(main).toContain("<ConversationView");
+    expect(main).not.toContain('<aside className="sidebar">');
+    expect(main).not.toContain('<footer className="composer">');
+    expect(sidebar).toContain('aria-label="Sessions"');
+    expect(conversation).toContain('role="log"');
   });
 
   it("sets native dark chrome metadata", () => {
@@ -454,7 +466,7 @@ describe("renderer skills settings mounting contract", () => {
     expect(source).toContain("aria-expanded={menuOpen}");
     expect(source).toContain('role="menu"');
     expect(source).toContain('role="menuitem"');
-    expect(source).toContain('onOpenSkills={() => void openWorkspace(workspace.path, "skills")}');
+    expect(source).toContain('onOpenSkills={() => props.onOpenWorkspace(workspace.path, "skills")}');
     expect(source).toContain('if (event.key !== "Escape") return;');
     expect(source).toContain('document.addEventListener("pointerdown", closeOnOutsidePointer)');
     expect(source).not.toContain('className="workspace-skills-button"');

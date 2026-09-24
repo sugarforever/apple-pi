@@ -1,66 +1,21 @@
 import React, { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import {
-  AlertCircle,
-  Blocks,
-  Check,
-  ChevronDown,
-  CircleDashed,
-  Ellipsis,
-  Folder,
-  FolderInput,
-  MessageSquare,
-  Plus,
-  Send,
-  Settings2,
-  Sparkles,
-  Square,
-  Terminal,
-  X,
-} from "lucide-react";
+import { CircleDashed, Square, X } from "lucide-react";
 import type { CustomProviderDefinition, ProviderItem, SessionSnapshot, SkillCatalog, SkillItem, SkillScope } from "@apple-pi/protocol";
 import { runSessionResync } from "../session-resync.js";
 import { initialSessionState, reduceSession } from "../session-state.js";
-import { toTimelineItems, type ToolItem } from "../tool-activity.js";
+import { toTimelineItems } from "../tool-activity.js";
 import type { Catalog, ModelItem, WorkspaceOpenResult } from "../global.js";
-import { ModelSelect, modelKey, parseModelKey } from "./model-select.js";
+import { parseModelKey } from "./model-select.js";
 import { modelUnavailable } from "./provider-settings.js";
 import { SettingsShell } from "./settings-shell.js";
 import { materializeDraftSession, reconcileSessionList, shouldOpenSession, type UiSessionItem } from "../session-list.js";
 import { buildSkillScopeViewModel } from "./skill-scope-view-model.js";
 import { SkillSettings } from "./skill-settings.js";
 import { IconButton } from "./ui-primitives.js";
+import { AppSidebar } from "./app-sidebar.js";
+import { ConversationView } from "./conversation.js";
 import "./styles.css";
-
-const escapeHtml = (value: string): string =>
-  value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
-
-const markdownToHtml = (value: string): { __html: string } => {
-  const codeBlocks: string[] = [];
-  const fenced = value.replace(/```([\s\S]*?)```/g, (_match, block) => {
-    const i = codeBlocks.length;
-    codeBlocks.push(String(block));
-    return `\u0000CODEBLOCK_${i}\u0000`;
-  });
-
-  const escaped = escapeHtml(fenced)
-    .replace(/`([^`]+)`/g, "<code>$1</code>")
-    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
-    .replace(/\*(.+?)\*/g, "<em>$1</em>")
-    .replace(/\[(.+?)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noreferrer">$1</a>');
-
-  const withCode = codeBlocks.reduce(
-    (html, block, i) => html.replace(`\u0000CODEBLOCK_${i}\u0000`, `<pre><code>${escapeHtml(block).trimEnd()}</code></pre>`),
-    escaped,
-  );
-
-  return {
-    __html: withCode
-      .split("\n\n")
-      .map((paragraph) => `<p>${paragraph.replace(/\n/g, "<br/>")}</p>`)
-      .join(""),
-  };
-};
 
 const makeDraftSession = (workspacePath: string): UiSessionItem => ({
   id: `draft-${Math.random().toString(36).slice(2)}`,
@@ -71,83 +26,6 @@ const makeDraftSession = (workspacePath: string): UiSessionItem => ({
   messageCount: 0,
   persisted: false,
 });
-
-function WorkspaceNavItem({
-  workspace,
-  selected,
-  onOpen,
-  onOpenSkills,
-}: {
-  workspace: Catalog["workspaces"][number];
-  selected: boolean;
-  onOpen: () => void;
-  onOpenSkills: () => void;
-}) {
-  const [menuOpen, setMenuOpen] = useState(false);
-  const itemRef = useRef<HTMLDivElement>(null);
-  const menuTriggerRef = useRef<HTMLButtonElement>(null);
-  const firstMenuItemRef = useRef<HTMLButtonElement>(null);
-
-  useEffect(() => {
-    if (!menuOpen) return;
-    firstMenuItemRef.current?.focus();
-
-    const closeOnOutsidePointer = (event: PointerEvent) => {
-      if (!itemRef.current?.contains(event.target as Node)) setMenuOpen(false);
-    };
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      setMenuOpen(false);
-      menuTriggerRef.current?.focus();
-    };
-
-    document.addEventListener("pointerdown", closeOnOutsidePointer);
-    document.addEventListener("keydown", closeOnEscape);
-    return () => {
-      document.removeEventListener("pointerdown", closeOnOutsidePointer);
-      document.removeEventListener("keydown", closeOnEscape);
-    };
-  }, [menuOpen]);
-
-  return (
-    <div className="workspace-nav-item" ref={itemRef}>
-      <button
-        title={workspace.path}
-        className={`workspace-nav-button${selected ? " selected" : ""}`}
-        aria-current={selected ? "page" : undefined}
-        onClick={onOpen}
-      >
-        <span className="aside-icon">
-          <Folder size={15} /> <span>{workspace.name}</span>
-        </span>
-      </button>
-      <button
-        ref={menuTriggerRef}
-        className="workspace-menu-trigger"
-        aria-label={`More actions for ${workspace.name}`}
-        aria-haspopup="menu"
-        aria-expanded={menuOpen}
-        onClick={() => setMenuOpen((open) => !open)}
-      >
-        <Ellipsis size={16} />
-      </button>
-      {menuOpen && (
-        <div className="workspace-menu" role="menu" aria-label={`${workspace.name} actions`}>
-          <button
-            ref={firstMenuItemRef}
-            role="menuitem"
-            onClick={() => {
-              setMenuOpen(false);
-              onOpenSkills();
-            }}
-          >
-            <Blocks size={15} /> Skills
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
 
 function App() {
   const [state, dispatch] = useReducer(reduceSession, initialSessionState);
@@ -433,80 +311,20 @@ function App() {
       <a className="skip-link" href="#conversation">
         Skip to conversation
       </a>
-      <aside className="sidebar">
-        <div className="brand">
-          <span className="brand-mark">π</span>
-          <span>Apple Pi</span>
-        </div>
-        <button className="workspace" onClick={() => void openWorkspace()}>
-          <FolderInput size={17} />
-          <span>Open Workspace</span>
-          <kbd>⌘O</kbd>
-        </button>
-        <div className="section-title">
-          <span>Workspaces</span>
-          <small>{catalog.workspaces.length}</small>
-        </div>
-        <nav aria-label="Workspaces">
-          {catalog.workspaces.map((workspace) => (
-            <WorkspaceNavItem
-              key={workspace.path}
-              workspace={workspace}
-              selected={workspacePath === workspace.path}
-              onOpen={() => void openWorkspace(workspace.path)}
-              onOpenSkills={() => void openWorkspace(workspace.path, "skills")}
-            />
-          ))}
-        </nav>
-        {workspacePath && (
-          <>
-            <div className="sessions-head">
-              <span>Sessions</span>
-              <small>{sessions.length}</small>
-              <button aria-label="New session" title="New session" onClick={startDraftSession}>
-                <Plus size={14} />
-              </button>
-            </div>
-            <nav className="sessions">
-              {sessions.map((session) => (
-                <button
-                  key={session.id}
-                  className={activeSessionId === session.id ? "selected" : ""}
-                  aria-current={activeSessionId === session.id ? "page" : undefined}
-                  onClick={() => void openSession(session)}
-                >
-                  <span className="session-name">
-                    <MessageSquare size={13} />
-                    {session.persisted ? session.name : "Untitled session"}
-                  </span>
-                  <small className="session-meta">
-                    {session.persisted ? (
-                      <>
-                        {session.messageCount}
-                        <span className="sr-only">{session.messageCount === 1 ? " message" : " messages"}</span>
-                      </>
-                    ) : (
-                      "Draft"
-                    )}
-                  </small>
-                </button>
-              ))}
-            </nav>
-          </>
-        )}
-        <div className="sidebar-footer">
-          <button
-            className="settings-button"
-            aria-pressed={settingsOpen}
-            onClick={() => {
-              setWorkspaceSkillsOpen(false);
-              setSettingsOpen(!settingsOpen);
-            }}
-          >
-            <Settings2 size={15} /> Settings
-          </button>
-        </div>
-      </aside>
+      <AppSidebar
+        catalog={catalog}
+        workspacePath={workspacePath}
+        sessions={sessions}
+        activeSessionId={activeSessionId}
+        settingsOpen={settingsOpen}
+        onOpenWorkspace={(path, view) => void openWorkspace(path, view)}
+        onStartSession={startDraftSession}
+        onOpenSession={(session) => void openSession(session)}
+        onToggleSettings={() => {
+          setWorkspaceSkillsOpen(false);
+          setSettingsOpen(!settingsOpen);
+        }}
+      />
       <main>
         <header>
           <div className="header-title">
@@ -642,82 +460,18 @@ function App() {
             />
           </section>
         ) : (
-          <>
-            <section className="timeline" id="conversation" aria-label="Conversation" role="log" aria-live="polite" tabIndex={-1}>
-              {!state.opened && (
-                <div className="empty">
-                  <div className="orb">
-                    <Sparkles size={26} />
-                  </div>
-                  <span className="empty-kicker">PRIVATE · LOCAL · YOURS</span>
-                  <h1>Build with an agent that lives on your Mac.</h1>
-                  <p>Open a workspace to start a focused coding session. Your projects and transcripts stay on this machine.</p>
-                  <button onClick={() => void openWorkspace()}>
-                    <FolderInput size={17} /> Open a Workspace
-                  </button>
-                </div>
-              )}
-              {timelineItems.map((item, index) =>
-                item.kind === "tool" ? (
-                  <ToolActivity key={`tool-${item.id}-${index}`} item={item} />
-                ) : (
-                  <article key={`message-${index}`} className={`message ${item.role}`}>
-                    <header className="message-author">
-                      <span>{item.role === "user" ? "You" : "Pi"}</span>
-                    </header>
-                    <div className="message-content" dangerouslySetInnerHTML={markdownToHtml(item.text)} />
-                  </article>
-                ),
-              )}
-              {state.error && (
-                <div className="timeline-error" role="alert">
-                  {state.error}
-                </div>
-              )}
-            </section>
-            {activeModelUnavailable && (
-              <p className="model-unavailable-notice" role="status">
-                This session’s model is no longer available. Choose another model to continue.
-              </p>
-            )}
-            <footer className="composer">
-              <div className="input-toolbar">
-                <textarea
-                  name="message"
-                  autoComplete="off"
-                  disabled={!state.opened || state.running}
-                  value={draft}
-                  onChange={(event) => setDraft(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" && !event.shiftKey) {
-                      event.preventDefault();
-                      void send();
-                    }
-                  }}
-                  aria-label="Message Pi"
-                  placeholder={state.opened ? "Ask Pi to build, debug, or explain…" : "Open a workspace to start"}
-                />
-                <div className="composer-bottom">
-                  <div className="model-select-wrap">
-                    {state.opened && !draftSessionId ? <Sparkles size={14} /> : <CircleDashed size={14} />}
-                    <ModelSelect
-                      ariaLabel="Session model"
-                      models={groupedModels}
-                      value={state.opened && state.model ? modelKey(state.model) : ""}
-                      onChange={(value) => void snapshotOp(window.applePi.model.setSession(parseModelKey(value)))}
-                      emptyLabel={state.opened ? "Default model" : "Select model"}
-                      disabled={!state.opened}
-                    />
-                    <ChevronDown size={13} className="select-chevron" />
-                  </div>
-                  <span className="send-hint">↵ send · ⇧↵ new line</span>
-                </div>
-              </div>
-              <button aria-label="Send message" disabled={!state.opened || !draft.trim() || state.running} onClick={() => void send()} title="Send message">
-                <Send size={16} />
-              </button>
-            </footer>
-          </>
+          <ConversationView
+            state={state}
+            timelineItems={timelineItems}
+            activeModelUnavailable={activeModelUnavailable}
+            draft={draft}
+            draftSessionId={draftSessionId}
+            models={groupedModels}
+            onDraftChange={setDraft}
+            onOpenWorkspace={() => void openWorkspace()}
+            onModelChange={(value) => void snapshotOp(window.applePi.model.setSession(parseModelKey(value)))}
+            onSend={() => void send()}
+          />
         )}
       </main>
       <div className="app-feedback" aria-live="polite" aria-atomic="true">
@@ -736,70 +490,6 @@ function App() {
         )}
       </div>
     </div>
-  );
-}
-
-function ToolActivity({ item }: { item: ToolItem }) {
-  const statusLabel = item.status === "running" ? "Running" : item.status === "error" ? "Failed" : "Completed";
-  const statusIcon = item.status === "running" ? <CircleDashed size={12} /> : item.status === "error" ? <AlertCircle size={12} /> : <Check size={12} />;
-  const toolLabel = item.name === "bash" ? "Terminal" : item.name.replaceAll("_", " ");
-
-  return (
-    <details className={`tool-activity status-${item.status}`}>
-      <summary>
-        <span className="tool-icon">
-          <Terminal size={14} />
-        </span>
-        <span className="tool-heading">
-          <strong>{toolLabel}</strong>
-          <code title={item.summary}>{item.summary || "Tool call"}</code>
-        </span>
-        <span className="tool-status">
-          {statusIcon}
-          {statusLabel}
-        </span>
-        <ChevronDown className="tool-chevron" size={13} />
-      </summary>
-      <div className="tool-details">
-        {item.argumentsText && (
-          <section>
-            <span>Input</span>
-            <pre>
-              <code>{item.argumentsText}</code>
-            </pre>
-          </section>
-        )}
-        {item.status === "running" ? (
-          <p>Waiting for the tool to finish…</p>
-        ) : (
-          <section>
-            <span>Output</span>
-            {item.outputParts.length === 0 ? (
-              <p className="tool-empty-output">Tool returned no output.</p>
-            ) : (
-              <div className="tool-output">
-                {item.outputParts.map((part, index) =>
-                  part.kind === "text" ? (
-                    <pre key={`text-${index}`}>
-                      <code>{part.text}</code>
-                    </pre>
-                  ) : (
-                    <img
-                      key={`image-${index}`}
-                      src={`data:${part.mimeType};base64,${part.data}`}
-                      alt={`${toolLabel} output`}
-                      width="960"
-                      height="540"
-                      loading="lazy"
-                    />
-                  ),
-                )}
-              </div>
-            )}
-          </section>
-        )}
-      </div>
-    </details>
   );
 }
 
