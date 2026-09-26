@@ -493,8 +493,19 @@ function App() {
   );
 }
 
-createRoot(document.getElementById("root")!).render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>,
-);
+const root = createRoot(document.getElementById("root")!);
+const fixtureId =
+  new URLSearchParams(window.location.search).get("visual-fixture") ??
+  (window.location.hash.startsWith("#visual-fixture=") ? decodeURIComponent(window.location.hash.slice(16)) : null);
+
+if (fixtureId) {
+  void import("./visual-fixtures.js").then(({ VisualFixtureApp }) => {
+    root.render(<VisualFixtureApp fixtureId={fixtureId} />);
+  });
+} else {
+  root.render(
+    <React.StrictMode>
+      <App />
+    </React.StrictMode>,
+  );
+}

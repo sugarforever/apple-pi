@@ -11,6 +11,7 @@
     "build": "pnpm --filter @apple-pi/agent-host build && electron-vite build && node scripts/stage-agent-host.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.node.json --noEmit",
     "test": "node --test scripts/*.test.mjs && vitest run --exclude=scripts/*.test.mjs --exclude=src/main/*-package.test.ts",
+    "fixtures:generate": "pnpm build && node scripts/generate-visual-fixtures.mjs",
     "test:package": "pnpm build && vitest run src/main/preload-package.test.ts src/main/agent-host-package.test.ts",
     "test:mac-package-launch": "node scripts/verify-macos-app-launch.mjs",
     "package:mac": "pnpm build && APPLE_PI_ADHOC_RESIGN=1 CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac --publish never",

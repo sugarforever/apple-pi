@@ -56,6 +56,37 @@ describe("renderer accessibility contract", () => {
 });
 
 describe("renderer visual contract", () => {
+  it("exposes semantic roles for every visual decision used by feature modules", () => {
+    for (const token of [
+      "--surface-canvas",
+      "--surface-primary",
+      "--surface-raised",
+      "--surface-selected",
+      "--text-strong",
+      "--text-muted",
+      "--text-subtle",
+      "--border-subtle",
+      "--border-control",
+      "--action-accent",
+      "--state-danger",
+      "--state-success",
+      "--focus-ring",
+      "--type-body",
+      "--type-ui",
+      "--type-meta",
+      "--size-control",
+      "--size-content",
+    ]) {
+      expect(styles, token).toContain(`${token}:`);
+    }
+  });
+
+  it("keeps focus, reduced motion, and page overflow safeguards global", () => {
+    expect(rule(":focus-visible")).toContain("var(--focus-ring)");
+    expect(rule("body")).toContain("overflow: hidden");
+    expect(styles).toContain("@media (prefers-reduced-motion: reduce)");
+  });
+
   it("uses a compact single-line conversation header", () => {
     expect(source).not.toContain('state.opened ? "Active session"');
     expect(source).toContain('className="header-context"');
@@ -166,11 +197,11 @@ describe("renderer visual contract", () => {
 
   it("uses a local system type stack and explicit readable type tokens", () => {
     expect(styles).not.toContain("fonts.googleapis.com");
-    expect(styles).toContain("--text-body: 14px");
-    expect(styles).toContain("--text-ui: 13px");
-    expect(styles).toContain("--text-meta: 11px");
-    expect(styles).toContain("--control-height: 34px");
-    expect(styles).toContain("--content-width: 620px");
+    expect(styles).toContain("--type-body: 14px");
+    expect(styles).toContain("--type-ui: 13px");
+    expect(styles).toContain("--type-meta: 11px");
+    expect(styles).toContain("--size-control: 34px");
+    expect(styles).toContain("--size-content: 620px");
   });
 
   it("provides component-level focus treatments", () => {
