@@ -1,0 +1,83 @@
+.fixture-shell {
+  display: grid;
+  grid-template-columns: 224px minmax(0, 1fr);
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--surface-canvas);
+}
+
+.fixture-sidebar {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: 40px var(--space-4) var(--space-4);
+  border-right: 1px solid var(--border-subtle);
+  background: var(--surface-primary);
+  color: var(--text-muted);
+}
+
+.fixture-sidebar .brand {
+  margin: 0 0 var(--space-5);
+}
+.fixture-sidebar p {
+  margin: 0;
+  color: var(--text-subtle);
+  font-size: 10px;
+  letter-spacing: 0.065em;
+}
+.fixture-sidebar strong {
+  color: var(--text-strong);
+  font-size: var(--type-ui);
+  text-transform: capitalize;
+}
+.fixture-sidebar > span {
+  overflow-wrap: anywhere;
+  color: var(--text-subtle);
+  font: var(--type-meta)/1.5 var(--font-mono);
+}
+.fixture-settings {
+  min-width: 0;
+  overflow: auto;
+}
+.fixture-settings > .provider-settings,
+.fixture-settings > .skill-settings {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+.fixture-loading {
+  display: flex;
+  max-width: var(--size-content);
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-primary);
+}
+.fixture-loading svg {
+  color: var(--action-accent);
+  animation: status-spin 1s linear infinite;
+}
+.fixture-loading h2 {
+  margin: 0 0 var(--space-1);
+  font-size: 16px;
+}
+.fixture-loading p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--type-ui);
+}
+
+@media (max-width: 800px) {
+  .fixture-shell {
+    grid-template-columns: 200px minmax(0, 1fr);
+  }
+}
+
+/* A blinking caret would make focused-input captures nondeterministic. */
+.fixture-shell * {
+  caret-color: transparent;
+}

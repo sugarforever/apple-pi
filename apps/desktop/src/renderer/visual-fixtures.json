@@ -1,0 +1,24 @@
+{
+  "viewports": [
+    { "width": 1280, "height": 800 },
+    { "width": 960, "height": 640 },
+    { "width": 800, "height": 600 }
+  ],
+  "fixtures": [
+    "conversation/success-long-focus",
+    "conversation/loading",
+    "conversation/failure-unavailable",
+    "providers/success-focus",
+    "providers/loading",
+    "providers/empty",
+    "providers/failure",
+    "user-skills/success-focus",
+    "user-skills/loading",
+    "user-skills/empty",
+    "user-skills/failure",
+    "workspace-skills/success-focus",
+    "workspace-skills/loading",
+    "workspace-skills/empty",
+    "workspace-skills/failure"
+  ]
+}

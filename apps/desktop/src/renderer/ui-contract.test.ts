@@ -166,11 +166,11 @@ describe("renderer visual contract", () => {
 
   it("uses a local system type stack and explicit readable type tokens", () => {
     expect(styles).not.toContain("fonts.googleapis.com");
-    expect(styles).toContain("--text-body: 14px");
-    expect(styles).toContain("--text-ui: 13px");
-    expect(styles).toContain("--text-meta: 11px");
-    expect(styles).toContain("--control-height: 34px");
-    expect(styles).toContain("--content-width: 620px");
+    expect(styles).toContain("--type-body: 14px");
+    expect(styles).toContain("--type-ui: 13px");
+    expect(styles).toContain("--type-meta: 11px");
+    expect(styles).toContain("--size-control: 34px");
+    expect(styles).toContain("--size-content: 620px");
   });
 
   it("provides component-level focus treatments", () => {

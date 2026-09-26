@@ -3,21 +3,25 @@
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   color: #f1f3f2;
   background: #0b0d0d;
-  --bg: #0b0d0d;
-  --surface: #101313;
-  --raised: #171b19;
-  --selected: #1d2320;
-  --border: #303633;
-  --border-strong: #424a46;
-  --text-primary: #f1f3f2;
-  --text-secondary: #a5ada8;
-  --text-tertiary: #7e8781;
-  --accent: #d9ff57;
+  /* Semantic roles own visual meaning; compatibility aliases below keep the
+     current feature migration incremental and preserve today's pixels. */
+  --surface-canvas: #0b0d0d;
+  --surface-primary: #101313;
+  --surface-raised: #171b19;
+  --surface-selected: #1d2320;
+  --border-subtle: #303633;
+  --border-control: #424a46;
+  --text-strong: #f1f3f2;
+  --text-muted: #a5ada8;
+  --text-subtle: #7e8781;
+  --action-accent: #d9ff57;
   --accent-ink: #172000;
-  --danger: #ffb4aa;
-  --text-body: 14px;
-  --text-ui: 13px;
-  --text-meta: 11px;
+  --state-danger: #ffb4aa;
+  --state-success: #dff5a0;
+  --focus-ring: var(--action-accent);
+  --type-body: 14px;
+  --type-ui: 13px;
+  --type-meta: 11px;
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
@@ -26,9 +30,25 @@
   --radius-sm: 6px;
   --radius-md: 8px;
   --radius-lg: 10px;
-  --control-height: 34px;
-  --content-width: 620px;
+  --size-control: 34px;
+  --size-content: 620px;
   --font-mono: ui-monospace, "SFMono-Regular", Menlo, Monaco, Consolas, monospace;
+  --bg: var(--surface-canvas);
+  --surface: var(--surface-primary);
+  --raised: var(--surface-raised);
+  --selected: var(--surface-selected);
+  --border: var(--border-subtle);
+  --border-strong: var(--border-control);
+  --text-primary: var(--text-strong);
+  --text-secondary: var(--text-muted);
+  --text-tertiary: var(--text-subtle);
+  --accent: var(--action-accent);
+  --danger: var(--state-danger);
+  --text-body: var(--type-body);
+  --text-ui: var(--type-ui);
+  --text-meta: var(--type-meta);
+  --control-height: var(--size-control);
+  --content-width: var(--size-content);
 }
 * {
   box-sizing: border-box;
@@ -52,7 +72,7 @@ button {
   touch-action: manipulation;
 }
 :focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 .sr-only {
@@ -1080,7 +1100,7 @@ main > header {
   font-size: var(--text-meta);
 }
 .status-badge.success {
-  color: #dff5a0;
+  color: var(--state-success);
 }
 .status-badge.danger,
 .provider-diagnostic.error {
@@ -1479,7 +1499,7 @@ main > header {
     opacity 160ms ease;
 }
 .skill-toggle[aria-pressed="true"] {
-  color: #dff5a0;
+  color: var(--state-success);
 }
 .skill-toggle[aria-busy="true"] {
   opacity: 0.75;
@@ -1618,7 +1638,7 @@ main > header {
   animation: status-spin 1s linear infinite;
 }
 .app-status.success {
-  color: #dff5a0;
+  color: var(--state-success);
 }
 .app-error {
   border: 1px solid #75413a;
