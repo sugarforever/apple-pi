@@ -1,19 +1,19 @@
 import { spawn } from "node:child_process";
 import { mkdir, readFile, unlink } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
 
-export function referenceFilename(fixture, viewport) {
+function referenceFilename(fixture, viewport) {
   return `${fixture.replaceAll("/", "-")}--${viewport.width}x${viewport.height}.png`;
 }
 
-export function capturePlan(manifest) {
+function capturePlan(manifest) {
   return manifest.fixtures.flatMap((fixture) => manifest.viewports.map((viewport) => ({ fixture, viewport, filename: referenceFilename(fixture, viewport) })));
 }
 
-export function pngDimensions(buffer) {
+function pngDimensions(buffer) {
   return { width: buffer.readUInt32BE(16), height: buffer.readUInt32BE(20) };
 }
 
@@ -42,9 +42,9 @@ async function requireCaptures(plan, outputDirectory) {
   );
 }
 
-export async function generateVisualFixtures() {
+async function generateVisualFixtures() {
   const manifest = JSON.parse(await readFile(join(scriptDirectory, "../src/renderer/visual-fixtures.json"), "utf8"));
-  const outputDirectory = join(scriptDirectory, "../test/visual-fixtures");
+  const outputDirectory = join(scriptDirectory, "../out/visual-fixtures");
   const rendererFile = join(scriptDirectory, "../out/renderer/index.html");
   const plan = capturePlan(manifest);
   await mkdir(outputDirectory, { recursive: true });
@@ -60,6 +60,4 @@ export async function generateVisualFixtures() {
   await requireCaptures(plan, outputDirectory);
 }
 
-if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
-  await generateVisualFixtures();
-}
+await generateVisualFixtures();

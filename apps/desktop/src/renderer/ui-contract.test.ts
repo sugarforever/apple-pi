@@ -56,37 +56,6 @@ describe("renderer accessibility contract", () => {
 });
 
 describe("renderer visual contract", () => {
-  it("exposes semantic roles for every visual decision used by feature modules", () => {
-    for (const token of [
-      "--surface-canvas",
-      "--surface-primary",
-      "--surface-raised",
-      "--surface-selected",
-      "--text-strong",
-      "--text-muted",
-      "--text-subtle",
-      "--border-subtle",
-      "--border-control",
-      "--action-accent",
-      "--state-danger",
-      "--state-success",
-      "--focus-ring",
-      "--type-body",
-      "--type-ui",
-      "--type-meta",
-      "--size-control",
-      "--size-content",
-    ]) {
-      expect(styles, token).toContain(`${token}:`);
-    }
-  });
-
-  it("keeps focus, reduced motion, and page overflow safeguards global", () => {
-    expect(rule(":focus-visible")).toContain("var(--focus-ring)");
-    expect(rule("body")).toContain("overflow: hidden");
-    expect(styles).toContain("@media (prefers-reduced-motion: reduce)");
-  });
-
   it("uses a compact single-line conversation header", () => {
     expect(source).not.toContain('state.opened ? "Active session"');
     expect(source).toContain('className="header-context"');

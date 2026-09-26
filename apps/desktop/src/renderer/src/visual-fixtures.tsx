@@ -11,13 +11,13 @@ import "./visual-fixtures.css";
 type FixtureFeature = "conversation" | "providers" | "user-skills" | "workspace-skills";
 type FixtureState = "success" | "loading" | "empty" | "failure" | "long-content" | "focus" | "unavailable";
 
-export interface VisualFixtureDefinition {
+interface VisualFixtureDefinition {
   id: string;
   feature: FixtureFeature;
   states: FixtureState[];
 }
 
-export const fixtureDefinitions: VisualFixtureDefinition[] = [
+const fixtureDefinitions: VisualFixtureDefinition[] = [
   { id: "conversation/success-long-focus", feature: "conversation", states: ["success", "long-content", "focus"] },
   { id: "conversation/loading", feature: "conversation", states: ["loading"] },
   { id: "conversation/failure-unavailable", feature: "conversation", states: ["failure", "unavailable"] },
