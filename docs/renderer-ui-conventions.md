@@ -46,15 +46,3 @@ Repeated feature structures remain focused components: `AppSidebar`, `Conversati
 ## Maintenance
 
 Prefer extending the token set or an existing primitive only when a current repeated need justifies it. Delete selectors when their final consumer is removed, and keep `ui-contract.test.ts` focused on accessibility, layout, and component-boundary contracts rather than exact implementation text that has no product meaning.
-
-## Visual QA fixtures
-
-The deterministic fixture catalog lives in `apps/desktop/src/renderer/visual-fixtures.json`. Its renderer uses the real `ConversationView`, `ProviderSettings`, and `SkillSettings` presentation boundaries with static typed props; the fixture query path never calls `window.applePi`, IPC, or persistence.
-
-Generate references with:
-
-```sh
-pnpm --filter @apple-pi/desktop fixtures:generate
-```
-
-The command builds the desktop and captures every catalog entry at 1280×800, 960×640, and 800×600 into the gitignored `apps/desktop/out/visual-fixtures`; references are generated on demand, not committed. It captures through the repository's Electron runtime and the Chrome DevTools Protocol, so no separate browser is required. Review the PNGs at 100% scale, comparing against a capture from `main` when a change affects layout. Check that text and controls stay inside the page, focus is visible in `*-focus` fixtures, loading and failure status remains legible, and narrow references preserve content scrolling. Captures force a 1× device scale, reduced motion, and software rasterization. Regenerating on the same machine can still flip single pixels by one color level along 512px raster tile seams; treat that as noise, not a visual change. Native system fonts differ between macOS, Windows, and Linux, so compare captures from the same platform.
