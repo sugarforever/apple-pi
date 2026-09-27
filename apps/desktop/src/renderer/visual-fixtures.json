@@ -5,6 +5,7 @@
     { "width": 800, "height": 600 }
   ],
   "fixtures": [
+    "navigation/workspace-hierarchy-long-focus",
     "conversation/success-long-focus",
     "conversation/loading",
     "conversation/failure-unavailable",

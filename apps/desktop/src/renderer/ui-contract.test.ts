@@ -10,6 +10,8 @@ const settings = readFileSync(new URL("./src/settings-shell.tsx", import.meta.ur
 const primitives = readFileSync(new URL("./src/ui-primitives.tsx", import.meta.url), "utf8");
 const modelSelect = readFileSync(new URL("./src/model-select.tsx", import.meta.url), "utf8");
 const document = readFileSync(new URL("./index.html", import.meta.url), "utf8");
+const visualFixtures = readFileSync(new URL("./src/visual-fixtures.tsx", import.meta.url), "utf8");
+const visualFixtureManifest = JSON.parse(readFileSync(new URL("./visual-fixtures.json", import.meta.url), "utf8")) as { fixtures: string[] };
 const rule = (selector: string, source = styles): string => {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   return source.match(new RegExp(`${escaped}\\s*\\{([^}]*)\\}`))?.[1] ?? "";
@@ -18,7 +20,7 @@ const rule = (selector: string, source = styles): string => {
 describe("renderer accessibility contract", () => {
   it("exposes selected navigation state to assistive technology", () => {
     expect(source).toContain('aria-current={selected ? "page" : undefined}');
-    expect(source).toContain('aria-current={props.activeSessionId === session.id ? "page" : undefined}');
+    expect(source).toContain('aria-current={activeSessionId === session.id ? "page" : undefined}');
   });
 
   it("keeps compact session counts meaningful to assistive technology", () => {
@@ -40,7 +42,7 @@ describe("renderer accessibility contract", () => {
     expect(primitives).toContain('type="search"');
     expect(providers).toContain("aria-busy={checking}");
     expect(providers).toContain('role={diagnostic.severity === "error" ? "alert" : "status"}');
-    expect(settings).toContain('<a href="#providers-title">Connect a provider</a>');
+    expect(settings).toContain('onClick={() => props.onSectionChange("providers")}');
   });
 
   it("announces conversation updates and errors", () => {
@@ -133,6 +135,31 @@ describe("renderer visual contract", () => {
     expect(rule(".sidebar nav > button.selected,\n.workspace-nav-button.selected")).toContain("font-weight: 600");
   });
 
+  it("nests sessions under a single expanded workspace without a redundant section or rail", () => {
+    expect(sidebar).toContain("aria-expanded={expanded}");
+    expect(sidebar).toContain("aria-controls={sessionListId}");
+    expect(sidebar).toContain('className="workspace-sessions"');
+    expect(sidebar).toContain('<div className="workspace-tree" role="navigation" aria-label="Workspaces">');
+    expect(sidebar).not.toContain('<nav className="workspace-tree"');
+    expect(sidebar).not.toContain("<span>Sessions</span>");
+    expect(styles).not.toContain(".sessions-head");
+    expect(rule(".workspace-sessions")).toContain("padding-left: var(--space-4)");
+    expect(rule(".workspace-sessions")).not.toContain("border-left");
+  });
+
+  it("keeps workspace actions and collapsed session ownership on the workspace row", () => {
+    expect(sidebar).toContain('className="workspace-session-count"');
+    expect(sidebar).toContain("aria-label={`New session in ${workspace.name}`}");
+    expect(sidebar).toContain("aria-label={`More actions for ${workspace.name}`}");
+    expect(sidebar).toContain("title={workspace.path}");
+  });
+
+  it("keeps the workspace tree locally scrollable at minimum window sizes", () => {
+    expect(rule(".workspace-tree")).toContain("min-height: 0");
+    expect(rule(".workspace-tree")).toContain("overflow-y: auto");
+    expect(rule(".sidebar")).toContain("overflow: hidden");
+  });
+
   it("omits implementation-status copy from the sidebar", () => {
     expect(source).not.toContain("Local agent");
     expect(source).not.toContain("Running locally");
@@ -188,8 +215,15 @@ describe("renderer visual contract", () => {
     expect(main).toContain("<ConversationView");
     expect(main).not.toContain('<aside className="sidebar">');
     expect(main).not.toContain('<footer className="composer">');
-    expect(sidebar).toContain('aria-label="Sessions"');
+    expect(sidebar).toContain("aria-label={`${workspace.name} sessions`}");
     expect(conversation).toContain('role="log"');
+  });
+
+  it("captures the real workspace hierarchy with deterministic long-content and focus data", () => {
+    expect(visualFixtureManifest.fixtures).toContain("navigation/workspace-hierarchy-long-focus");
+    expect(visualFixtures).toContain('feature: "navigation"');
+    expect(visualFixtures).toContain("<AppSidebar");
+    expect(visualFixtures).toContain("navigationSessions");
   });
 
   it("sets native dark chrome metadata", () => {
@@ -436,8 +470,15 @@ describe("renderer skills settings contract", () => {
 describe("renderer skills settings mounting contract", () => {
   it("mounts the typed Settings shell with Provider and Skill settings wired to their existing owners", () => {
     expect(source).toContain("<SettingsShell");
+    expect(main).toContain('section={visibleContentMode.kind === "settings" ? visibleContentMode.section : "defaults"}');
+    expect(main).toContain("onSectionChange={(section) => setContentMode(settingsMode(section))}");
     expect(settings).toContain("<ProviderSettings {...props.providerSettings} />");
     expect(settings).toContain("<SkillSettings {...props.skillSettings} />");
+    expect(settings).toContain('aria-label="Settings sections"');
+    expect(settings).toContain('aria-current={props.section === section.id ? "page" : undefined}');
+    expect(settings).toContain('id: "defaults"');
+    expect(settings).toContain('id: "providers"');
+    expect(settings).toContain('id: "user-skills"');
     expect(source).toContain("window.applePi.skill.list(scopes)");
     expect(source).toContain("onInstall: async (scope, sourcePath) => {");
     expect(source).toContain("onPickDirectory: () => window.applePi.skill.pickDirectory()");

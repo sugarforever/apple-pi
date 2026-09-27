@@ -4,11 +4,13 @@ import { CircleDashed } from "lucide-react";
 import type { SessionState } from "../session-state.js";
 import { toTimelineItems } from "../tool-activity.js";
 import { ConversationView } from "./conversation.js";
+import { AppSidebar } from "./app-sidebar.js";
 import { ProviderSettings, type ProviderSettingsProps } from "./provider-settings.js";
 import { SkillSettings, type SkillSettingsProps } from "./skill-settings.js";
+import type { UiSessionItem } from "../session-list.js";
 import "./visual-fixtures.css";
 
-type FixtureFeature = "conversation" | "providers" | "user-skills" | "workspace-skills";
+type FixtureFeature = "conversation" | "navigation" | "providers" | "user-skills" | "workspace-skills";
 type FixtureState = "success" | "loading" | "empty" | "failure" | "long-content" | "focus" | "unavailable";
 
 interface VisualFixtureDefinition {
@@ -18,6 +20,7 @@ interface VisualFixtureDefinition {
 }
 
 const fixtureDefinitions: VisualFixtureDefinition[] = [
+  { id: "navigation/workspace-hierarchy-long-focus", feature: "navigation", states: ["success", "long-content", "focus"] },
   { id: "conversation/success-long-focus", feature: "conversation", states: ["success", "long-content", "focus"] },
   { id: "conversation/loading", feature: "conversation", states: ["loading"] },
   { id: "conversation/failure-unavailable", feature: "conversation", states: ["failure", "unavailable"] },
@@ -33,6 +36,37 @@ const fixtureDefinitions: VisualFixtureDefinition[] = [
   { id: "workspace-skills/loading", feature: "workspace-skills", states: ["loading"] },
   { id: "workspace-skills/empty", feature: "workspace-skills", states: ["empty"] },
   { id: "workspace-skills/failure", feature: "workspace-skills", states: ["failure"] },
+];
+
+const navigationWorkspacePath = "/fixture/a-deliberately-long-workspace-name-for-truncation";
+const navigationSessions: UiSessionItem[] = [
+  {
+    id: "navigation-session-active",
+    path: "/fixture/sessions/navigation-session-active.jsonl",
+    name: "Refine workspace ownership and the compact session hierarchy without widening the sidebar",
+    created: "2026-09-27T08:00:00.000Z",
+    modified: "2026-09-27T09:00:00.000Z",
+    messageCount: 28,
+    persisted: true,
+  },
+  {
+    id: "navigation-session-review",
+    path: "/fixture/sessions/navigation-session-review.jsonl",
+    name: "Review minimum-window keyboard and focus behavior",
+    created: "2026-09-26T08:00:00.000Z",
+    modified: "2026-09-26T09:00:00.000Z",
+    messageCount: 7,
+    persisted: true,
+  },
+  {
+    id: "draft-navigation",
+    path: "",
+    name: "fixture · New session",
+    created: "2026-09-27T10:00:00.000Z",
+    modified: "2026-09-27T10:00:00.000Z",
+    messageCount: 0,
+    persisted: false,
+  },
 ];
 
 const models: ModelItem[] = [
@@ -239,6 +273,45 @@ function ConversationFixture({ definition }: { definition: VisualFixtureDefiniti
   );
 }
 
+function NavigationFixture() {
+  return (
+    <>
+      <AppSidebar
+        catalog={{
+          workspaces: [
+            { path: navigationWorkspacePath, name: "a-deliberately-long-workspace-name-for-truncation" },
+            { path: "/fixture/api", name: "api" },
+            { path: "/fixture/docs", name: "docs" },
+          ],
+        }}
+        workspacePath={navigationWorkspacePath}
+        sessions={navigationSessions}
+        activeSessionId="navigation-session-active"
+        settingsOpen={false}
+        onOpenWorkspace={() => undefined}
+        onStartSession={() => undefined}
+        onOpenSession={() => undefined}
+        onToggleSettings={() => undefined}
+      />
+      <main>
+        <header>
+          <div className="header-title">
+            <span className="header-context" title={navigationWorkspacePath}>
+              a-deliberately-long-workspace-name-for-truncation
+            </span>
+            <span className="header-separator">/</span>
+            <strong>Refine workspace ownership and the compact session hierarchy</strong>
+          </div>
+        </header>
+        <section className="fixture-navigation-content">
+          <h1>Workspace-owned conversation</h1>
+          <p>The active session remains clearly owned by the single expanded workspace.</p>
+        </section>
+      </main>
+    </>
+  );
+}
+
 function SettingsFixture({ definition }: { definition: VisualFixtureDefinition }) {
   const loading = definition.states.includes("loading");
   const empty = definition.states.includes("empty");
@@ -273,7 +346,7 @@ export function VisualFixtureApp({ fixtureId }: { fixtureId: string }) {
   useEffect(() => {
     // Mark ready only after focus lands so captures never race the focus state.
     const frame = requestAnimationFrame(() => {
-      if (definition.states.includes("focus")) document.querySelector<HTMLElement>("input, button, textarea, select")?.focus();
+      if (definition.states.includes("focus")) document.querySelector<HTMLElement>('[aria-current="page"], input, button, textarea, select')?.focus();
       document.documentElement.dataset.visualFixtureReady = definition.id;
     });
     return () => {
@@ -283,8 +356,14 @@ export function VisualFixtureApp({ fixtureId }: { fixtureId: string }) {
   }, [definition]);
   return (
     <div className="fixture-shell" data-fixture-id={definition.id}>
-      <FixtureSidebar feature={definition.feature} />
-      {definition.feature === "conversation" ? <ConversationFixture definition={definition} /> : <SettingsFixture definition={definition} />}
+      {definition.feature === "navigation" ? (
+        <NavigationFixture />
+      ) : (
+        <>
+          <FixtureSidebar feature={definition.feature} />
+          {definition.feature === "conversation" ? <ConversationFixture definition={definition} /> : <SettingsFixture definition={definition} />}
+        </>
+      )}
     </div>
   );
 }
