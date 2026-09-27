@@ -102,27 +102,6 @@ button {
   transform: translate(-50%, 0);
 }
 
-.shell {
-  display: grid;
-  grid-template-columns: 224px minmax(0, 1fr);
-  height: 100vh;
-  background: var(--bg);
-}
-.sidebar {
-  position: relative;
-  display: flex;
-  min-width: 0;
-  overflow: hidden;
-  flex-direction: column;
-  padding: 40px var(--space-2) var(--space-2);
-  border-right: 1px solid #242927;
-  background: var(--surface);
-  -webkit-app-region: drag;
-}
-.sidebar button,
-.sidebar nav {
-  -webkit-app-region: no-drag;
-}
 .brand {
   display: flex;
   align-items: center;
@@ -227,49 +206,6 @@ button {
   color: #fff;
   font-weight: 600;
 }
-.workspace-tree {
-  display: flex;
-  min-height: 0;
-  overflow-y: auto;
-  flex-direction: column;
-  gap: 2px;
-  overscroll-behavior: contain;
-}
-.workspace-nav-item {
-  position: relative;
-  min-width: 0;
-}
-.workspace-nav-row {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-}
-.workspace-nav-button {
-  display: flex;
-  min-width: 0;
-  flex: 1;
-  align-items: center;
-  gap: var(--space-1);
-}
-.workspace-nav-button > span {
-  min-width: 0;
-  overflow: hidden;
-  flex: 1;
-  text-overflow: ellipsis;
-}
-.workspace-chevron {
-  flex: 0 0 auto;
-  color: var(--text-tertiary);
-  transition: transform 0.16s;
-}
-.workspace-nav-button[aria-expanded="true"] .workspace-chevron {
-  transform: rotate(90deg);
-}
-.workspace-row-actions {
-  display: flex;
-  flex: 0 0 auto;
-  align-items: center;
-}
 .workspace-row-actions > button {
   display: grid;
   width: 28px;
@@ -286,12 +222,6 @@ button {
 .workspace-row-actions > button:focus-visible {
   background: var(--selected);
   color: var(--text-primary);
-}
-.workspace-session-count {
-  padding: 0 var(--space-1);
-  color: var(--text-tertiary);
-  font-size: var(--text-meta);
-  font-variant-numeric: tabular-nums;
 }
 .workspace-menu-trigger {
   z-index: 1;
@@ -345,27 +275,6 @@ button {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.workspace-sessions {
-  padding-left: var(--space-4);
-}
-.workspace-sessions button {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.workspace-sessions .session-name {
-  min-width: 0;
-  flex: 1;
-}
-.workspace-sessions .session-meta {
-  flex: 0 0 auto;
-  padding: 0;
-  color: var(--text-tertiary);
-  font-size: 10px;
-  font-weight: 400;
-  line-height: 16px;
-  font-variant-numeric: tabular-nums;
-}
 .sidebar-footer {
   margin-top: auto;
   padding-top: 8px;
@@ -394,59 +303,6 @@ button {
   color: #fff;
 }
 
-main {
-  display: grid;
-  min-width: 0;
-  min-height: 0;
-  overflow: hidden;
-  grid-template-rows: 44px minmax(0, 1fr) auto;
-  background: radial-gradient(circle at 50% -20%, rgba(217, 255, 87, 0.025), transparent 38%), var(--bg);
-}
-main > header {
-  display: flex;
-  min-width: 0;
-  overflow: hidden;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 var(--space-4);
-  border-bottom: 1px solid rgba(48, 54, 51, 0.62);
-  -webkit-app-region: drag;
-}
-.header-title {
-  display: flex;
-  min-width: 0;
-  flex: 1;
-  align-items: baseline;
-  flex-direction: row;
-  gap: 7px;
-}
-.header-context {
-  max-width: 220px;
-  overflow: hidden;
-  color: var(--text-tertiary);
-  font: 11px/16px var(--font-mono);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.header-separator {
-  color: #4e5651;
-  font: 11px/16px var(--font-mono);
-}
-.header-title strong {
-  min-width: 0;
-  flex: 1;
-  overflow: hidden;
-  font-size: var(--text-ui);
-  line-height: 20px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.header-actions {
-  display: flex;
-  flex: 0 0 auto;
-  gap: 8px;
-  -webkit-app-region: no-drag;
-}
 .cancel,
 .icon-button {
   display: flex;
@@ -1669,16 +1525,6 @@ main > header {
 .skill-empty p {
   font-size: 12px;
 }
-.app-feedback {
-  position: fixed;
-  z-index: 30;
-  top: 92px;
-  right: 24px;
-  display: grid;
-  max-width: min(380px, calc(100vw - 48px));
-  gap: 8px;
-  pointer-events: none;
-}
 .app-status,
 .app-error {
   display: flex;
@@ -1712,9 +1558,6 @@ main > header {
 }
 
 @media (max-width: 800px) {
-  .shell {
-    grid-template-columns: 200px minmax(0, 1fr);
-  }
   .send-hint {
     display: none;
   }
@@ -1746,12 +1589,6 @@ main > header {
   }
 }
 @media (max-width: 620px) {
-  .shell {
-    grid-template-columns: 1fr;
-  }
-  .sidebar {
-    display: none;
-  }
   .composer {
     margin-right: 14px;
     margin-left: 14px;
@@ -1759,12 +1596,6 @@ main > header {
   .timeline {
     padding-right: 18px;
     padding-left: 18px;
-  }
-  .header-context {
-    display: none;
-  }
-  .header-separator {
-    display: none;
   }
   .custom-provider-model-row {
     grid-template-columns: 1fr;

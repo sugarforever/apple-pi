@@ -1,0 +1,96 @@
+/* Shell layout stays local to AppShell and ContentHeader. */
+.shell {
+  display: grid;
+  grid-template-columns: 224px minmax(0, 1fr);
+  height: 100vh;
+  background: var(--bg);
+}
+
+main {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  grid-template-rows: 44px minmax(0, 1fr) auto;
+  background: radial-gradient(circle at 50% -20%, rgba(217, 255, 87, 0.025), transparent 38%), var(--bg);
+}
+
+main > header {
+  display: flex;
+  min-width: 0;
+  overflow: hidden;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--space-4);
+  border-bottom: 1px solid rgba(48, 54, 51, 0.62);
+  -webkit-app-region: drag;
+}
+
+.header-title {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: baseline;
+  flex-direction: row;
+  gap: 7px;
+}
+
+.header-context {
+  max-width: 220px;
+  overflow: hidden;
+  color: var(--text-tertiary);
+  font: 11px/16px var(--font-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.header-separator {
+  color: #4e5651;
+  font: 11px/16px var(--font-mono);
+}
+
+.header-title strong {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  font-size: var(--text-ui);
+  line-height: 20px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.header-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
+  -webkit-app-region: no-drag;
+}
+
+.app-feedback {
+  position: fixed;
+  z-index: 30;
+  top: 92px;
+  right: 24px;
+  display: grid;
+  max-width: min(380px, calc(100vw - 48px));
+  gap: 8px;
+  pointer-events: none;
+}
+
+@media (max-width: 800px) {
+  .shell {
+    grid-template-columns: 200px minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 620px) {
+  .shell {
+    grid-template-columns: 1fr;
+  }
+  .header-context {
+    display: none;
+  }
+  .header-separator {
+    display: none;
+  }
+}

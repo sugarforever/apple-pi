@@ -4,7 +4,8 @@ import { CircleDashed } from "lucide-react";
 import type { SessionState } from "../session-state.js";
 import { toTimelineItems } from "../tool-activity.js";
 import { ConversationView } from "./conversation.js";
-import { AppSidebar } from "./app-sidebar.js";
+import { PrimarySidebar } from "./navigation/primary-sidebar.js";
+import { ContentHeader } from "./shell/content-header.js";
 import { ProviderSettings, type ProviderSettingsProps } from "./provider-settings.js";
 import { SkillSettings, type SkillSettingsProps } from "./skill-settings.js";
 import type { UiSessionItem } from "../session-list.js";
@@ -245,13 +246,12 @@ function ConversationFixture({ definition }: { definition: VisualFixtureDefiniti
       : conversationSuccess;
   return (
     <main>
-      <header>
-        <div className="header-title">
-          <span className="header-context">apple-pi</span>
-          <span className="header-separator">/</span>
-          <strong>Editorial desktop foundation</strong>
-        </div>
-      </header>
+      <ContentHeader
+        title={{ kind: "conversation", workspaceName: "apple-pi", workspacePath: "/fixture/apple-pi", sessionName: "Editorial desktop foundation" }}
+        running={false}
+        onClose={() => undefined}
+        onCancel={() => undefined}
+      />
       <ConversationView
         state={state}
         timelineItems={toTimelineItems(state.messages)}
@@ -276,14 +276,12 @@ function ConversationFixture({ definition }: { definition: VisualFixtureDefiniti
 function NavigationFixture() {
   return (
     <>
-      <AppSidebar
-        catalog={{
-          workspaces: [
-            { path: navigationWorkspacePath, name: "a-deliberately-long-workspace-name-for-truncation" },
-            { path: "/fixture/api", name: "api" },
-            { path: "/fixture/docs", name: "docs" },
-          ],
-        }}
+      <PrimarySidebar
+        workspaces={[
+          { path: navigationWorkspacePath, name: "a-deliberately-long-workspace-name-for-truncation" },
+          { path: "/fixture/api", name: "api" },
+          { path: "/fixture/docs", name: "docs" },
+        ]}
         workspacePath={navigationWorkspacePath}
         sessions={navigationSessions}
         activeSessionId="navigation-session-active"
@@ -294,15 +292,17 @@ function NavigationFixture() {
         onToggleSettings={() => undefined}
       />
       <main>
-        <header>
-          <div className="header-title">
-            <span className="header-context" title={navigationWorkspacePath}>
-              a-deliberately-long-workspace-name-for-truncation
-            </span>
-            <span className="header-separator">/</span>
-            <strong>Refine workspace ownership and the compact session hierarchy</strong>
-          </div>
-        </header>
+        <ContentHeader
+          title={{
+            kind: "conversation",
+            workspaceName: "a-deliberately-long-workspace-name-for-truncation",
+            workspacePath: navigationWorkspacePath,
+            sessionName: "Refine workspace ownership and the compact session hierarchy",
+          }}
+          running={false}
+          onClose={() => undefined}
+          onCancel={() => undefined}
+        />
         <section className="fixture-navigation-content">
           <h1>Workspace-owned conversation</h1>
           <p>The active session remains clearly owned by the single expanded workspace.</p>
@@ -319,15 +319,16 @@ function SettingsFixture({ definition }: { definition: VisualFixtureDefinition }
   const scope: SkillScope = definition.feature === "workspace-skills" ? "project" : "user";
   return (
     <main>
-      <header>
-        <div className="header-title">
-          <span className="header-context">apple-pi</span>
-          <span className="header-separator">/</span>
-          <strong>
-            {definition.feature === "providers" ? "Settings · Providers" : definition.feature === "user-skills" ? "Settings · User Skills" : "Workspace Skills"}
-          </strong>
-        </div>
-      </header>
+      <ContentHeader
+        title={
+          definition.feature === "workspace-skills"
+            ? { kind: "workspace-skills" }
+            : { kind: "settings", label: definition.feature === "providers" ? "Settings · Providers" : "Settings · User Skills" }
+        }
+        running={false}
+        onClose={() => undefined}
+        onCancel={() => undefined}
+      />
       <div className="settings fixture-settings">
         {loading ? (
           <LoadingFixture label={definition.feature === "providers" ? "Models & Providers" : scope === "user" ? "User Skills" : "Workspace Skills"} />

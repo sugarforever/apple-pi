@@ -2,11 +2,21 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const main = readFileSync(new URL("./src/main.tsx", import.meta.url), "utf8");
-const sidebar = readFileSync(new URL("./src/app-sidebar.tsx", import.meta.url), "utf8");
+const primarySidebar = readFileSync(new URL("./src/navigation/primary-sidebar.tsx", import.meta.url), "utf8");
+const workspaceRow = readFileSync(new URL("./src/navigation/workspace-row.tsx", import.meta.url), "utf8");
+const sessionList = readFileSync(new URL("./src/navigation/session-list.tsx", import.meta.url), "utf8");
+const sessionRow = readFileSync(new URL("./src/navigation/session-row.tsx", import.meta.url), "utf8");
+const appShell = readFileSync(new URL("./src/shell/app-shell.tsx", import.meta.url), "utf8");
+const contentHeader = readFileSync(new URL("./src/shell/content-header.tsx", import.meta.url), "utf8");
+const sidebar = [primarySidebar, workspaceRow, sessionList, sessionRow].join("\n");
 const conversation = readFileSync(new URL("./src/conversation.tsx", import.meta.url), "utf8");
-const source = [main, sidebar, conversation].join("\n");
-const styles = readFileSync(new URL("./src/styles.css", import.meta.url), "utf8");
+const source = [main, appShell, contentHeader, sidebar, conversation].join("\n");
+const baseStyles = readFileSync(new URL("./src/styles.css", import.meta.url), "utf8");
+const shellStyles = readFileSync(new URL("./src/shell/shell.css", import.meta.url), "utf8");
+const navigationStyles = readFileSync(new URL("./src/navigation/navigation.css", import.meta.url), "utf8");
+const styles = [baseStyles, shellStyles, navigationStyles].join("\n");
 const settings = readFileSync(new URL("./src/settings-shell.tsx", import.meta.url), "utf8");
+const settingsNavigation = readFileSync(new URL("./src/settings/settings-navigation.tsx", import.meta.url), "utf8");
 const primitives = readFileSync(new URL("./src/ui-primitives.tsx", import.meta.url), "utf8");
 const modelSelect = readFileSync(new URL("./src/model-select.tsx", import.meta.url), "utf8");
 const document = readFileSync(new URL("./index.html", import.meta.url), "utf8");
@@ -19,8 +29,8 @@ const rule = (selector: string, source = styles): string => {
 
 describe("renderer accessibility contract", () => {
   it("exposes selected navigation state to assistive technology", () => {
-    expect(source).toContain('aria-current={selected ? "page" : undefined}');
-    expect(source).toContain('aria-current={activeSessionId === session.id ? "page" : undefined}');
+    expect(source).toContain('aria-current={props.selected ? "page" : undefined}');
+    expect(source).toContain('aria-current={current ? "page" : undefined}');
   });
 
   it("keeps compact session counts meaningful to assistive technology", () => {
@@ -61,17 +71,17 @@ describe("renderer visual contract", () => {
   it("uses a compact single-line conversation header", () => {
     expect(source).not.toContain('state.opened ? "Active session"');
     expect(source).toContain('className="header-context"');
-    expect(rule("main")).toContain("grid-template-rows: 44px minmax(0, 1fr) auto");
-    expect(rule(".header-title")).toContain("flex-direction: row");
+    expect(rule("main", shellStyles)).toContain("grid-template-rows: 44px minmax(0, 1fr) auto");
+    expect(rule(".header-title", shellStyles)).toContain("flex-direction: row");
   });
 
   it("contains long session titles inside the conversation header", () => {
-    expect(rule("main > header")).toContain("min-width: 0");
-    expect(rule("main > header")).toContain("overflow: hidden");
-    expect(rule(".header-title")).toContain("flex: 1");
-    expect(rule(".header-title strong")).toContain("min-width: 0");
-    expect(rule(".header-title strong")).toContain("flex: 1");
-    expect(rule(".header-actions")).toContain("flex: 0 0 auto");
+    expect(rule("main > header", shellStyles)).toContain("min-width: 0");
+    expect(rule("main > header", shellStyles)).toContain("overflow: hidden");
+    expect(rule(".header-title", shellStyles)).toContain("flex: 1");
+    expect(rule(".header-title strong", shellStyles)).toContain("min-width: 0");
+    expect(rule(".header-title strong", shellStyles)).toContain("flex: 1");
+    expect(rule(".header-actions", shellStyles)).toContain("flex: 0 0 auto");
   });
 
   it("renders ordinary messages without card chrome", () => {
@@ -124,7 +134,7 @@ describe("renderer visual contract", () => {
   });
 
   it("uses compact navigation and plain settings content", () => {
-    expect(rule(".shell")).toContain("grid-template-columns: 224px minmax(0, 1fr)");
+    expect(rule(".shell", shellStyles)).toContain("grid-template-columns: 224px minmax(0, 1fr)");
     expect(source).toContain('className="session-meta"');
     expect(rule(".settings-card")).not.toContain("border:");
     expect(rule(".settings-card")).not.toContain("background:");
@@ -136,28 +146,28 @@ describe("renderer visual contract", () => {
   });
 
   it("nests sessions under a single expanded workspace without a redundant section or rail", () => {
-    expect(sidebar).toContain("aria-expanded={expanded}");
+    expect(sidebar).toContain("aria-expanded={props.expanded}");
     expect(sidebar).toContain("aria-controls={sessionListId}");
     expect(sidebar).toContain('className="workspace-sessions"');
     expect(sidebar).toContain('<div className="workspace-tree" role="navigation" aria-label="Workspaces">');
     expect(sidebar).not.toContain('<nav className="workspace-tree"');
     expect(sidebar).not.toContain("<span>Sessions</span>");
     expect(styles).not.toContain(".sessions-head");
-    expect(rule(".workspace-sessions")).toContain("padding-left: var(--space-4)");
-    expect(rule(".workspace-sessions")).not.toContain("border-left");
+    expect(rule(".workspace-sessions", navigationStyles)).toContain("padding-left: var(--space-4)");
+    expect(rule(".workspace-sessions", navigationStyles)).not.toContain("border-left");
   });
 
   it("keeps workspace actions and collapsed session ownership on the workspace row", () => {
     expect(sidebar).toContain('className="workspace-session-count"');
-    expect(sidebar).toContain("aria-label={`New session in ${workspace.name}`}");
-    expect(sidebar).toContain("aria-label={`More actions for ${workspace.name}`}");
-    expect(sidebar).toContain("title={workspace.path}");
+    expect(sidebar).toContain("aria-label={`New session in ${props.workspace.name}`}");
+    expect(sidebar).toContain("aria-label={`More actions for ${props.workspace.name}`}");
+    expect(sidebar).toContain("title={props.workspace.path}");
   });
 
   it("keeps the workspace tree locally scrollable at minimum window sizes", () => {
-    expect(rule(".workspace-tree")).toContain("min-height: 0");
-    expect(rule(".workspace-tree")).toContain("overflow-y: auto");
-    expect(rule(".sidebar")).toContain("overflow: hidden");
+    expect(rule(".workspace-tree", navigationStyles)).toContain("min-height: 0");
+    expect(rule(".workspace-tree", navigationStyles)).toContain("overflow-y: auto");
+    expect(rule(".sidebar", navigationStyles)).toContain("overflow: hidden");
   });
 
   it("omits implementation-status copy from the sidebar", () => {
@@ -167,12 +177,12 @@ describe("renderer visual contract", () => {
   });
 
   it("prioritizes the session title over workspace context on narrow screens", () => {
-    const narrowScreenRules = styles.match(/@media \(max-width: 620px\) \{([\s\S]*?)\n\}/)?.[1] ?? "";
+    const narrowScreenRules = shellStyles.match(/@media \(max-width: 620px\) \{([\s\S]*?)\n\}/)?.[1] ?? "";
     expect(rule(".header-context", narrowScreenRules)).toContain("display: none;");
   });
 
   it("narrows the sidebar at the packaged app's compact window breakpoint", () => {
-    const compactWindowRules = styles.match(/@media \(max-width: 800px\) \{([\s\S]*?)\n\}/)?.[1] ?? "";
+    const compactWindowRules = shellStyles.match(/@media \(max-width: 800px\) \{([\s\S]*?)\n\}/)?.[1] ?? "";
     expect(rule(".shell", compactWindowRules)).toContain("grid-template-columns: 200px minmax(0, 1fr)");
   });
 
@@ -182,7 +192,7 @@ describe("renderer visual contract", () => {
   });
 
   it("keeps the chat composer inside the viewport while messages scroll", () => {
-    const mainRule = rule("main");
+    const mainRule = rule("main", shellStyles);
     const timelineRule = rule(".timeline");
 
     expect(mainRule).toContain("min-height: 0");
@@ -211,18 +221,20 @@ describe("renderer visual contract", () => {
   });
 
   it("keeps App focused on orchestration through shell-level component boundaries", () => {
-    expect(main).toContain("<AppSidebar");
+    expect(main).toContain("<AppShell");
+    expect(main).toContain("<PrimarySidebar");
+    expect(main).toContain("<ContentHeader");
     expect(main).toContain("<ConversationView");
     expect(main).not.toContain('<aside className="sidebar">');
     expect(main).not.toContain('<footer className="composer">');
-    expect(sidebar).toContain("aria-label={`${workspace.name} sessions`}");
+    expect(sidebar).toContain("aria-label={`${workspaceName} sessions`}");
     expect(conversation).toContain('role="log"');
   });
 
   it("captures the real workspace hierarchy with deterministic long-content and focus data", () => {
     expect(visualFixtureManifest.fixtures).toContain("navigation/workspace-hierarchy-long-focus");
     expect(visualFixtures).toContain('feature: "navigation"');
-    expect(visualFixtures).toContain("<AppSidebar");
+    expect(visualFixtures).toContain("<PrimarySidebar");
     expect(visualFixtures).toContain("navigationSessions");
   });
 
@@ -480,11 +492,11 @@ describe("renderer skills settings mounting contract", () => {
     expect(main).toContain("onSectionChange={(section) => setContentMode(settingsMode(section))}");
     expect(settings).toContain("<ProviderSettings {...props.providerSettings} />");
     expect(settings).toContain("<SkillSettings {...props.skillSettings} />");
-    expect(settings).toContain('aria-label="Settings sections"');
-    expect(settings).toContain('aria-current={props.section === section.id ? "page" : undefined}');
-    expect(settings).toContain('id: "defaults"');
-    expect(settings).toContain('id: "providers"');
-    expect(settings).toContain('id: "user-skills"');
+    expect(settingsNavigation).toContain('aria-label="Settings sections"');
+    expect(settingsNavigation).toContain('aria-current={section === item.id ? "page" : undefined}');
+    expect(settingsNavigation).toContain('id: "defaults"');
+    expect(settingsNavigation).toContain('id: "providers"');
+    expect(settingsNavigation).toContain('id: "user-skills"');
     expect(source).toContain("window.applePi.skill.list(scopes)");
     expect(source).toContain("onInstall: async (scope, sourcePath) => {");
     expect(source).toContain("onPickDirectory: () => window.applePi.skill.pickDirectory()");
@@ -504,10 +516,8 @@ describe("renderer skills settings mounting contract", () => {
 
   it("refreshes both skill lists together after a mutation, so a skill moving between them never vanishes for a frame", () => {
     expect(source).toContain("const [catalog, disabled] = await Promise.all([window.applePi.skill.list(scopes), window.applePi.skill.listDisabled(scopes)]);");
-    expect(source).toContain(
-      "const result = await window.applePi.skill.setEnabled(name, scope, enabled);\n                await refreshSkillLists(workspacePath);",
-    );
-    expect(source).toContain("const result = await window.applePi.skill.remove(name, scope);\n                await refreshSkillLists(workspacePath);");
+    expect(source).toMatch(/const result = await window\.applePi\.skill\.setEnabled\(name, scope, enabled\);\s+await refreshSkillLists\(workspacePath\);/);
+    expect(source).toMatch(/const result = await window\.applePi\.skill\.remove\(name, scope\);\s+await refreshSkillLists\(workspacePath\);/);
   });
 
   it("mounts a project-only Skill manager while a current workspace catalog is available", () => {
@@ -553,7 +563,7 @@ describe("renderer feedback contract", () => {
 
   it("exposes a shared pending state", () => {
     expect(source).toContain('const [pendingLabel, setPendingLabel] = useState("")');
-    expect(source).toContain("aria-busy={Boolean(pendingLabel)}");
+    expect(source).toContain("aria-busy={Boolean(busyLabel)}");
     expect(source).toContain('className="app-status"');
   });
 
