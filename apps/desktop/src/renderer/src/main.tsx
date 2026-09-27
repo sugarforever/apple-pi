@@ -248,8 +248,8 @@ function App() {
   };
 
   const openSession = async (session: UiSessionItem): Promise<void> => {
-    if (!shouldOpenSession(activeSessionId, session.id)) return;
     setContentMode(conversationMode);
+    if (!shouldOpenSession(activeSessionId, session.id)) return;
     setActiveSessionId(session.id);
     if (!session.persisted) {
       setDraftSessionId(session.id);

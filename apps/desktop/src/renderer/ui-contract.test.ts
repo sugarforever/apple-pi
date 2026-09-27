@@ -468,6 +468,12 @@ describe("renderer skills settings contract", () => {
 });
 
 describe("renderer skills settings mounting contract", () => {
+  it("returns to conversation when the active session is chosen from another content mode without reopening IPC", () => {
+    const openSessionSource = main.slice(main.indexOf("const openSession"), main.indexOf("const send"));
+
+    expect(openSessionSource.indexOf("setContentMode(conversationMode);")).toBeLessThan(openSessionSource.indexOf("if (!shouldOpenSession"));
+  });
+
   it("mounts the typed Settings shell with Provider and Skill settings wired to their existing owners", () => {
     expect(source).toContain("<SettingsShell");
     expect(main).toContain('section={visibleContentMode.kind === "settings" ? visibleContentMode.section : "defaults"}');
