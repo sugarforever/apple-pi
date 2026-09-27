@@ -70,6 +70,22 @@
   color: var(--text-muted);
   font-size: var(--type-ui);
 }
+.fixture-navigation-content {
+  max-width: var(--size-content);
+  margin: auto;
+  padding: var(--space-5);
+  color: var(--text-muted);
+}
+.fixture-navigation-content h1 {
+  margin: 0 0 var(--space-2);
+  color: var(--text-strong);
+  font-size: 20px;
+}
+.fixture-navigation-content p {
+  margin: 0;
+  font-size: var(--type-body);
+  line-height: 1.6;
+}
 
 @media (max-width: 800px) {
   .fixture-shell {

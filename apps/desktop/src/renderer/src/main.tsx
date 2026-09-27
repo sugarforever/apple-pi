@@ -15,6 +15,7 @@ import { SkillSettings } from "./skill-settings.js";
 import { IconButton } from "./ui-primitives.js";
 import { AppSidebar } from "./app-sidebar.js";
 import { ConversationView } from "./conversation.js";
+import { conversationMode, resolveContentMode, settingsMode, workspaceSkillsMode, type ContentMode } from "../content-mode.js";
 import "./styles.css";
 
 const makeDraftSession = (workspacePath: string): UiSessionItem => ({
@@ -53,8 +54,7 @@ function App() {
     setSkillCatalogWorkspacePath(catalogWorkspacePath || undefined);
   }, []);
   const [draft, setDraft] = useState("");
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [workspaceSkillsOpen, setWorkspaceSkillsOpen] = useState(false);
+  const [contentMode, setContentMode] = useState<ContentMode>(conversationMode);
   const [activeSessionId, setActiveSessionId] = useState("");
   const [draftSessionId, setDraftSessionId] = useState("");
   const [pendingLabel, setPendingLabel] = useState("");
@@ -92,6 +92,9 @@ function App() {
   }, [skillScopeViewModel]);
   const workspaceName = workspacePath.split("/").filter(Boolean).at(-1) ?? "No workspace";
   const activeSessionName = activeSessionId ? (sessions.find((session) => session.id === activeSessionId)?.name ?? "New session") : "Welcome to Apple Pi";
+  const visibleContentMode = resolveContentMode(contentMode, workspacePath);
+  const settingsOpen = visibleContentMode.kind === "settings";
+  const workspaceSkillsOpen = visibleContentMode.kind === "workspace-skills";
 
   const showError = (error: unknown) => {
     const message = error instanceof Error ? error.message : String(error);
@@ -211,8 +214,7 @@ function App() {
       const result = path ? await window.applePi.workspace.select(path) : await window.applePi.workspace.pick();
       applyWorkspace(result);
       if (result) {
-        setSettingsOpen(false);
-        setWorkspaceSkillsOpen(view === "skills");
+        setContentMode(view === "skills" ? workspaceSkillsMode(result.workspacePath) : conversationMode);
       }
     } catch (error) {
       showError(error);
@@ -223,6 +225,7 @@ function App() {
 
   const startDraftSession = (): void => {
     if (!workspacePath) return;
+    setContentMode(conversationMode);
     const session = makeDraftSession(workspacePath);
     setSessions((current) => [session, ...current]);
     setActiveSessionId(session.id);
@@ -245,8 +248,8 @@ function App() {
   };
 
   const openSession = async (session: UiSessionItem): Promise<void> => {
+    setContentMode(conversationMode);
     if (!shouldOpenSession(activeSessionId, session.id)) return;
-    setWorkspaceSkillsOpen(false);
     setActiveSessionId(session.id);
     if (!session.persisted) {
       setDraftSessionId(session.id);
@@ -321,8 +324,7 @@ function App() {
         onStartSession={startDraftSession}
         onOpenSession={(session) => void openSession(session)}
         onToggleSettings={() => {
-          setWorkspaceSkillsOpen(false);
-          setSettingsOpen(!settingsOpen);
+          setContentMode(settingsOpen ? conversationMode : settingsMode());
         }}
       />
       <main>
@@ -342,10 +344,7 @@ function App() {
           </div>
           <div className="header-actions">
             {(settingsOpen || workspaceSkillsOpen) && (
-              <IconButton
-                aria-label={settingsOpen ? "Close settings" : "Close workspace skills"}
-                onClick={() => (settingsOpen ? setSettingsOpen(false) : setWorkspaceSkillsOpen(false))}
-              >
+              <IconButton aria-label={settingsOpen ? "Close settings" : "Close workspace skills"} onClick={() => setContentMode(conversationMode)}>
                 <X size={17} />
               </IconButton>
             )}
@@ -358,6 +357,8 @@ function App() {
         </header>
         {settingsOpen ? (
           <SettingsShell
+            section={visibleContentMode.kind === "settings" ? visibleContentMode.section : "defaults"}
+            onSectionChange={(section) => setContentMode(settingsMode(section))}
             models={models}
             groupedModels={groupedModels}
             defaultModel={catalog.defaultModel}
