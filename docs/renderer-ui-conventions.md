@@ -34,7 +34,7 @@ Use the primitives in [`ui-primitives.tsx`](../apps/desktop/src/renderer/src/ui-
 - `Notice` for compact empty, unavailable, or explanatory states.
 - `ModelSelect` for grouped model selection in Settings and the composer.
 
-Repeated feature structures remain focused components: `AppSidebar`, `ConversationView`, `ProviderSettings`, `SkillSettings`, and `SettingsShell`. Keep session/provider/Skill state and IPC ownership in their current orchestration layer; extract presentation only when more than one real consumer needs the same pattern.
+Repeated feature structures remain focused components: `AppShell`, `ContentHeader`, `PrimarySidebar`, `WorkspaceRow`, `SessionList`, `SessionRow`, `SettingsNavigation`, `ConversationView`, `ProviderSettings`, `SkillSettings`, and `SettingsShell`. Shell and navigation components accept narrow render data and callbacks; catalog, session, provider, Skill, and IPC state remains in the renderer orchestration root.
 
 ## Interaction rules
 

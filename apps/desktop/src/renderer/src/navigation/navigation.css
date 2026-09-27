@@ -1,0 +1,106 @@
+/* Navigation layout belongs to PrimarySidebar and its workspace/session rows. */
+.sidebar {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  overflow: hidden;
+  flex-direction: column;
+  padding: 40px var(--space-2) var(--space-2);
+  border-right: 1px solid #242927;
+  background: var(--surface);
+  -webkit-app-region: drag;
+}
+
+.sidebar button,
+.sidebar nav {
+  -webkit-app-region: no-drag;
+}
+
+.workspace-tree {
+  display: flex;
+  min-height: 0;
+  overflow-y: auto;
+  flex-direction: column;
+  gap: 2px;
+  overscroll-behavior: contain;
+}
+
+.workspace-nav-item {
+  position: relative;
+  min-width: 0;
+}
+
+.workspace-nav-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+}
+
+.workspace-nav-button {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.workspace-nav-button > span {
+  min-width: 0;
+  overflow: hidden;
+  flex: 1;
+  text-overflow: ellipsis;
+}
+
+.workspace-chevron {
+  flex: 0 0 auto;
+  color: var(--text-tertiary);
+  transition: transform 0.16s;
+}
+
+.workspace-nav-button[aria-expanded="true"] .workspace-chevron {
+  transform: rotate(90deg);
+}
+
+.workspace-row-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+}
+
+.workspace-session-count {
+  padding: 0 var(--space-1);
+  color: var(--text-tertiary);
+  font-size: var(--text-meta);
+  font-variant-numeric: tabular-nums;
+}
+
+.workspace-sessions {
+  padding-left: var(--space-4);
+}
+
+.workspace-sessions button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.workspace-sessions .session-name {
+  min-width: 0;
+  flex: 1;
+}
+
+.workspace-sessions .session-meta {
+  flex: 0 0 auto;
+  padding: 0;
+  color: var(--text-tertiary);
+  font-size: 10px;
+  font-weight: 400;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 620px) {
+  .sidebar {
+    display: none;
+  }
+}

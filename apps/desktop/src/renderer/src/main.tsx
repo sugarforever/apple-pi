@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { CircleDashed, Square, X } from "lucide-react";
 import type { CustomProviderDefinition, ProviderItem, SessionSnapshot, SkillCatalog, SkillItem, SkillScope } from "@apple-pi/protocol";
 import { runSessionResync } from "../session-resync.js";
 import { initialSessionState, reduceSession } from "../session-state.js";
@@ -12,8 +11,9 @@ import { SettingsShell } from "./settings-shell.js";
 import { materializeDraftSession, reconcileSessionList, shouldOpenSession, type UiSessionItem } from "../session-list.js";
 import { buildSkillScopeViewModel } from "./skill-scope-view-model.js";
 import { SkillSettings } from "./skill-settings.js";
-import { IconButton } from "./ui-primitives.js";
-import { AppSidebar } from "./app-sidebar.js";
+import { PrimarySidebar } from "./navigation/primary-sidebar.js";
+import { AppShell } from "./shell/app-shell.js";
+import { ContentHeader, type ContentHeaderTitle } from "./shell/content-header.js";
 import { ConversationView } from "./conversation.js";
 import { conversationMode, resolveContentMode, settingsMode, workspaceSkillsMode, type ContentMode } from "../content-mode.js";
 import "./styles.css";
@@ -95,6 +95,11 @@ function App() {
   const visibleContentMode = resolveContentMode(contentMode, workspacePath);
   const settingsOpen = visibleContentMode.kind === "settings";
   const workspaceSkillsOpen = visibleContentMode.kind === "workspace-skills";
+  const contentHeaderTitle: ContentHeaderTitle = settingsOpen
+    ? { kind: "settings" }
+    : workspaceSkillsOpen
+      ? { kind: "workspace-skills" }
+      : { kind: "conversation", workspaceName, workspacePath, sessionName: activeSessionName };
 
   const showError = (error: unknown) => {
     const message = error instanceof Error ? error.message : String(error);
@@ -310,187 +315,155 @@ function App() {
   };
 
   return (
-    <div className="shell" aria-busy={Boolean(pendingLabel)}>
-      <a className="skip-link" href="#conversation">
-        Skip to conversation
-      </a>
-      <AppSidebar
-        catalog={catalog}
-        workspacePath={workspacePath}
-        sessions={sessions}
-        activeSessionId={activeSessionId}
-        settingsOpen={settingsOpen}
-        onOpenWorkspace={(path, view) => void openWorkspace(path, view)}
-        onStartSession={startDraftSession}
-        onOpenSession={(session) => void openSession(session)}
-        onToggleSettings={() => {
-          setContentMode(settingsOpen ? conversationMode : settingsMode());
-        }}
-      />
-      <main>
-        <header>
-          <div className="header-title">
-            {settingsOpen || workspaceSkillsOpen ? (
-              <strong>{settingsOpen ? "Settings" : "Workspace Skills"}</strong>
-            ) : (
-              <>
-                <span className="header-context" title={workspacePath}>
-                  {workspaceName}
-                </span>
-                <span className="header-separator">/</span>
-                <strong>{activeSessionName}</strong>
-              </>
-            )}
-          </div>
-          <div className="header-actions">
-            {(settingsOpen || workspaceSkillsOpen) && (
-              <IconButton aria-label={settingsOpen ? "Close settings" : "Close workspace skills"} onClick={() => setContentMode(conversationMode)}>
-                <X size={17} />
-              </IconButton>
-            )}
-            {state.running && (
-              <button className="cancel" onClick={() => void snapshotOp(window.applePi.session.cancel())}>
-                <Square size={11} fill="currentColor" /> Stop
-              </button>
-            )}
-          </div>
-        </header>
-        {settingsOpen ? (
-          <SettingsShell
-            section={visibleContentMode.kind === "settings" ? visibleContentMode.section : "defaults"}
-            onSectionChange={(section) => setContentMode(settingsMode(section))}
-            models={models}
-            groupedModels={groupedModels}
-            defaultModel={catalog.defaultModel}
-            onDefaultModel={(value) => void changeDefaultModel(value)}
-            providerSettings={{
-              providers,
-              models,
-              defaultModel: catalog.defaultModel,
-              customProviders,
-              onConnect: (providerId, apiKey) => window.applePi.provider.connectApiKey(providerId, apiKey),
-              onDisconnect: (providerId) => window.applePi.provider.disconnect(providerId),
-              onVerify: (providerId) => window.applePi.provider.verify(providerId),
-              onAddCustomProvider: async (definition) => {
-                const result = await window.applePi.provider.addCustom(definition);
-                setCustomProviders(await window.applePi.provider.listCustom());
-                return result;
-              },
-              onUpdateCustomProvider: async (id, definition) => {
-                const result = await window.applePi.provider.updateCustom(id, definition);
-                setCustomProviders(await window.applePi.provider.listCustom());
-                return result;
-              },
-              onRemoveCustomProvider: async (id) => {
-                const result = await window.applePi.provider.removeCustom(id);
-                setCustomProviders(await window.applePi.provider.listCustom());
-                return result;
-              },
-              onRefresh: async (providerId) => {
-                const token = ++modelsRefreshToken.current;
-                const refreshed = await window.applePi.provider.refreshModels([providerId]);
-                // A newer refresh already landed while this one was in flight; applying
-                // this stale result would clobber more current provider/model state.
-                if (modelsRefreshToken.current !== token) return;
-                setProviders(refreshed.providers);
-                setModels(refreshed.models);
-              },
-              onDefaultModel: async (model) => {
-                setCatalog(await window.applePi.model.setDefault(model));
-                setNotice("Default model saved");
-              },
-              oauth: {
-                start: (providerId) => window.applePi.provider.startOAuthLogin(providerId),
-                respond: (operationId, promptId, value) => window.applePi.provider.respondOAuthPrompt(operationId, promptId, value),
-                cancel: (operationId) => window.applePi.operation.cancel(operationId),
-                subscribe: (listener) => window.applePi.provider.subscribeAuthEvent(listener),
-              },
+    <AppShell
+      busyLabel={pendingLabel}
+      notice={notice}
+      error={appError}
+      onRetry={state.sync.status === "failed" ? () => dispatch({ type: "retry_resync" }) : undefined}
+      sidebar={
+        <PrimarySidebar
+          workspaces={catalog.workspaces}
+          workspacePath={workspacePath}
+          sessions={sessions}
+          activeSessionId={activeSessionId}
+          settingsOpen={settingsOpen}
+          onOpenWorkspace={(path, view) => void openWorkspace(path, view)}
+          onStartSession={startDraftSession}
+          onOpenSession={(session) => void openSession(session)}
+          onToggleSettings={() => {
+            setContentMode(settingsOpen ? conversationMode : settingsMode());
+          }}
+        />
+      }
+      header={
+        <ContentHeader
+          title={contentHeaderTitle}
+          running={state.running}
+          onClose={() => setContentMode(conversationMode)}
+          onCancel={() => void snapshotOp(window.applePi.session.cancel())}
+        />
+      }
+    >
+      {settingsOpen ? (
+        <SettingsShell
+          section={visibleContentMode.kind === "settings" ? visibleContentMode.section : "defaults"}
+          onSectionChange={(section) => setContentMode(settingsMode(section))}
+          models={models}
+          groupedModels={groupedModels}
+          defaultModel={catalog.defaultModel}
+          onDefaultModel={(value) => void changeDefaultModel(value)}
+          providerSettings={{
+            providers,
+            models,
+            defaultModel: catalog.defaultModel,
+            customProviders,
+            onConnect: (providerId, apiKey) => window.applePi.provider.connectApiKey(providerId, apiKey),
+            onDisconnect: (providerId) => window.applePi.provider.disconnect(providerId),
+            onVerify: (providerId) => window.applePi.provider.verify(providerId),
+            onAddCustomProvider: async (definition) => {
+              const result = await window.applePi.provider.addCustom(definition);
+              setCustomProviders(await window.applePi.provider.listCustom());
+              return result;
+            },
+            onUpdateCustomProvider: async (id, definition) => {
+              const result = await window.applePi.provider.updateCustom(id, definition);
+              setCustomProviders(await window.applePi.provider.listCustom());
+              return result;
+            },
+            onRemoveCustomProvider: async (id) => {
+              const result = await window.applePi.provider.removeCustom(id);
+              setCustomProviders(await window.applePi.provider.listCustom());
+              return result;
+            },
+            onRefresh: async (providerId) => {
+              const token = ++modelsRefreshToken.current;
+              const refreshed = await window.applePi.provider.refreshModels([providerId]);
+              // A newer refresh already landed while this one was in flight; applying
+              // this stale result would clobber more current provider/model state.
+              if (modelsRefreshToken.current !== token) return;
+              setProviders(refreshed.providers);
+              setModels(refreshed.models);
+            },
+            onDefaultModel: async (model) => {
+              setCatalog(await window.applePi.model.setDefault(model));
+              setNotice("Default model saved");
+            },
+            oauth: {
+              start: (providerId) => window.applePi.provider.startOAuthLogin(providerId),
+              respond: (operationId, promptId, value) => window.applePi.provider.respondOAuthPrompt(operationId, promptId, value),
+              cancel: (operationId) => window.applePi.operation.cancel(operationId),
+              subscribe: (listener) => window.applePi.provider.subscribeAuthEvent(listener),
+            },
+          }}
+          skillSettings={{
+            scope: "user",
+            title: "User Skills",
+            skills: skillScopeViewModel.settings.enabled,
+            diagnostics: skillScopeViewModel.settings.diagnostics,
+            unscopedDiagnostics: skillScopeViewModel.unscopedDiagnostics,
+            disabledSkills: skillScopeViewModel.settings.disabled,
+            duplicateNames: duplicateSkillNames.user,
+            onInstall: async (scope, sourcePath) => {
+              const result = await window.applePi.skill.install(scope, sourcePath);
+              await refreshSkillLists(workspacePath);
+              return result;
+            },
+            onSetEnabled: async (name, scope, enabled) => {
+              const result = await window.applePi.skill.setEnabled(name, scope, enabled);
+              await refreshSkillLists(workspacePath);
+              return result;
+            },
+            onRemove: async (name, scope) => {
+              const result = await window.applePi.skill.remove(name, scope);
+              await refreshSkillLists(workspacePath);
+              return result;
+            },
+            onPickDirectory: () => window.applePi.skill.pickDirectory(),
+          }}
+        />
+      ) : workspaceSkillsOpen && skillScopeViewModel.workspace ? (
+        <section className="settings workspace-skills">
+          <SkillSettings
+            scope="project"
+            title="Workspace Skills"
+            description={`Available only in ${workspaceName}.`}
+            skills={skillScopeViewModel.workspace.enabled}
+            diagnostics={skillScopeViewModel.workspace.diagnostics}
+            disabledSkills={skillScopeViewModel.workspace.disabled}
+            duplicateNames={duplicateSkillNames.project}
+            onInstall={async (scope, sourcePath) => {
+              const result = await window.applePi.skill.install(scope, sourcePath);
+              await refreshSkillLists(workspacePath);
+              return result;
             }}
-            skillSettings={{
-              scope: "user",
-              title: "User Skills",
-              skills: skillScopeViewModel.settings.enabled,
-              diagnostics: skillScopeViewModel.settings.diagnostics,
-              unscopedDiagnostics: skillScopeViewModel.unscopedDiagnostics,
-              disabledSkills: skillScopeViewModel.settings.disabled,
-              duplicateNames: duplicateSkillNames.user,
-              onInstall: async (scope, sourcePath) => {
-                const result = await window.applePi.skill.install(scope, sourcePath);
-                await refreshSkillLists(workspacePath);
-                return result;
-              },
-              onSetEnabled: async (name, scope, enabled) => {
-                const result = await window.applePi.skill.setEnabled(name, scope, enabled);
-                await refreshSkillLists(workspacePath);
-                return result;
-              },
-              onRemove: async (name, scope) => {
-                const result = await window.applePi.skill.remove(name, scope);
-                await refreshSkillLists(workspacePath);
-                return result;
-              },
-              onPickDirectory: () => window.applePi.skill.pickDirectory(),
+            onSetEnabled={async (name, scope, enabled) => {
+              const result = await window.applePi.skill.setEnabled(name, scope, enabled);
+              await refreshSkillLists(workspacePath);
+              return result;
             }}
+            onRemove={async (name, scope) => {
+              const result = await window.applePi.skill.remove(name, scope);
+              await refreshSkillLists(workspacePath);
+              return result;
+            }}
+            onPickDirectory={() => window.applePi.skill.pickDirectory()}
           />
-        ) : workspaceSkillsOpen && skillScopeViewModel.workspace ? (
-          <section className="settings workspace-skills">
-            <SkillSettings
-              scope="project"
-              title="Workspace Skills"
-              description={`Available only in ${workspaceName}.`}
-              skills={skillScopeViewModel.workspace.enabled}
-              diagnostics={skillScopeViewModel.workspace.diagnostics}
-              disabledSkills={skillScopeViewModel.workspace.disabled}
-              duplicateNames={duplicateSkillNames.project}
-              onInstall={async (scope, sourcePath) => {
-                const result = await window.applePi.skill.install(scope, sourcePath);
-                await refreshSkillLists(workspacePath);
-                return result;
-              }}
-              onSetEnabled={async (name, scope, enabled) => {
-                const result = await window.applePi.skill.setEnabled(name, scope, enabled);
-                await refreshSkillLists(workspacePath);
-                return result;
-              }}
-              onRemove={async (name, scope) => {
-                const result = await window.applePi.skill.remove(name, scope);
-                await refreshSkillLists(workspacePath);
-                return result;
-              }}
-              onPickDirectory={() => window.applePi.skill.pickDirectory()}
-            />
-          </section>
-        ) : (
-          <ConversationView
-            state={state}
-            timelineItems={timelineItems}
-            activeModelUnavailable={activeModelUnavailable}
-            draft={draft}
-            draftSessionId={draftSessionId}
-            models={groupedModels}
-            onDraftChange={setDraft}
-            onOpenWorkspace={() => void openWorkspace()}
-            onModelChange={(value) => void snapshotOp(window.applePi.model.setSession(parseModelKey(value)))}
-            onSend={() => void send()}
-          />
-        )}
-      </main>
-      <div className="app-feedback" aria-live="polite" aria-atomic="true">
-        {pendingLabel && (
-          <div className="app-status">
-            <CircleDashed size={14} />
-            {pendingLabel}
-          </div>
-        )}
-        {!pendingLabel && notice && <div className="app-status success">{notice}</div>}
-        {appError && (
-          <div className="app-error" role="alert">
-            {appError}
-            {state.sync.status === "failed" && <button onClick={() => dispatch({ type: "retry_resync" })}>Retry</button>}
-          </div>
-        )}
-      </div>
-    </div>
+        </section>
+      ) : (
+        <ConversationView
+          state={state}
+          timelineItems={timelineItems}
+          activeModelUnavailable={activeModelUnavailable}
+          draft={draft}
+          draftSessionId={draftSessionId}
+          models={groupedModels}
+          onDraftChange={setDraft}
+          onOpenWorkspace={() => void openWorkspace()}
+          onModelChange={(value) => void snapshotOp(window.applePi.model.setSession(parseModelKey(value)))}
+          onSend={() => void send()}
+        />
+      )}
+    </AppShell>
   );
 }
 

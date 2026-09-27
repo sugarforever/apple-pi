@@ -5,12 +5,7 @@ import { ProviderSettings, type ProviderSettingsProps } from "./provider-setting
 import { SkillSettings, type SkillSettingsProps } from "./skill-settings.js";
 import { Notice, SectionHeading } from "./ui-primitives.js";
 import type { SettingsSection } from "../content-mode.js";
-
-const settingsNavigation: ReadonlyArray<{ id: Exclude<SettingsSection, "appearance">; label: string }> = [
-  { id: "defaults", label: "Defaults" },
-  { id: "providers", label: "Providers" },
-  { id: "user-skills", label: "User Skills" },
-];
+import { SettingsNavigation } from "./settings/settings-navigation.js";
 
 export interface SettingsShellProps {
   section: SettingsSection;
@@ -31,13 +26,7 @@ export function SettingsShell(props: SettingsShellProps) {
         <p>Choose how new sessions begin. Changes are saved automatically.</p>
       </div>
       <div className="settings-layout">
-        <nav className="settings-sections" aria-label="Settings sections">
-          {settingsNavigation.map((section) => (
-            <button key={section.id} aria-current={props.section === section.id ? "page" : undefined} onClick={() => props.onSectionChange(section.id)}>
-              {section.label}
-            </button>
-          ))}
-        </nav>
+        <SettingsNavigation section={props.section} onSectionChange={props.onSectionChange} />
         <div className="settings-section-content">
           {props.section === "defaults" && (
             <div className="settings-card">
