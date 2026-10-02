@@ -2,9 +2,13 @@ import { access, readdir, readFile } from "node:fs/promises";
 import { dirname, extname, resolve } from "node:path";
 
 const roots = ["README.md", "docs"];
+// Implementation plans are historical records of code that may since be gone;
+// their links describe the tree they were written against.
+const historical = new Set(["docs/superpowers"]);
 const markdownFiles = [];
 
 async function collect(path) {
+  if (historical.has(path)) return;
   if (extname(path) === ".md") {
     markdownFiles.push(path);
     return;
