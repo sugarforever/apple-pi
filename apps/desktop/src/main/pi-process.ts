@@ -20,6 +20,8 @@ export interface PiProcessOptions {
   /** Session file to resume; Pi starts a new session when omitted. */
   sessionFile?: string;
   requestTimeoutMs?: number;
+  /** Environment Pi runs with (see `shellEnv`); defaults to the app's own. */
+  env?: NodeJS.ProcessEnv;
   /** Script run under Electron's Node runtime. Defaults to the bundled Pi rpc-entry; tests pass a fake. */
   entryPath?: string;
 }
@@ -71,7 +73,7 @@ export class PiProcess extends EventEmitter<{ event: [PiProcessEvent]; exit: [Pi
     // stop() take down the tool commands Pi spawned along with it.
     const child = spawn(process.execPath, args, {
       cwd: this.options.workspace,
-      env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" },
+      env: { ...(this.options.env ?? process.env), ELECTRON_RUN_AS_NODE: "1" },
       stdio: ["pipe", "pipe", "pipe"],
       detached: process.platform !== "win32",
     });

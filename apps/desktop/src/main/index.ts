@@ -8,6 +8,7 @@ import { attachFileLogging, log } from "./logger.js";
 import { registerPiIpc } from "./pi-ipc.js";
 import { PiProcessPool } from "./pi-process.js";
 import { applyProcessHardening, applySessionPolicy, applyWindowPolicy, assertTrustedSender } from "./security.js";
+import { shellEnv } from "./shell-env.js";
 import { startAutoUpdater, type AutoUpdateHandle } from "./updater.js";
 
 // Must run before `app.whenReady()` resolves.
@@ -82,6 +83,8 @@ async function bootstrap(): Promise<void> {
   });
 
   applySessionPolicy(session.defaultSession);
+  // Started now so the login shell has usually answered before the first Pi spawn.
+  void shellEnv();
 
   const catalogPath = path.join(app.getPath("userData"), "catalog.json");
   const catalog = new AppCatalog({
@@ -92,7 +95,7 @@ async function bootstrap(): Promise<void> {
     },
   });
   await catalog.load();
-  registerPiIpc({ handle, getWindow: () => mainWindow, catalog, pool: piProcesses });
+  registerPiIpc({ handle, getWindow: () => mainWindow, catalog, pool: piProcesses, spawnEnv: shellEnv });
   createWindow();
   // Started after the window exists so a slow update check cannot delay it, and
   // so an update that is already downloaded is reported in a live session.
