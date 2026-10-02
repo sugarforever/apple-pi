@@ -248,6 +248,15 @@ jobs:
           spctl --assess --type execute --verbose=2 "$app_path"
           xcrun stapler validate "$app_path"
 
+      # Runs against the final (on tags: signed and notarized) app, so it also
+      # proves the hardened runtime lets the app's executable run Pi as Node.
+      - name: Spawn the bundled Pi from the packaged app
+        run: pnpm test:packaged-pi
+
+      - name: Launch the packaged macOS app
+        if: matrix.os-name == 'macos'
+        run: pnpm test:mac-package-launch
+
       - name: Collect packages and checksums
         id: artifacts
         env:
