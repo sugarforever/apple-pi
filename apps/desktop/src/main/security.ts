@@ -1,4 +1,4 @@
-import { app, shell, type BrowserWindow, type Session, type WebContents } from "electron";
+import { app, shell, type BrowserWindow, type IpcMainInvokeEvent, type Session, type WebContents } from "electron";
 import { pathToFileURL } from "node:url";
 import { log } from "./logger.js";
 import { APP_ID, isAllowedExternalProtocol, isAllowedNavigationUrl, redactUrlForLog, type NavigationPolicy } from "../shared/security-policy.js";
@@ -13,6 +13,15 @@ import { APP_ID, isAllowedExternalProtocol, isAllowedNavigationUrl, redactUrlFor
  * The pure decision logic lives in `../shared/security-policy.ts` so it can be
  * unit tested; this module only wires it to Electron.
  */
+
+/**
+ * The renderer is the only legitimate caller of the IPC surface, and only from
+ * its main frame. Anything else is rejected rather than answered.
+ */
+export function assertTrustedSender(event: IpcMainInvokeEvent, window: BrowserWindow | undefined): void {
+  if (!window || window.isDestroyed() || event.sender !== window.webContents) throw new Error("Rejected IPC call from an untrusted sender");
+  if (event.senderFrame && event.senderFrame !== window.webContents.mainFrame) throw new Error("Rejected IPC call from a subframe");
+}
 
 export function openExternalUrl(raw: string): void {
   let url: URL;

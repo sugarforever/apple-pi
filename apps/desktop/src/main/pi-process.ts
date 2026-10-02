@@ -2,24 +2,17 @@ import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { StringDecoder } from "node:string_decoder";
 import { fileURLToPath } from "node:url";
-import type { JsonAgentSessionEvent, RpcCommand, RpcExtensionUIRequest, RpcExtensionUIResponse, RpcResponse } from "@earendil-works/pi-coding-agent";
+import type { RpcCommand, RpcExtensionUIResponse, RpcResponse } from "@earendil-works/pi-coding-agent";
+import type { PiProcessEvent, PiProcessExit } from "../shared/pi-api.js";
 import { createLogger } from "./logger.js";
+
+export type { PiProcessEvent, PiProcessExit };
 
 const log = createLogger("pi-process");
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 const STOP_GRACE_MS = 2_000;
 const STDERR_TAIL_CHARS = 8_192;
-
-/** Everything Pi writes on stdout that is not a response to one of our commands. */
-export type PiProcessEvent = JsonAgentSessionEvent | RpcExtensionUIRequest;
-
-export interface PiProcessExit {
-  code: number | null;
-  signal: NodeJS.Signals | null;
-  /** The last few KB of stderr, for diagnostics. */
-  stderr: string;
-}
 
 export interface PiProcessOptions {
   /** Working directory Pi runs in. */
