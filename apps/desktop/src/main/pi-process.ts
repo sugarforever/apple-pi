@@ -1,5 +1,7 @@
 import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
+import { existsSync } from "node:fs";
+import path from "node:path";
 import { StringDecoder } from "node:string_decoder";
 import { fileURLToPath } from "node:url";
 import type { RpcCommand, RpcExtensionUIResponse, RpcResponse } from "@earendil-works/pi-coding-agent";
@@ -32,6 +34,18 @@ export interface PiProcessOptions {
  */
 export function resolvePiRpcEntry(): string {
   return fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent/rpc-entry"));
+}
+
+/**
+ * The Electron executable Pi runs under. On macOS the main app binary registers
+ * every child as a foreground app with its own Dock icon, so Pi runs under the
+ * bundled Helper, a background (LSUIElement) app with the same runtime.
+ */
+export function piExecutable(execPath = process.execPath): string {
+  if (process.platform !== "darwin") return execPath;
+  const name = path.basename(execPath);
+  const helper = path.join(path.dirname(execPath), "..", "Frameworks", `${name} Helper.app`, "Contents", "MacOS", `${name} Helper`);
+  return existsSync(helper) ? helper : execPath;
 }
 
 interface PendingRequest {
@@ -71,7 +85,7 @@ export class PiProcess extends EventEmitter<{ event: [PiProcessEvent]; exit: [Pi
     if (this.options.sessionFile) args.push("--session", this.options.sessionFile);
     // Pi's rpc-entry adds `--mode rpc` itself. A process group of its own lets
     // stop() take down the tool commands Pi spawned along with it.
-    const child = spawn(process.execPath, args, {
+    const child = spawn(piExecutable(), args, {
       cwd: this.options.workspace,
       env: { ...(this.options.env ?? process.env), ELECTRON_RUN_AS_NODE: "1" },
       stdio: ["pipe", "pipe", "pipe"],
