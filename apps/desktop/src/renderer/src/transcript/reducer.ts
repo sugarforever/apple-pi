@@ -37,7 +37,10 @@ export type TranscriptAction =
   | { type: "event"; event: PiProcessEvent; at: number }
   | { type: "prompt_sent"; text: string; at: number }
   | { type: "prompt_handled" }
+  /** A prompt or Pi itself failed; whatever was running is over. */
   | { type: "failed"; error: string }
+  /** A side request failed (queueing, abort); the run, if any, goes on. */
+  | { type: "error"; error: string }
   | { type: "exited"; at: number };
 
 export const initialTranscript: TranscriptState = { messages: [], tools: {}, runs: [], queue: { steering: [], followUp: [] } };
@@ -61,6 +64,8 @@ export function reduceTranscript(state: TranscriptState, action: TranscriptActio
       return { ...state, pendingPrompt: undefined };
     case "failed":
       return { ...endRun(state, undefined), pendingPrompt: undefined, error: action.error };
+    case "error":
+      return { ...state, error: action.error };
     case "exited":
       return { ...endRun(state, action.at), pendingPrompt: undefined, status: undefined };
     case "event":

@@ -1,7 +1,21 @@
 {
   "viewports": [
-    { "width": 1440, "height": 900 },
-    { "width": 960, "height": 640 }
+    {
+      "width": 1440,
+      "height": 900
+    },
+    {
+      "width": 960,
+      "height": 640
+    }
   ],
-  "fixtures": ["conversation/finished", "conversation/expanded", "conversation/running"]
+  "fixtures": [
+    "conversation/finished",
+    "conversation/expanded",
+    "conversation/running",
+    "composer/attachment",
+    "composer/commands",
+    "composer/queued",
+    "composer/model-menu"
+  ]
 }
