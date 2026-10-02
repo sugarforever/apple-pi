@@ -1,4 +1,4 @@
-import type { RpcResponse } from "@earendil-works/pi-coding-agent";
+import type { RpcCommand, RpcResponse } from "@earendil-works/pi-coding-agent";
 import type { PiProcessEvent } from "../../../shared/pi-api.js";
 
 /*
@@ -20,3 +20,9 @@ export type SessionState = Extract<RpcResponse, { command: "get_state"; success:
 
 export type AgentEvent = Exclude<PiProcessEvent, { type: "extension_ui_request" }>;
 export type AssistantMessageEvent = Extract<AgentEvent, { type: "message_update" }>["assistantMessageEvent"];
+
+export type PromptCommand = Extract<RpcCommand, { type: "prompt" }>;
+export type ImageContent = NonNullable<PromptCommand["images"]>[number];
+export type Model = Extract<RpcResponse, { command: "get_available_models"; success: true }>["data"]["models"][number];
+export type ThinkingLevel = Extract<RpcCommand, { type: "set_thinking_level" }>["level"];
+export type SlashCommand = Extract<RpcResponse, { command: "get_commands"; success: true }>["data"]["commands"][number];
