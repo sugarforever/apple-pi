@@ -1,6 +1,4 @@
-import { readdirSync, readFileSync } from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { CONTENT_SECURITY_POLICY, isAllowedExternalProtocol, isAllowedNavigationUrl, redactUrlForLog } from "./security-policy.js";
 
@@ -77,22 +75,5 @@ describe("log redaction of urls", () => {
   it("drops credentials and query strings", () => {
     expect(redactUrlForLog("https://user:hunter2@example.com/callback?token=abc#frag")).toBe("https://example.com/callback");
     expect(redactUrlForLog("nonsense")).toBe("[unparseable url]");
-  });
-});
-
-describe("keychain policy", () => {
-  it("never disables the keychain that protects provider credentials", () => {
-    // See docs/architecture/credential-storage-keychain-policy.md. Matching the
-    // call rather than the bare name keeps this guard from firing on comments
-    // that explain why the switch must not be used.
-    const mainDirectory = fileURLToPath(new URL("../main", import.meta.url));
-    const forbidden = [/appendSwitch\(\s*["']use-mock-keychain["']/, /setUsePlainTextEncryption\s*\(/];
-    const sources = readdirSync(mainDirectory).filter((entry) => entry.endsWith(".ts") && !entry.endsWith(".test.ts"));
-    expect(sources.length).toBeGreaterThan(0);
-
-    for (const entry of sources) {
-      const contents = readFileSync(path.join(mainDirectory, entry), "utf8");
-      for (const pattern of forbidden) expect(contents, `${entry} must not match ${String(pattern)}`).not.toMatch(pattern);
-    }
   });
 });

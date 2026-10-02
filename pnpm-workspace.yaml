@@ -1,6 +1,5 @@
 packages:
   - apps/*
-  - packages/*
 
 # Lifecycle scripts are blocked unless a package is listed here. Keep this list
 # minimal: every entry is code executed at install time.

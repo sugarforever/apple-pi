@@ -4,7 +4,7 @@ import { dirname, resolve } from "node:path";
 import { execFile } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
-import { findVersionFailures, HOST_SOURCE, MANIFESTS, readAllVersions, rewriteHostVersion, rewriteManifestVersion } from "./version-declarations.mjs";
+import { findVersionFailures, MANIFESTS, readAllVersions, rewriteManifestVersion } from "./version-declarations.mjs";
 
 /**
  * Writes a release version into every declaration at once.
@@ -100,8 +100,8 @@ async function commitsSince(root, exec, tag) {
  *          the commits the release would cover
  */
 export async function prepareRelease({ root, args, dryRun = false, exec = run }) {
-  const { versions, hostVersion } = await readAllVersions(root);
-  const failures = findVersionFailures({ versions, hostVersion });
+  const versions = await readAllVersions(root);
+  const failures = findVersionFailures(versions);
   if (failures.length > 0) {
     throw new Error(`version declarations disagree; run pnpm versions:check:\n${failures.map((failure) => `  ${failure}`).join("\n")}`);
   }
@@ -119,12 +119,9 @@ export async function prepareRelease({ root, args, dryRun = false, exec = run })
     const original = await readFile(path, "utf8");
     writes.push({ path, original, contents: rewriteManifestVersion(original, target) });
   }
-  const hostPath = resolve(root, HOST_SOURCE);
-  const hostOriginal = await readFile(hostPath, "utf8");
-  writes.push({ path: hostPath, original: hostOriginal, contents: rewriteHostVersion(hostOriginal, target) });
 
   if (!dryRun) {
-    // Six files, one release: a write that fails partway through must not leave
+    // Several files, one release: a write that fails partway through must not leave
     // some declarations at the new version and others at the old one, so undo
     // whatever already landed before surfacing the error.
     const applied = [];
