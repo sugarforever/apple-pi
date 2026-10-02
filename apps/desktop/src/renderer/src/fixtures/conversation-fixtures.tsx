@@ -3,6 +3,7 @@ import type { SessionInfo } from "@earendil-works/pi-coding-agent";
 import { ConversationLayout } from "../app/conversation.js";
 import { Composer, type ComposerProps } from "../composer/composer.js";
 import { ModelPicker } from "../composer/model-picker.js";
+import { initialExtensionUI, type DialogRequest, type ExtensionUIState } from "../extension-ui/reducer.js";
 import type { Model, SlashCommand, ThinkingLevel } from "../pi/types.js";
 import { initialTranscript, isRunning, type TranscriptState } from "../transcript/reducer.js";
 import { Sidebar } from "../sidebar/sidebar.js";
@@ -179,8 +180,30 @@ const screenshot = btoa(
   '<svg xmlns="http://www.w3.org/2000/svg" width="120" height="90"><rect width="120" height="90" fill="#eef1f5"/><rect width="120" height="14" fill="#d5dbe3"/><rect x="6" y="20" width="30" height="64" rx="3" fill="#c9d3df"/><rect x="42" y="20" width="72" height="30" rx="3" fill="#ffffff"/><rect x="42" y="56" width="72" height="28" rx="3" fill="#a8c1e0"/></svg>',
 );
 
+const dialog = (request: Pick<DialogRequest, "id" | "method" | "title"> & Record<string, unknown>): ExtensionUIState["dialogs"][number] => ({
+  request: { type: "extension_ui_request", ...request } as DialogRequest,
+  sessionKey: "fixture",
+  deadline: typeof request.timeout === "number" ? Date.now() + request.timeout : undefined,
+});
+
+/** Status and widget text as two installed extensions might set it. */
+const extensionChrome: Pick<ExtensionUIState, "statuses" | "widgets"> = {
+  statuses: [
+    { key: "throughput", text: "↯ 84 tok/s · 12.4k out" },
+    { key: "router", text: "router: fixture-sol (auto)" },
+  ],
+  widgets: [
+    {
+      key: "index",
+      placement: "aboveEditor",
+      lines: ["semantic index  orchard  ·  2,184 chunks  ·  updated 3m ago", "last query      “agent host supervisor”  →  6 hits in 41 ms"],
+    },
+  ],
+};
+
 interface FixtureDefinition {
   state(): TranscriptState;
+  extensionUI?(): ExtensionUIState;
   composer?: Partial<ComposerProps>;
   /** Runs once the page is painted, before capture: expand rows, scroll. */
   prepare?(): Promise<void>;
@@ -231,6 +254,66 @@ const fixtures: Record<string, FixtureDefinition> = {
     }),
     composer: { initialDraft: "Also run the linter" },
   },
+  "extension-ui/confirm": {
+    state: finishedState,
+    extensionUI: () => ({
+      ...initialExtensionUI,
+      dialogs: [
+        dialog({
+          id: "confirm",
+          method: "confirm",
+          title: "Allow rm -rf apps/agent-host?",
+          message: "The guard extension blocks recursive deletes outside the build folders. Allow this one command?",
+          timeout: 29_600,
+        }),
+        dialog({ id: "next", method: "input", title: "Commit message" }),
+      ],
+    }),
+  },
+  "extension-ui/select": {
+    state: finishedState,
+    extensionUI: () => ({
+      ...initialExtensionUI,
+      dialogs: [
+        dialog({
+          id: "select",
+          method: "select",
+          title: "Which package should the release notes cover?",
+          options: ["@orchard/desktop", "@orchard/agent", "Both packages"],
+        }),
+      ],
+    }),
+  },
+  "extension-ui/editor": {
+    state: finishedState,
+    extensionUI: () => ({
+      ...initialExtensionUI,
+      dialogs: [
+        dialog({
+          id: "editor",
+          method: "editor",
+          title: "Edit the commit message",
+          prefill: "refactor(desktop): drop the legacy agent host\n\nPi's RPC mode replaces the host process and its protocol package.",
+        }),
+      ],
+    }),
+  },
+  "extension-ui/status-widget": {
+    state: finishedState,
+    extensionUI: () => ({ ...initialExtensionUI, ...extensionChrome }),
+  },
+  "extension-ui/notification": {
+    state: finishedState,
+    extensionUI: () => ({
+      ...initialExtensionUI,
+      ...extensionChrome,
+      notices: [
+        { id: "info", level: "info", message: "Index refreshed: 14 files changed" },
+        { id: "warning", level: "warning", message: "guard.ts: Blocked git push --force to main" },
+        { id: "error", level: "error", message: "router.ts: Provider fixture-sol returned 429; falling back to fixture-local" },
+      ],
+    }),
+  },
   "composer/model-menu": {
     state: finishedState,
     async prepare() {
@@ -247,6 +330,7 @@ async function waitFor(selector: string): Promise<void> {
 export function ConversationFixture({ id }: { id: string }) {
   const fixture = fixtures[id];
   const state = useMemo(() => fixture?.state(), [fixture]);
+  const extensionUI = useMemo(() => fixture?.extensionUI?.(), [fixture]);
   useEffect(() => {
     if (!fixture) return;
     void (fixture.prepare?.() ?? Promise.resolve()).then(nextFrame).then(() => (document.documentElement.dataset.visualFixtureReady = id));
@@ -267,6 +351,7 @@ export function ConversationFixture({ id }: { id: string }) {
       <ConversationLayout
         state={state}
         workspaceName="orchard"
+        extensionUI={extensionUI && { state: extensionUI, onRespond: () => undefined, onDismissNotice: () => undefined }}
         composer={
           <Composer
             running={isRunning(state)}
