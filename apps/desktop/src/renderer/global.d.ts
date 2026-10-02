@@ -12,9 +12,10 @@ import type {
   SkillOperationResult,
   SkillScope,
 } from "@apple-pi/protocol";
+import type { ApplePiApi } from "../shared/pi-api.js";
 declare global {
   interface Window {
-    applePi: {
+    applePi: ApplePiApi & {
       system: { getVersion(): Promise<string> };
       workspace: { pick(): Promise<WorkspaceOpenResult | null>; list(): Promise<Catalog>; select(path: string): Promise<WorkspaceOpenResult> };
       session: {

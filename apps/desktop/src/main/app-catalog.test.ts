@@ -16,5 +16,7 @@ describe("AppCatalog", () => {
     expect(catalog.snapshot()).toMatchObject({ workspaces: [{ path: "/tmp/a", name: "a" }], defaultModel: { provider: "openai", modelId: "gpt-5" } });
     await catalog.clearDefaultModel();
     expect(catalog.snapshot().defaultModel).toBeUndefined();
+    await catalog.removeWorkspace("/tmp/a");
+    expect(JSON.parse(stored).workspaces).toEqual([]);
   });
 });

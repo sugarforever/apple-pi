@@ -1,15 +1,12 @@
 import path from "node:path";
+import type { Workspace } from "../shared/pi-api.js";
 
 export interface ModelRef {
   provider: string;
   modelId: string;
 }
-export interface WorkspaceRecord {
-  path: string;
-  name: string;
-}
 interface CatalogData {
-  workspaces: WorkspaceRecord[];
+  workspaces: Workspace[];
   defaultModel?: ModelRef;
 }
 interface CatalogStorage {
@@ -34,6 +31,10 @@ export class AppCatalog {
   async addWorkspace(workspacePath: string): Promise<void> {
     if (!this.data.workspaces.some((item) => item.path === workspacePath))
       this.data.workspaces.push({ path: workspacePath, name: path.basename(workspacePath) || workspacePath });
+    await this.persist();
+  }
+  async removeWorkspace(workspacePath: string): Promise<void> {
+    this.data.workspaces = this.data.workspaces.filter((item) => item.path !== workspacePath);
     await this.persist();
   }
   async setDefaultModel(model: ModelRef): Promise<void> {
