@@ -212,7 +212,7 @@
 
 .extension-notices {
   position: absolute;
-  top: calc(40px + var(--space-2));
+  top: var(--space-3);
   left: 50%;
   z-index: 20;
   display: flex;

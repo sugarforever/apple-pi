@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from "react";
 import type { SlashCommand } from "../pi/types.js";
+import "../menu/menu.css";
 
 const SOURCE_LABEL: Record<SlashCommand["source"], string> = { extension: "Extension", prompt: "Prompt", skill: "Skill" };
 
@@ -22,8 +23,8 @@ export function CommandPalette({ id, commands, active, onPick, onHover }: Comman
   }, [active]);
 
   return (
-    <ul ref={list} id={id} className="composer-menu command-palette" role="listbox" aria-label="Commands">
-      {commands.length === 0 && <li className="composer-menu-empty">No matching commands</li>}
+    <ul ref={list} id={id} className="menu command-palette" role="listbox" aria-label="Commands">
+      {commands.length === 0 && <li className="menu-empty">No matching commands</li>}
       {commands.map((command, index) => (
         <li
           key={`${command.source}:${command.name}`}

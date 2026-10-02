@@ -1,10 +1,17 @@
 import React, { useEffect, useMemo } from "react";
+import { Folder, Settings } from "lucide-react";
 import type { SessionInfo } from "@earendil-works/pi-coding-agent";
 import { ConversationLayout } from "../app/conversation.js";
 import { Composer, type ComposerProps } from "../composer/composer.js";
 import { ModelPicker } from "../composer/model-picker.js";
 import { initialExtensionUI, type DialogRequest, type ExtensionUIState } from "../extension-ui/reducer.js";
-import type { Model, SlashCommand, ThinkingLevel } from "../pi/types.js";
+import type { Model, SessionStats, SlashCommand, ThinkingLevel } from "../pi/types.js";
+import { SettingsView } from "../settings/settings-view.js";
+import { ConversationMenu } from "../shell/conversation-menu.js";
+import { IconRail } from "../shell/icon-rail.js";
+import { Shell } from "../shell/shell.js";
+import { TitleBar } from "../shell/title-bar.js";
+import type { ChatIndicator } from "../sidebar/activity.js";
 import { initialTranscript, isRunning, type TranscriptState } from "../transcript/reducer.js";
 import { Sidebar } from "../sidebar/sidebar.js";
 import { assistant, text, thinking, toolCall, toolResult, user } from "./sample-messages.js";
@@ -119,25 +126,52 @@ const runningState = (): TranscriptState => {
 };
 
 const workspaces = [
-  { path: "/demo/orchard", name: "orchard" },
+  { path: "/demo/amap-mcp-server", name: "amap-mcp-server" },
+  { path: "/demo/pi-mono", name: "pi-mono" },
   { path: "/demo/pi-extensions", name: "pi-extensions" },
   { path: "/demo/recording-demo", name: "recording-demo" },
   { path: "/demo/notes", name: "notes" },
+  { path: "/demo/hackathon-hunt", name: "hackathon-hunt" },
+  { path: "/demo/orchard", name: "orchard" },
+  { path: "/demo/fpl-bot", name: "fpl-bot" },
 ];
+const project = workspaces[6]!;
 
-const session = (name: string, index: number): SessionInfo => ({
+const session = (title: string, index: number, named = true): SessionInfo => ({
   path: `/demo/sessions/${index}.jsonl`,
   id: `session-${index}`,
-  cwd: "/demo/orchard",
-  name,
+  cwd: project.path,
+  name: named ? title : undefined,
   created: new Date(t0),
-  modified: new Date(t0),
+  modified: new Date(t0 - index * 3_600_000),
   messageCount: 4,
-  firstMessage: name,
-  allMessagesText: name,
+  firstMessage: title,
+  allMessagesText: title,
 });
 
-const sessions = [session("Thin client architecture", 1), session("Plan the RPC rebuild", 2), session("Sync main branch", 3)];
+const sessions = [
+  session("Thin client architecture", 1),
+  session("Remove the legacy agent host and run the checks", 2, false),
+  session("Plan the RPC rebuild", 3),
+  session("Sync main branch", 4),
+  session("Read the review and open a PR", 5),
+  session("Update the record terminal skill", 6),
+  session("Draft release notes", 7),
+];
+const indicators: Record<string, ChatIndicator> = { [sessions[1]!.path]: "running", [sessions[3]!.path]: "unread" };
+
+const stats: SessionStats = {
+  sessionFile: sessions[0]!.path,
+  sessionId: "session-1",
+  userMessages: 6,
+  assistantMessages: 14,
+  toolCalls: 23,
+  toolResults: 23,
+  totalMessages: 43,
+  tokens: { input: 184_200, output: 12_480, cacheRead: 920_000, cacheWrite: 31_000, total: 1_147_680 },
+  cost: 1.84,
+  contextUsage: { tokens: 61_000, contextWindow: 200_000, percent: 30.5 },
+};
 
 const model = (provider: string, id: string, name: string, reasoning = true): Model => ({
   id,
@@ -203,6 +237,12 @@ const extensionChrome: Pick<ExtensionUIState, "statuses" | "widgets"> = {
 
 interface FixtureDefinition {
   state(): TranscriptState;
+  /** Which page fills the main view; the conversation by default. */
+  page?: "settings";
+  /** Opens on the new-chat prompt with no chat selected. */
+  isNew?: boolean;
+  /** Opens the title bar's conversation menu with these statistics. */
+  menuStats?: SessionStats;
   extensionUI?(): ExtensionUIState;
   composer?: Partial<ComposerProps>;
   /** Runs once the page is painted, before capture: expand rows, scroll. */
@@ -235,6 +275,16 @@ const fixtures: Record<string, FixtureDefinition> = {
     },
   },
   "conversation/running": { state: runningState },
+  "shell/conversation": {
+    state: finishedState,
+    async prepare() {
+      const scroller = document.querySelector(".transcript-scroller");
+      if (scroller) scroller.scrollTop = scroller.scrollHeight - scroller.clientHeight - 160;
+    },
+  },
+  "shell/conversation-menu": { state: finishedState, menuStats: stats },
+  "shell/new-chat": { state: () => initialTranscript, isNew: true },
+  "shell/settings": { state: () => initialTranscript, page: "settings" },
   "composer/attachment": {
     state: finishedState,
     composer: {
@@ -318,7 +368,7 @@ const fixtures: Record<string, FixtureDefinition> = {
     state: finishedState,
     async prepare() {
       await click(".model-chip");
-      await waitFor(".model-menu .composer-menu-item");
+      await waitFor(".model-menu .menu-item");
     },
   },
 };
@@ -336,43 +386,70 @@ export function ConversationFixture({ id }: { id: string }) {
     void (fixture.prepare?.() ?? Promise.resolve()).then(nextFrame).then(() => (document.documentElement.dataset.visualFixtureReady = id));
   }, [fixture, id]);
   if (!state) return <p>Unknown fixture: {id}</p>;
+  const selected = fixture?.isNew || fixture?.page ? undefined : sessions[0]!;
+  const noop = () => undefined;
+  const titleBar =
+    fixture?.page === "settings" ? (
+      <TitleBar sidebarOpen onToggleSidebar={noop} icon={<Settings size={16} />} title="Settings" />
+    ) : (
+      <TitleBar
+        sidebarOpen
+        onToggleSidebar={noop}
+        icon={<Folder size={16} />}
+        title={selected ? "This project has a big code base on top of the agent. I feel it slows down the desktop app development." : "New chat"}
+        actions={<ConversationMenu workspace={project.path} sessionFile={selected?.path} initialStats={fixture?.menuStats} onError={noop} />}
+      />
+    );
   return (
-    <div className="app">
-      <Sidebar
-        workspaces={workspaces}
-        workspace={workspaces[0]!.path}
-        sessions={sessions}
-        activeSessionFile={sessions[0]!.path}
-        onNewChat={() => undefined}
-        onAddWorkspace={() => undefined}
-        onSelectWorkspace={() => undefined}
-        onSelectSession={() => undefined}
-      />
-      <ConversationLayout
-        state={state}
-        workspaceName="orchard"
-        extensionUI={extensionUI && { state: extensionUI, onRespond: () => undefined, onDismissNotice: () => undefined }}
-        composer={
-          <Composer
-            running={isRunning(state)}
-            queue={state.queue}
-            loadCommands={() => Promise.resolve(commands)}
-            onSend={() => undefined}
-            onStop={() => undefined}
-            onClearQueue={() => Promise.resolve([])}
-            controls={
-              <ModelPicker
-                model={models[2]}
-                thinkingLevel="low"
-                load={() => Promise.resolve({ models, levels })}
-                onSelectModel={() => undefined}
-                onSelectThinking={() => undefined}
-              />
-            }
-            {...fixture?.composer}
-          />
-        }
-      />
-    </div>
+    <Shell
+      titleBar={titleBar}
+      rail={<IconRail view={fixture?.page === "settings" ? "settings" : "chats"} onSelect={noop} />}
+      sidebar={
+        <Sidebar
+          workspaces={workspaces}
+          sessions={{ [project.path]: sessions }}
+          expanded={new Set([project.path])}
+          activeSessionFile={selected?.path}
+          indicator={(file) => indicators[file]}
+          onNewChat={noop}
+          onAddProject={noop}
+          onToggleProject={noop}
+          onRemoveProject={noop}
+          onSelectChat={noop}
+          onRenameChat={noop}
+        />
+      }
+    >
+      {fixture?.page === "settings" ? (
+        <SettingsView piVersion="1.0.0" appVersion="0.6.0" onOpenSettingsFile={noop} />
+      ) : (
+        <ConversationLayout
+          state={state}
+          workspaceName={project.name}
+          isNew={fixture?.isNew}
+          extensionUI={extensionUI && { state: extensionUI, onRespond: noop, onDismissNotice: noop }}
+          composer={
+            <Composer
+              running={isRunning(state)}
+              queue={state.queue}
+              loadCommands={() => Promise.resolve(commands)}
+              onSend={noop}
+              onStop={noop}
+              onClearQueue={() => Promise.resolve([])}
+              controls={
+                <ModelPicker
+                  model={models[2]}
+                  thinkingLevel="low"
+                  load={() => Promise.resolve({ models, levels })}
+                  onSelectModel={noop}
+                  onSelectThinking={noop}
+                />
+              }
+              {...fixture?.composer}
+            />
+          }
+        />
+      )}
+    </Shell>
   );
 }
