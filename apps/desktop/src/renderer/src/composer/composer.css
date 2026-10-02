@@ -1,0 +1,63 @@
+.composer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-4) var(--space-3) var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-composer);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-composer);
+}
+
+.composer-input {
+  min-height: 48px;
+  max-height: 240px;
+  padding: 0 var(--space-1);
+  border: 0;
+  outline: none;
+  resize: none;
+  background: none;
+  font-size: var(--text-body);
+  line-height: 1.5;
+  field-sizing: content;
+}
+
+.composer-input::placeholder {
+  color: var(--color-text-faint);
+}
+
+.composer-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.composer-attach:disabled {
+  background: none;
+  color: var(--color-text);
+}
+
+.composer-controls {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.composer-send {
+  display: grid;
+  place-items: center;
+  width: var(--size-icon-button);
+  height: var(--size-icon-button);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-round);
+  background: var(--color-inverse);
+  color: var(--color-inverse-text);
+}
+
+.composer-send:disabled {
+  background: var(--color-button-disabled);
+}
