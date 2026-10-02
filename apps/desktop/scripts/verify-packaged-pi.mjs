@@ -22,14 +22,14 @@ async function findAppArchives(directory) {
   return archives;
 }
 
-/** The Electron executable for a packaged app.asar, per electron-builder's layouts. */
+/** The executable the app spawns Pi with, per electron-builder's layouts (the Helper on macOS, see piExecutable). */
 async function findExecutable(archivePath) {
   const resourcesDir = path.dirname(archivePath);
   if (process.platform === "darwin") {
     const macosDir = path.join(resourcesDir, "..", "MacOS");
     const [name, ...rest] = await readdir(macosDir);
     if (!name || rest.length) throw new Error(`Expected one executable in ${macosDir}`);
-    return path.join(macosDir, name);
+    return path.join(resourcesDir, "..", "Frameworks", `${name} Helper.app`, "Contents", "MacOS", `${name} Helper`);
   }
   const appDir = path.dirname(resourcesDir);
   const candidates = [];
