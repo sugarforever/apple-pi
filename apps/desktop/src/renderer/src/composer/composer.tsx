@@ -25,6 +25,8 @@ export interface ComposerProps {
   /** Starting content, for restored drafts and visual fixtures. */
   initialDraft?: string;
   initialAttachments?: Attachment[];
+  /** Text an extension put in the editor; replaces the draft whenever `id` changes. */
+  editorText?: { id: string; text: string };
 }
 
 const FOLLOW_UP_KEY = typeof navigator !== "undefined" && navigator.userAgent.includes("Mac") ? "⌥↵" : "Alt+Enter";
@@ -64,6 +66,17 @@ export function Composer(props: ComposerProps) {
       current = false;
     };
   }, [wantsPalette]);
+
+  // An extension's `set_editor_text` replaces the draft, as in Pi's own editor.
+  const { editorText } = props;
+  const [appliedEditorText, setAppliedEditorText] = useState<string>();
+  if (editorText && editorText.id !== appliedEditorText) {
+    setAppliedEditorText(editorText.id);
+    setDraft(editorText.text);
+  }
+  useEffect(() => {
+    if (editorText) input.current?.focus();
+  }, [editorText]);
 
   const canSend = !disabled && (draft.trim().length > 0 || attachments.length > 0);
 
