@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
-import type { RpcCommand, RpcResponse } from "@earendil-works/pi-coding-agent";
+import type { RpcCommand, RpcExtensionUIRequest, RpcResponse } from "@earendil-works/pi-coding-agent";
+import { isExtensionEvent, type ExtensionErrorEvent } from "../extension-ui/reducer.js";
 import type { PromptCommand, SessionState } from "../pi/types.js";
 import { initialTranscript, isRunning, reduceTranscript, type TranscriptState } from "./reducer.js";
 
@@ -11,6 +12,10 @@ export interface PiSessionOptions {
   onSessionFile?(sessionFile: string): void;
   /** Called whenever Pi settles, so session lists can pick up names and counts. */
   onSettled?(): void;
+  /** Extension UI requests and extension errors, with the Pi process they came from. */
+  onExtensionEvent?(event: RpcExtensionUIRequest | ExtensionErrorEvent, sessionKey: string): void;
+  /** Called when the Pi process behind this session exits. */
+  onExited?(sessionKey: string): void;
 }
 
 /** Pi's successful response to a command of type `T`. */
@@ -39,15 +44,15 @@ const errorText = (error: unknown): string => (error instanceof Error ? error.me
  * restores its messages, and reduces its events. Pi may stop an idle process at
  * any time; the next command reopens it from the session file.
  */
-export function usePiSession({ workspace, sessionFile, onSessionFile, onSettled }: PiSessionOptions): PiSession {
+export function usePiSession({ workspace, sessionFile, onSessionFile, onSettled, onExtensionEvent, onExited }: PiSessionOptions): PiSession {
   const [state, dispatch] = useReducer(reduceTranscript, initialTranscript);
   const [sessionState, setSessionState] = useState<SessionState>();
   const key = useRef<string | undefined>(undefined);
   const opening = useRef<Promise<string> | undefined>(undefined);
   const file = useRef(sessionFile);
-  const callbacks = useRef({ onSessionFile, onSettled });
+  const callbacks = useRef({ onSessionFile, onSettled, onExtensionEvent, onExited });
   useEffect(() => {
-    callbacks.current = { onSessionFile, onSettled };
+    callbacks.current = { onSessionFile, onSettled, onExtensionEvent, onExited };
   });
 
   useEffect(() => {
@@ -56,6 +61,11 @@ export function usePiSession({ workspace, sessionFile, onSessionFile, onSettled 
       if ("exited" in message) {
         key.current = undefined;
         dispatch({ type: "exited", at: Date.now() });
+        callbacks.current.onExited?.(message.sessionKey);
+        return;
+      }
+      if (isExtensionEvent(message.event)) {
+        callbacks.current.onExtensionEvent?.(message.event, message.sessionKey);
         return;
       }
       dispatch({ type: "event", event: message.event, at: Date.now() });
