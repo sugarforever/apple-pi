@@ -1,6 +1,8 @@
 import { contextBridge, ipcRenderer } from "electron";
+import { piApi } from "./pi-api.js";
 
 contextBridge.exposeInMainWorld("applePi", {
+  ...piApi,
   system: { getVersion: () => ipcRenderer.invoke("system:version") },
   workspace: {
     pick: () => ipcRenderer.invoke("workspace:pick"),
