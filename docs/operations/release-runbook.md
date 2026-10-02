@@ -75,9 +75,7 @@ Two requirements come from macOS, not from this repository:
 - **The update must carry the same code signature.** On macOS the updater hands the archive to
   Squirrel.Mac, which enforces this; nothing in this repository verifies it itself.
 - **The bundle identifier must not change between releases.** Squirrel treats a different
-  identifier as a different application. That is why `appId` is worth treating as permanent —
-  see the [credential storage policy](../architecture/credential-storage-keychain-policy.md),
-  which records the same constraint from the keychain's point of view.
+  identifier as a different application. That is why `appId` is worth treating as permanent.
 
 ### The feed starts with the release that ships it
 

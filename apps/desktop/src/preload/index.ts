@@ -1,106 +1,31 @@
 import { contextBridge, ipcRenderer } from "electron";
-import { piApi } from "./pi-api.js";
+import type { ApplePiApi, PiSessionMessage } from "../shared/pi-api.js";
 
-contextBridge.exposeInMainWorld("applePi", {
-  ...piApi,
-  system: { getVersion: () => ipcRenderer.invoke("system:version") },
-  workspace: {
-    pick: () => ipcRenderer.invoke("workspace:pick"),
-    list: () => ipcRenderer.invoke("workspace:list"),
-    select: (path: string) => ipcRenderer.invoke("workspace:select", path),
+/** The thin-client surface over Pi's RPC mode. Main owns the matching `pi-ipc` handlers. */
+const piApi: ApplePiApi = {
+  workspaces: {
+    pick: () => ipcRenderer.invoke("workspaces:pick"),
+    list: () => ipcRenderer.invoke("workspaces:list"),
+    remove: (path) => ipcRenderer.invoke("workspaces:remove", path),
   },
-  session: {
-    send: (text: string) => ipcRenderer.invoke("session:send", text),
-    cancel: () => ipcRenderer.invoke("session:cancel"),
-    getSnapshot: () => ipcRenderer.invoke("session:snapshot"),
-    list: () => ipcRenderer.invoke("session:list"),
-    select: (path: string) => ipcRenderer.invoke("session:select", path),
-    create: () => ipcRenderer.invoke("session:create"),
-    subscribe: (listener: (event: unknown) => void) => {
-      const handler = (_event: Electron.IpcRendererEvent, payload: unknown) => listener(payload);
-      ipcRenderer.on("session:event", handler);
-      return () => ipcRenderer.removeListener("session:event", handler);
+  sessions: {
+    list: (workspace) => ipcRenderer.invoke("sessions:list", workspace),
+  },
+  pi: {
+    open: (request) => ipcRenderer.invoke("pi:open", request),
+    send: (sessionKey, command) => ipcRenderer.invoke("pi:send", sessionKey, command),
+    respondUI: (sessionKey, response) => ipcRenderer.invoke("pi:respondUI", sessionKey, response),
+    close: (sessionKey) => ipcRenderer.invoke("pi:close", sessionKey),
+    onEvent: (listener) => {
+      const handler = (_event: Electron.IpcRendererEvent, message: PiSessionMessage) => listener(message);
+      ipcRenderer.on("pi:event", handler);
+      return () => ipcRenderer.removeListener("pi:event", handler);
     },
   },
-  model: {
-    list: () => ipcRenderer.invoke("model:list"),
-    setSession: (model: unknown) => ipcRenderer.invoke("model:setSession", model),
-    setDefault: (model: unknown) => ipcRenderer.invoke("model:setDefault", model),
-    clearDefault: () => ipcRenderer.invoke("model:clearDefault"),
+  shell: {
+    openSettingsFile: () => ipcRenderer.invoke("shell:openSettingsFile"),
+    openTerminal: (workspace) => ipcRenderer.invoke("shell:openTerminal", workspace),
   },
-  provider: {
-    list: () => ipcRenderer.invoke("provider:list"),
-    connectApiKey: (providerId: string, apiKey: string, options?: ProviderOperationOptions) =>
-      invokeOperation("provider:connectApiKey", { providerId, apiKey }, options),
-    disconnect: (providerId: string, options?: ProviderOperationOptions) => invokeOperation("provider:disconnect", { providerId }, options),
-    verify: (providerId: string, options?: ProviderOperationOptions) => invokeOperation("provider:verify", { providerId }, options),
-    refreshModels: (providerIds?: string[], options?: ProviderOperationOptions) =>
-      invokeOperation("model:refresh", { ...(providerIds ? { providerIds } : {}) }, options),
-    // Unlike `invokeOperation`, this returns the generated operationId
-    // immediately (not only once the login resolves): a login stays pending
-    // through one or more prompt round trips, so the caller needs the id right
-    // away to correlate `provider:authEvent` pushes and `respondOAuthPrompt`
-    // calls to this specific operation while it is still running.
-    startOAuthLogin: (providerId: string, options?: ProviderOperationOptions) => {
-      const operationId = crypto.randomUUID();
-      const cancel = () => {
-        void ipcRenderer.invoke("operation:cancel", operationId);
-      };
-      const request = ipcRenderer.invoke("provider:startOAuthLogin", { providerId, operationId, timeoutMs: options?.timeoutMs ?? 20 * 60 * 1000 });
-      if (options?.signal?.aborted) cancel();
-      else options?.signal?.addEventListener("abort", cancel, { once: true });
-      return { operationId, result: request.finally(() => options?.signal?.removeEventListener("abort", cancel)) };
-    },
-    respondOAuthPrompt: (operationId: string, promptId: string, value: string) =>
-      ipcRenderer.invoke("provider:respondOAuthPrompt", { operationId, promptId, value }),
-    listCustom: () => ipcRenderer.invoke("provider:listCustom"),
-    addCustom: (definition: unknown, options?: ProviderOperationOptions) => invokeOperation("provider:addCustom", { definition }, options),
-    updateCustom: (id: string, definition: unknown, options?: ProviderOperationOptions) =>
-      invokeOperation("provider:updateCustom", { id, definition }, options),
-    removeCustom: (id: string, options?: ProviderOperationOptions) => invokeOperation("provider:removeCustom", { id }, options),
-    subscribeAuthEvent: (listener: (event: unknown) => void) => {
-      const handler = (_event: Electron.IpcRendererEvent, payload: unknown) => listener(payload);
-      ipcRenderer.on("provider:authEvent", handler);
-      return () => ipcRenderer.removeListener("provider:authEvent", handler);
-    },
-  },
-  operation: {
-    cancel: (operationId: string) => ipcRenderer.invoke("operation:cancel", operationId),
-  },
-  // Simple pass-throughs, like `session`/`model` above: skill commands have no
-  // `operationId`/`timeoutMs` in their protocol payload, so they skip
-  // `invokeOperation` (that helper only exists for the bounded, cancellable
-  // `provider.*` mutations).
-  skill: {
-    list: (scopes: Array<"user" | "project">) => ipcRenderer.invoke("skill:list", scopes),
-    // Separate from `list()`, mirroring the protocol split between
-    // `skill.list` and `skill.listDisabled`: this surfaces what is currently
-    // sitting in each scope's disabled holding directory (invisible to Pi's
-    // own discovery, and so absent from `list()`), for the Skills panel's
-    // "Disabled" section to show and offer to re-enable.
-    listDisabled: (scopes: Array<"user" | "project">) => ipcRenderer.invoke("skill:listDisabled", scopes),
-    install: (scope: "user" | "project", sourcePath: string) => ipcRenderer.invoke("skill:install", { scope, sourcePath }),
-    setEnabled: (name: string, scope: "user" | "project", enabled: boolean) => ipcRenderer.invoke("skill:setEnabled", { name, scope, enabled }),
-    remove: (name: string, scope: "user" | "project") => ipcRenderer.invoke("skill:remove", { name, scope }),
-    // Side-effect-free directory picker for the install flow: unlike
-    // `workspace:pick`, this never touches the workspace catalog or opens a
-    // session, so it has no scope/cwd argument to pass through here.
-    pickDirectory: () => ipcRenderer.invoke("skill:pickDirectory"),
-  },
-});
+};
 
-interface ProviderOperationOptions {
-  signal?: AbortSignal;
-  timeoutMs?: number;
-}
-
-function invokeOperation(channel: string, payload: Record<string, unknown>, options: ProviderOperationOptions = {}): Promise<unknown> {
-  const operationId = crypto.randomUUID();
-  const cancel = () => {
-    void ipcRenderer.invoke("operation:cancel", operationId);
-  };
-  const request = ipcRenderer.invoke(channel, { ...payload, operationId, timeoutMs: options.timeoutMs ?? 15_000 });
-  if (options.signal?.aborted) cancel();
-  else options.signal?.addEventListener("abort", cancel, { once: true });
-  return request.finally(() => options.signal?.removeEventListener("abort", cancel));
-}
+contextBridge.exposeInMainWorld("applePi", piApi);

@@ -20,13 +20,7 @@ const IGNORED = [
 ];
 
 const RENDERER_FILES = ["apps/desktop/src/renderer/**/*.{ts,tsx}"];
-const NODE_FILES = [
-  "apps/desktop/src/main/**/*.ts",
-  "apps/desktop/src/preload/**/*.ts",
-  "apps/desktop/src/shared/**/*.ts",
-  "apps/agent-host/**/*.ts",
-  "packages/**/*.ts",
-];
+const NODE_FILES = ["apps/desktop/src/main/**/*.ts", "apps/desktop/src/preload/**/*.ts", "apps/desktop/src/shared/**/*.ts"];
 
 export default tseslint.config(
   { ignores: IGNORED },

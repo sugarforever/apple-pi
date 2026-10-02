@@ -21,6 +21,8 @@ export interface PiIpcOptions {
   getWindow(): BrowserWindow | undefined;
   catalog: AppCatalog;
   pool: PiProcessPool;
+  /** Environment for new Pi processes, resolved once before the first spawn. */
+  spawnEnv(): Promise<NodeJS.ProcessEnv>;
 }
 
 /**
@@ -28,7 +30,7 @@ export interface PiIpcOptions {
  * calling and the rough shape of what they send; commands, responses, and
  * events pass through unchanged because Pi owns their meaning.
  */
-export function registerPiIpc({ handle, getWindow, catalog, pool }: PiIpcOptions): void {
+export function registerPiIpc({ handle, getWindow, catalog, pool, spawnEnv }: PiIpcOptions): void {
   const knownWorkspace = (value: unknown): string => {
     if (typeof value !== "string" || !catalog.snapshot().workspaces.some((item) => item.path === value)) throw new Error("Unknown workspace");
     return value;
@@ -71,14 +73,16 @@ export function registerPiIpc({ handle, getWindow, catalog, pool }: PiIpcOptions
     return SessionManager.list(knownWorkspace(workspace));
   });
 
-  handle("pi:open", (_event, value: unknown) => {
+  handle("pi:open", async (_event, value: unknown) => {
     const { workspace, sessionFile } = (value ?? {}) as Partial<PiOpenRequest>;
     const cwd = knownWorkspace(workspace);
     if (sessionFile !== undefined && (typeof sessionFile !== "string" || !path.isAbsolute(sessionFile))) throw new Error("Invalid session file");
+    const env = await spawnEnv();
+    // Nothing below awaits, so two opens of one file cannot both start a process.
     // A resumed session is keyed by its file, so one file never gets two Pi writers.
     const sessionKey = (sessionFile && liveKeyFor(sessionFile)) ?? sessionFile ?? randomUUID();
     if (pool.get(sessionKey)) return sessionKey;
-    const piProcess = pool.open(sessionKey, { workspace: cwd, sessionFile });
+    const piProcess = pool.open(sessionKey, { workspace: cwd, sessionFile, env });
     piProcess.on("event", (event) => push({ sessionKey, event }));
     piProcess.once("exit", (exited) => {
       forgetKey(sessionKey);

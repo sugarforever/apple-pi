@@ -7,12 +7,12 @@
   "type": "module",
   "main": "out/main/index.js",
   "scripts": {
-    "dev": "pnpm --filter @apple-pi/protocol build && pnpm --filter @apple-pi/pi-adapter build && pnpm --filter @apple-pi/agent-host build && electron-vite dev",
-    "build": "pnpm --filter @apple-pi/agent-host build && electron-vite build && node scripts/stage-agent-host.mjs",
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.node.json --noEmit",
     "test": "node --test scripts/*.test.mjs && vitest run --exclude=scripts/*.test.mjs --exclude=src/main/*-package.test.ts",
     "fixtures:generate": "pnpm build && node scripts/generate-visual-fixtures.mjs",
-    "test:package": "pnpm build && vitest run src/main/preload-package.test.ts src/main/agent-host-package.test.ts",
+    "test:package": "pnpm build && vitest run src/main/preload-package.test.ts",
     "test:mac-package-launch": "node scripts/verify-macos-app-launch.mjs",
     "package:mac": "pnpm build && APPLE_PI_ADHOC_RESIGN=1 CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac --publish never",
     "package:mac:signed": "pnpm build && electron-builder --mac --config.mac.notarize=true --publish never",
@@ -20,9 +20,6 @@
     "package:linux": "pnpm build && electron-builder --linux --x64 --publish never"
   },
   "dependencies": {
-    "@apple-pi/agent-host": "workspace:*",
-    "@apple-pi/pi-adapter": "workspace:*",
-    "@apple-pi/protocol": "workspace:*",
     "@earendil-works/pi-coding-agent": "1.0.0",
     "electron-updater": "6.8.9",
     "lucide-react": "^0.525.0",
@@ -32,7 +29,6 @@
     "remark-gfm": "4.0.1"
   },
   "devDependencies": {
-    "@electron/asar": "3.4.1",
     "@types/node": "22.20.2",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
