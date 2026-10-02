@@ -23,6 +23,7 @@
     "@apple-pi/agent-host": "workspace:*",
     "@apple-pi/pi-adapter": "workspace:*",
     "@apple-pi/protocol": "workspace:*",
+    "@earendil-works/pi-coding-agent": "1.0.0",
     "electron-updater": "6.8.9",
     "lucide-react": "^0.525.0",
     "react": "19.2.4",
