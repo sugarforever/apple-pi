@@ -17,6 +17,7 @@ export type ToolCall = Extract<AssistantContent, { type: "toolCall" }>;
 export type UserContent = Exclude<UserMessage["content"], string>[number];
 
 export type SessionState = Extract<RpcResponse, { command: "get_state"; success: true }>["data"];
+export type SessionStats = Extract<RpcResponse, { command: "get_session_stats"; success: true }>["data"];
 
 export type AgentEvent = Exclude<PiProcessEvent, { type: "extension_ui_request" }>;
 export type AssistantMessageEvent = Extract<AgentEvent, { type: "message_update" }>["assistantMessageEvent"];

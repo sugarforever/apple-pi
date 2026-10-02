@@ -39,6 +39,17 @@ export function registerPiIpc({ handle, getWindow, catalog, pool }: PiIpcOptions
     return piProcess;
   };
   const push = (message: PiSessionMessage) => getWindow()?.webContents.send("pi:event", message);
+  // A new session is keyed by a random id until Pi names its file. Remembering
+  // the file once `get_state` reports it lets a later open of that file reach
+  // the same process instead of starting a second writer.
+  const keyByFile = new Map<string, string>();
+  const forgetKey = (sessionKey: string) => {
+    for (const [file, key] of keyByFile) if (key === sessionKey) keyByFile.delete(file);
+  };
+  const liveKeyFor = (sessionFile: string): string | undefined => {
+    const key = keyByFile.get(sessionFile);
+    return key && pool.get(key) ? key : undefined;
+  };
 
   handle("workspaces:pick", async () => {
     const result = await dialog.showOpenDialog(getWindow()!, { properties: ["openDirectory"] });
@@ -48,7 +59,11 @@ export function registerPiIpc({ handle, getWindow, catalog, pool }: PiIpcOptions
     return catalog.snapshot().workspaces.find((item) => item.path === workspace) ?? null;
   });
   handle("workspaces:list", () => catalog.snapshot().workspaces);
-  handle("workspaces:remove", (_event, workspace: unknown) => catalog.removeWorkspace(knownWorkspace(workspace)));
+  handle("workspaces:remove", async (_event, value: unknown) => {
+    const workspace = knownWorkspace(value);
+    await catalog.removeWorkspace(workspace);
+    await pool.closeWorkspace(workspace);
+  });
 
   // Importing Pi costs most of a second, so it waits until something needs it.
   handle("sessions:list", async (_event, workspace: unknown) => {
@@ -61,17 +76,26 @@ export function registerPiIpc({ handle, getWindow, catalog, pool }: PiIpcOptions
     const cwd = knownWorkspace(workspace);
     if (sessionFile !== undefined && (typeof sessionFile !== "string" || !path.isAbsolute(sessionFile))) throw new Error("Invalid session file");
     // A resumed session is keyed by its file, so one file never gets two Pi writers.
-    const sessionKey = sessionFile ?? randomUUID();
+    const sessionKey = (sessionFile && liveKeyFor(sessionFile)) ?? sessionFile ?? randomUUID();
     if (pool.get(sessionKey)) return sessionKey;
     const piProcess = pool.open(sessionKey, { workspace: cwd, sessionFile });
     piProcess.on("event", (event) => push({ sessionKey, event }));
-    piProcess.once("exit", (exited) => push({ sessionKey, exited }));
+    piProcess.once("exit", (exited) => {
+      forgetKey(sessionKey);
+      push({ sessionKey, exited });
+    });
     return sessionKey;
   });
-  handle("pi:send", (_event, sessionKey: unknown, command: unknown) => {
+  handle("pi:send", async (_event, sessionKey: unknown, command: unknown) => {
     if (!command || typeof command !== "object" || typeof (command as RpcCommand).type !== "string") throw new Error("Invalid Pi command");
     const { type } = command as RpcCommand;
-    return openSession(sessionKey).send(command as RpcCommand, LONG_COMMANDS.has(type) ? LONG_COMMAND_TIMEOUT_MS : undefined);
+    const response = await openSession(sessionKey).send(command as RpcCommand, LONG_COMMANDS.has(type) ? LONG_COMMAND_TIMEOUT_MS : undefined);
+    if (response.success && response.command === "get_state" && response.data.sessionFile) {
+      // The session may have moved to another file; only the current one maps here.
+      forgetKey(sessionKey as string);
+      keyByFile.set(response.data.sessionFile, sessionKey as string);
+    }
+    return response;
   });
   handle("pi:respondUI", (_event, sessionKey: unknown, response: unknown) => {
     const { type, id } = (response ?? {}) as Partial<RpcExtensionUIResponse>;

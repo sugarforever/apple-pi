@@ -54,6 +54,10 @@ export class PiProcess extends EventEmitter<{ event: [PiProcessEvent]; exit: [Pi
     super();
   }
 
+  get workspace(): string {
+    return this.options.workspace;
+  }
+
   /** True when no command is in flight and the agent is not mid-run. */
   get idle(): boolean {
     return this.pending.size === 0 && !this.agentRunning;
@@ -232,6 +236,12 @@ export class PiProcessPool {
     const piProcess = this.processes.get(key);
     this.processes.delete(key);
     await piProcess?.stop();
+  }
+
+  /** Stops every process working in `workspace`, as when the project is removed. */
+  async closeWorkspace(workspace: string): Promise<void> {
+    const keys = [...this.processes].filter(([, piProcess]) => piProcess.workspace === workspace).map(([key]) => key);
+    await Promise.all(keys.map((key) => this.close(key)));
   }
 
   async stopAll(): Promise<void> {
