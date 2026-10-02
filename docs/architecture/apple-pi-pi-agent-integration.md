@@ -66,3 +66,16 @@ failure or after 5 seconds it falls back to `process.env`. Windows is skipped.
    than the generic fallback.
 5. Smoke test one real session in the built app: open, prompt, a tool call, and
    quit with no `pi` processes left behind.
+6. `corepack pnpm package:mac` (or `package:win`/`package:linux`), then
+   `corepack pnpm test:packaged-pi`: the packaged app's own executable must load
+   Pi from `app.asar` and answer `get_state`. CI runs the same check on every
+   packaged platform.
+
+## Packaging
+
+Pi ships inside `app.asar` like any other dependency. Electron's Node mode reads
+the archive, including Pi's ES modules, workers, and WebAssembly, and
+electron-builder unpacks the native binaries in Pi's tree on its own, so there
+is no `asarUnpack` rule. Pi runs as the app's own executable, so it needs the
+`RunAsNode` fuse left on and inherits the app's hardened-runtime entitlements
+(`allow-jit`, `allow-unsigned-executable-memory`).
