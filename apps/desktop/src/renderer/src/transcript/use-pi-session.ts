@@ -8,8 +8,8 @@ export interface PiSessionOptions {
   workspace: string;
   /** Session file to resume; Pi starts a new session when absent. */
   sessionFile?: string;
-  /** Called once Pi reports the file a new session writes to. */
-  onSessionFile?(sessionFile: string): void;
+  /** Called when Pi reports the file a session writes to, with the key of the process writing it. */
+  onSessionFile?(sessionFile: string, sessionKey: string): void;
   /** Called whenever Pi settles, so session lists can pick up names and counts. */
   onSettled?(): void;
   /** Extension UI requests and extension errors, with the Pi process they came from. */
@@ -70,6 +70,10 @@ export function usePiSession({ workspace, sessionFile, onSessionFile, onSettled,
       }
       dispatch({ type: "event", event: message.event, at: Date.now() });
       if (message.event.type === "agent_settled") callbacks.current.onSettled?.();
+      else if (message.event.type === "session_info_changed") {
+        const { name } = message.event;
+        setSessionState((current) => current && { ...current, sessionName: name });
+      }
     });
   }, []);
 
@@ -82,9 +86,9 @@ export function usePiSession({ workspace, sessionFile, onSessionFile, onSettled,
   const adoptState = useCallback((next: SessionState) => {
     setSessionState(next);
     const reported = next.sessionFile;
-    if (reported && reported !== file.current) {
+    if (reported && key.current && reported !== file.current) {
       file.current = reported;
-      callbacks.current.onSessionFile?.(reported);
+      callbacks.current.onSessionFile?.(reported, key.current);
     }
   }, []);
 
@@ -107,6 +111,27 @@ export function usePiSession({ workspace, sessionFile, onSessionFile, onSettled,
   useEffect(() => {
     open().catch((error: unknown) => dispatch({ type: "failed", error: errorText(error) }));
   }, [open]);
+
+  // A new chat left before anything was sent would keep an idle Pi until evicted; stop it.
+  // The check waits for a start in flight, and skips StrictMode's immediate remount.
+  const [startedNew] = useState(!sessionFile);
+  const unused = useRef(true);
+  const mounted = useRef(false);
+  useEffect(() => {
+    unused.current = state.messages.length === 0 && !state.pendingPrompt && !isRunning(state);
+  });
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      if (!startedNew) return;
+      void (opening.current ?? Promise.resolve(key.current))
+        .then((sessionKey) => {
+          if (sessionKey && !mounted.current && unused.current) return window.applePi.pi.close(sessionKey);
+        })
+        .catch(() => undefined);
+    };
+  }, [startedNew]);
 
   const request = useCallback(
     async <T extends RpcCommand["type"]>(command: Extract<RpcCommand, { type: T }>): Promise<PiResponse<T>> => send(await open(), command),

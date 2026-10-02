@@ -1,0 +1,164 @@
+/*
+ * Window chrome: a draggable title bar across the top, the icon rail below it
+ * on the left, and the sidebar and main view sharing one rounded card.
+ */
+
+.shell {
+  display: grid;
+  grid-template-areas:
+    "title title"
+    "rail body";
+  grid-template-rows: var(--height-title-bar) minmax(0, 1fr);
+  grid-template-columns: var(--width-rail) minmax(0, 1fr);
+  height: 100vh;
+  background: var(--color-chrome);
+}
+
+.shell-body {
+  display: grid;
+  grid-area: body;
+  grid-template-columns: var(--width-sidebar) minmax(0, 1fr);
+  min-height: 0;
+  overflow: hidden;
+  border-top: 1px solid var(--color-hairline);
+  border-left: 1px solid var(--color-hairline);
+  border-top-left-radius: var(--radius-lg);
+  background: var(--color-canvas);
+}
+
+.shell[data-sidebar="closed"] .shell-body {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* Title bar */
+
+.title-bar {
+  display: flex;
+  grid-area: title;
+  align-items: center;
+  min-width: 0;
+  font-size: var(--text-ui);
+  user-select: none;
+  -webkit-app-region: drag;
+}
+
+.title-bar button {
+  -webkit-app-region: no-drag;
+}
+
+.title-bar-lead {
+  display: flex;
+  flex: none;
+  align-items: center;
+  padding-left: var(--space-2);
+}
+
+.shell[data-platform="mac"] .title-bar-lead {
+  padding-left: var(--width-traffic-lights);
+}
+
+/* With the sidebar open, the title starts where the main view does. */
+.shell[data-sidebar="open"] .title-bar-lead {
+  width: calc(var(--width-rail) + var(--width-sidebar));
+}
+
+.title-bar-button {
+  color: var(--color-text-secondary);
+}
+
+.title-bar-main {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: 0 var(--space-2) 0 var(--space-5);
+}
+
+.title-bar-icon {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  color: var(--color-text-secondary);
+}
+
+.title-bar-title {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  font-size: var(--text-ui);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.title-bar-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  margin-left: auto;
+}
+
+/* Conversation menu */
+
+.conversation-menu {
+  position: relative;
+}
+
+.conversation-menu-popup {
+  position: absolute;
+  top: calc(100% + var(--space-1));
+  right: 0;
+  width: 280px;
+}
+
+.session-stats {
+  margin: 0;
+  padding: 0 var(--space-3) var(--space-2);
+  font-size: var(--text-small);
+}
+
+.session-stats-row {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: 2px 0;
+}
+
+.session-stats dt {
+  color: var(--color-text-muted);
+}
+
+.session-stats dd {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+/* Icon rail */
+
+.icon-rail {
+  display: flex;
+  flex-direction: column;
+  grid-area: rail;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) 0 var(--space-4);
+}
+
+.icon-rail-spacer {
+  flex: 1;
+}
+
+.icon-rail-button {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-md);
+  color: var(--color-text-secondary);
+}
+
+.icon-rail-button[aria-current="page"] {
+  background: var(--color-selected);
+  color: var(--color-text);
+}
