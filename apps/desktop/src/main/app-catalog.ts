@@ -1,13 +1,8 @@
 import path from "node:path";
 import type { Workspace } from "../shared/pi-api.js";
 
-export interface ModelRef {
-  provider: string;
-  modelId: string;
-}
 interface CatalogData {
   workspaces: Workspace[];
-  defaultModel?: ModelRef;
 }
 interface CatalogStorage {
   read(): Promise<string>;
@@ -20,7 +15,8 @@ export class AppCatalog {
   async load(): Promise<void> {
     try {
       const value = await this.storage.read();
-      if (value) this.data = JSON.parse(value) as CatalogData;
+      // Only workspaces carry over; older builds also stored a default model here.
+      if (value) this.data = { workspaces: (JSON.parse(value) as Partial<CatalogData>).workspaces ?? [] };
     } catch {
       this.data = { workspaces: [] };
     }
@@ -35,14 +31,6 @@ export class AppCatalog {
   }
   async removeWorkspace(workspacePath: string): Promise<void> {
     this.data.workspaces = this.data.workspaces.filter((item) => item.path !== workspacePath);
-    await this.persist();
-  }
-  async setDefaultModel(model: ModelRef): Promise<void> {
-    this.data.defaultModel = model;
-    await this.persist();
-  }
-  async clearDefaultModel(): Promise<void> {
-    delete this.data.defaultModel;
     await this.persist();
   }
   private persist(): Promise<void> {
