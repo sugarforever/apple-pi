@@ -38,7 +38,13 @@
   /* States */
   --color-danger: #c4322b;
   --color-danger-bg: #fdf1f0;
+  --color-warning: #b45309;
   --color-focus: #3b82f6;
+
+  /* Accent: the primary action in extension dialogs */
+  --color-accent: #1d6ce0;
+  --color-accent-bg: #eaf2fe;
+  --color-accent-bg-hover: #dce9fd;
 
   /* Type */
   --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
@@ -47,6 +53,7 @@
   --text-ui: 14px;
   --text-small: 13px;
   --text-code: 13px;
+  --text-caption: 12px;
   --text-heading: 18px;
   --leading-body: 1.7;
   --leading-code: 1.6;
@@ -107,7 +114,12 @@
 
     --color-danger: #ff8a80;
     --color-danger-bg: #3a1f1d;
+    --color-warning: #f2b45c;
     --color-focus: #60a5fa;
+
+    --color-accent: #8ab8ff;
+    --color-accent-bg: #1f2c40;
+    --color-accent-bg-hover: #26364f;
 
     --shadow-composer: 0 1px 2px rgba(0, 0, 0, 0.3), 0 6px 24px rgba(0, 0, 0, 0.3);
     --shadow-floating: 0 1px 3px rgba(0, 0, 0, 0.4), 0 4px 14px rgba(0, 0, 0, 0.4);

@@ -16,6 +16,11 @@
     "composer/attachment",
     "composer/commands",
     "composer/queued",
-    "composer/model-menu"
+    "composer/model-menu",
+    "extension-ui/confirm",
+    "extension-ui/select",
+    "extension-ui/editor",
+    "extension-ui/status-widget",
+    "extension-ui/notification"
   ]
 }

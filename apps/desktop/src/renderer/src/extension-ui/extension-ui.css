@@ -1,0 +1,290 @@
+/* Extension UI: dialogs and widgets docked around the composer, status under it, notices on top. */
+
+/* Dialog card */
+
+.extension-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-5);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-composer);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-composer);
+}
+
+.extension-dialog-main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.extension-dialog-title {
+  margin: 0;
+  font-size: var(--text-body);
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.extension-dialog-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+}
+
+.extension-dialog-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.extension-dialog-message {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--text-ui);
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.extension-dialog-meta {
+  flex: 1;
+  margin: var(--space-1) 0 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-small);
+  font-variant-numeric: tabular-nums;
+}
+
+.extension-dialog-buttons,
+.extension-dialog-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.extension-dialog-actions .extension-dialog-meta {
+  margin: 0;
+}
+
+/* Confirm keeps the title and buttons on one line, like a banner. */
+.extension-dialog-confirm .extension-dialog-main {
+  gap: 2px;
+}
+
+.extension-button {
+  height: 36px;
+  padding: 0 var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-round);
+  background: var(--color-surface);
+  font-size: var(--text-ui);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.extension-button:hover {
+  background: var(--color-hover);
+}
+
+.extension-button-primary {
+  border-color: transparent;
+  background: var(--color-accent-bg);
+  color: var(--color-accent);
+}
+
+.extension-button-primary:hover {
+  background: var(--color-accent-bg-hover);
+}
+
+/* Select */
+
+.extension-options {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 240px;
+  overflow-y: auto;
+  margin: var(--space-1) calc(-1 * var(--space-3)) 0;
+  padding: 0;
+  border-radius: var(--radius-md);
+  list-style: none;
+}
+
+/* The highlighted option already shows where the keyboard is. */
+.extension-options:focus-visible {
+  outline: none;
+}
+
+.extension-option {
+  padding: 7px var(--space-3);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-ui);
+}
+
+.extension-option[aria-selected="true"] {
+  background: var(--color-selected);
+}
+
+/* Input and editor */
+
+.extension-field {
+  width: 100%;
+  margin-top: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  outline: none;
+  background: var(--color-canvas);
+  font-size: var(--text-ui);
+  line-height: 1.5;
+}
+
+.extension-field:focus,
+.extension-field:focus-visible {
+  border-color: var(--color-focus);
+  outline: none;
+}
+
+.extension-field::placeholder {
+  color: var(--color-text-faint);
+}
+
+.extension-editor {
+  min-height: 120px;
+  max-height: 320px;
+  resize: vertical;
+  font-family: var(--font-mono);
+  font-size: var(--text-code);
+  line-height: var(--leading-code);
+}
+
+/* Widgets */
+
+.extension-widgets {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.extension-widget {
+  margin: 0;
+  max-height: 160px;
+  overflow: auto;
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-lg);
+  background: var(--color-subtle);
+  color: var(--color-text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  line-height: 1.55;
+  white-space: pre;
+}
+
+/* Status: sits in the dock's bottom padding so the composer never moves. */
+
+.extension-status {
+  position: absolute;
+  right: calc(var(--space-5) + var(--space-4));
+  bottom: 3px;
+  left: calc(var(--space-5) + var(--space-4));
+  display: flex;
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  color: var(--color-text-muted);
+  font-size: var(--text-caption);
+  line-height: 18px;
+  list-style: none;
+  white-space: nowrap;
+}
+
+/* A long status (a path, say) truncates instead of pushing the others out. */
+.extension-status-item {
+  min-width: 0;
+  max-width: 60%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Notices */
+
+.extension-notices {
+  position: absolute;
+  top: calc(40px + var(--space-2));
+  left: 50%;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  width: max-content;
+  max-width: min(560px, calc(100% - 2 * var(--space-5)));
+  transform: translateX(-50%);
+}
+
+.extension-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  max-width: 100%;
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-floating);
+  font-size: var(--text-ui);
+  line-height: 20px;
+  animation: extension-notice-in 160ms ease-out;
+}
+
+.extension-notice-icon {
+  flex: none;
+  margin-top: 2.5px;
+  color: var(--color-text-muted);
+}
+
+.extension-notice-warning .extension-notice-icon {
+  color: var(--color-warning);
+}
+
+.extension-notice-error {
+  border-color: transparent;
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
+}
+
+.extension-notice-error .extension-notice-icon {
+  color: var(--color-danger);
+}
+
+.extension-notice-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.extension-notice-close {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--color-text-muted);
+}
+
+.extension-notice-close:hover {
+  background: var(--color-hover);
+  color: var(--color-text);
+}
+
+@keyframes extension-notice-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
