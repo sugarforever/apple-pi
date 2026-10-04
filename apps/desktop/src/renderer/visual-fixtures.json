@@ -21,6 +21,10 @@
     "extension-ui/select",
     "extension-ui/editor",
     "extension-ui/status-widget",
-    "extension-ui/notification"
+    "extension-ui/notification",
+    "shell/conversation",
+    "shell/conversation-menu",
+    "shell/new-chat",
+    "shell/settings"
   ]
 }
