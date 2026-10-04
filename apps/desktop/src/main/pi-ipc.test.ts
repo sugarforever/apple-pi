@@ -6,6 +6,8 @@ import type { PiProcessPool } from "./pi-process.js";
 
 vi.mock("electron", () => ({ dialog: {}, shell: {} }));
 
+const env = { PATH: "/from/login/shell" };
+
 it("opens only known workspaces, keys resumed sessions by file, and passes Pi traffic through unchanged", async () => {
   const handlers = new Map<string, Parameters<PiIpcOptions["handle"]>[1]>();
   const toRenderer = vi.fn();
@@ -17,13 +19,17 @@ it("opens only known workspaces, keys resumed sessions by file, and passes Pi tr
     getWindow: () => ({ webContents: { send: toRenderer } }) as never,
     catalog: { snapshot: () => ({ workspaces: [{ path: "/w", name: "w" }] }) } as unknown as AppCatalog,
     pool: pool as unknown as PiProcessPool,
+    spawnEnv: async () => env,
   });
   const call = (channel: string, ...args: unknown[]) => handlers.get(channel)!({} as never, ...args);
 
-  expect(() => call("pi:open", { workspace: "/elsewhere" })).toThrow("Unknown workspace");
-  const sessionKey = call("pi:open", { workspace: "/w", sessionFile: "/s/a.jsonl" });
-  expect(call("pi:open", { workspace: "/w", sessionFile: "/s/a.jsonl" })).toBe(sessionKey);
-  expect(pool.open).toHaveBeenCalledExactlyOnceWith(sessionKey, { workspace: "/w", sessionFile: "/s/a.jsonl" });
+  await expect(call("pi:open", { workspace: "/elsewhere" })).rejects.toThrow("Unknown workspace");
+  const [sessionKey, again] = await Promise.all([
+    call("pi:open", { workspace: "/w", sessionFile: "/s/a.jsonl" }),
+    call("pi:open", { workspace: "/w", sessionFile: "/s/a.jsonl" }),
+  ]);
+  expect(again).toBe(sessionKey);
+  expect(pool.open).toHaveBeenCalledExactlyOnceWith(sessionKey, { workspace: "/w", sessionFile: "/s/a.jsonl", env });
 
   const prompt = { type: "prompt", message: "hi" };
   await call("pi:send", sessionKey, prompt);
@@ -58,19 +64,20 @@ it("routes a reopened session file to the live new-session process Pi reported i
     getWindow: () => undefined,
     catalog: { snapshot: () => ({ workspaces: [{ path: "/w", name: "w" }] }) } as unknown as AppCatalog,
     pool: pool as unknown as PiProcessPool,
+    spawnEnv: async () => env,
   });
   const call = (channel: string, ...args: unknown[]) => handlers.get(channel)!({} as never, ...args);
 
-  const fresh = call("pi:open", { workspace: "/w" }) as string;
-  expect(call("pi:open", { workspace: "/w", sessionFile: "/s/new.jsonl" })).not.toBe(fresh);
+  const fresh = (await call("pi:open", { workspace: "/w" })) as string;
+  expect(await call("pi:open", { workspace: "/w", sessionFile: "/s/new.jsonl" })).not.toBe(fresh);
   live.delete("/s/new.jsonl");
   pool.open.mockClear();
 
   await call("pi:send", fresh, { type: "get_state" });
-  expect(call("pi:open", { workspace: "/w", sessionFile: "/s/new.jsonl" })).toBe(fresh);
+  expect(await call("pi:open", { workspace: "/w", sessionFile: "/s/new.jsonl" })).toBe(fresh);
   expect(pool.open).not.toHaveBeenCalled();
 
   live.get(fresh)!.emit("exit", { code: 0, signal: null, stderr: "" });
   live.delete(fresh);
-  expect(call("pi:open", { workspace: "/w", sessionFile: "/s/new.jsonl" })).toBe("/s/new.jsonl");
+  expect(await call("pi:open", { workspace: "/w", sessionFile: "/s/new.jsonl" })).toBe("/s/new.jsonl");
 });

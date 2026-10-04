@@ -8,9 +8,6 @@ on:
     paths:
       - ".github/workflows/package-desktop.yml"
       - "apps/desktop/**"
-      - "apps/agent-host/**"
-      - "packages/pi-adapter/**"
-      - "packages/protocol/**"
       - "package.json"
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
@@ -123,8 +120,8 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
-      - name: Smoke-test built agent host
-        run: pnpm --filter @apple-pi/desktop exec vitest run src/main/agent-host-package.test.ts
+      - name: Check the built preload bundle
+        run: pnpm --filter @apple-pi/desktop exec vitest run src/main/preload-package.test.ts
 
   package:
     name: Package ${{ matrix.os-name }} ${{ matrix.arch }}
@@ -182,20 +179,11 @@ jobs:
       - name: Install frozen dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Test protocol schemas
-        run: pnpm --filter @apple-pi/protocol test
-
-      - name: Test Pi compatibility
-        run: pnpm test:pi-compatibility
-
       - name: Typecheck
         run: pnpm typecheck
 
-      - name: Build
-        run: pnpm build
-
-      - name: Smoke-test packaged host
-        run: pnpm test:host-smoke
+      - name: Build and check the preload bundle
+        run: pnpm test:package
 
       - name: Build native packages
         if: matrix.os-name != 'macos' || github.ref_type != 'tag'
@@ -259,9 +247,6 @@ jobs:
           [[ "$team_id" == "$APPLE_TEAM_ID" ]] || { echo "Unexpected signing team" >&2; exit 1; }
           spctl --assess --type execute --verbose=2 "$app_path"
           xcrun stapler validate "$app_path"
-
-      - name: Verify packaged agent-host layout and handshake
-        run: node apps/desktop/scripts/verify-packaged-app.mjs
 
       - name: Collect packages and checksums
         id: artifacts

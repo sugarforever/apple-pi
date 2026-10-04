@@ -15,55 +15,34 @@ corepack pnpm install
 corepack pnpm dev
 ```
 
-Apple Pi uses the existing pi provider configuration in `~/.pi/agent`. If pi is
-not authenticated, run `pi` in a terminal and use `/login` first. In Apple Pi,
-click **Open workspace**, choose a project, and send a prompt.
+Apple Pi is a thin graphical client: every session runs the bundled Pi in RPC
+mode, so providers, credentials, skills, extensions, and settings are Pi's own.
+If Pi is not authenticated, run `pi` in a terminal and use `/login` first; API
+keys exported in your shell profile are picked up too. Manage skills, extensions,
+and packages with `pi config` and `pi install`. In Apple Pi, add a project, start
+a chat, and send a prompt.
 
-The most recent session for a selected workspace is reopened automatically.
-Transcripts remain in pi's normal JSONL storage and are compatible with the pi
-CLI.
-
-Skills work the same way: Apple Pi's Settings panel browses, installs,
-enables/disables, and removes skills from the same directories the pi CLI
-already scans — `~/.pi/agent/skills/` and `~/.agents/skills/` (global), and
-`.pi/skills/` and `.agents/skills/` (project) — so a skill added through either
-one shows up in the other with no extra step. Disabling a skill moves it into a
-sibling `skills-disabled/` directory next to the root it lives in (for example
-`~/.agents/skills-disabled/`), and enabling it moves it back.
+Sessions are Pi's normal JSONL files and stay compatible with the Pi CLI.
 
 ## Development
 
-This is a pnpm workspace with four main components:
+Everything lives in `apps/desktop`: Electron main, preload, and the React
+renderer. See [the RPC thin-client architecture](docs/architecture/apple-pi-pi-agent-integration.md)
+for the process boundary and the rules that keep Apple Pi thin, and
+[Renderer UI conventions](docs/renderer-ui-conventions.md) for tokens and layout.
 
-- `apps/desktop`: Electron main, preload, and React renderer
-- `apps/agent-host`: isolated process that owns the pi SDK session
-- `packages/protocol`: validated messages shared across process boundaries
-- `packages/pi-adapter`: the pinned pi SDK integration
-
-The renderer's compact typography, spacing, surfaces, controls, accessibility rules, and reusable patterns are documented in [Renderer UI conventions](docs/renderer-ui-conventions.md).
-
-Run commands from the repository root. `corepack pnpm dev` builds the shared
-packages and agent host before starting Electron with hot reload. When changing
-the process boundary, update the protocol first, then its producer and consumer.
-
-Before opening a pull request, run:
+Run commands from the repository root. `corepack pnpm dev` starts Electron with
+hot reload. Before opening a pull request, run:
 
 ```bash
-corepack pnpm lint
-corepack pnpm typecheck
-corepack pnpm test
-corepack pnpm test:pi-compatibility
-corepack pnpm build
-corepack pnpm test:host-smoke
-corepack pnpm docs:check
+corepack pnpm verify
 ```
 
-`corepack pnpm verify` runs the lint, typecheck, unit test, and documentation gates in
-one command, including from a checkout with no generated `out` directory. `test:host-smoke`
-builds the desktop output, starts the staged agent host, checks the compatibility handshake,
-and shuts it down. On macOS, `package:mac` consistently ad-hoc signs the local development
-package; run `test:mac-package-launch` afterward for a launch smoke check. Pull requests also run the
-[Pi compatibility workflow](.github/workflows/pi-compatibility.yml).
+`verify` runs the version, formatting, lint, typecheck, script, unit test, and
+documentation gates, including from a checkout with no generated `out` directory.
+`corepack pnpm test:package` builds the app and checks the sandboxed preload bundle.
+On macOS, `package:mac` consistently ad-hoc signs the local development package;
+run `test:mac-package-launch` afterward for a launch smoke check.
 
 ### Code style and commits
 
@@ -117,8 +96,8 @@ Verify a downloaded sidecar from the directory containing its package, for
 example with `shasum -a 256 -c <package>.sha256` on macOS/Linux or
 `Get-FileHash -Algorithm SHA256 <package>` on Windows.
 
-Pull requests run unit tests, typechecking, an Electron build, and a packaged-host
-smoke test on Linux; they do not create native installers. Local packages are
+Pull requests run unit tests, typechecking, and an Electron build on Linux; they
+do not create native installers. Local packages are
 unsigned and require no repository secrets. macOS Gatekeeper and Windows
 SmartScreen may therefore warn or block those builds on first launch.
 
@@ -140,13 +119,6 @@ unsigned until a trusted Windows code-signing certificate is configured.
 
 ## Architecture and compatibility
 
-Apple Pi currently supports the exact Pi SDK version negotiated during agent-host
-startup. See the [compatibility matrix](docs/operations/pi-compatibility-matrix.md)
-for the supported Apple Pi/Pi/Protocol/Node combination. Dependency upgrades must
-follow the [Pi upgrade runbook](docs/operations/pi-upgrade-runbook.md), and release failures
-are covered by the [release runbook](docs/operations/release-runbook.md).
-
-See [how Apple Pi integrates Pi Agent](docs/architecture/apple-pi-pi-agent-integration.md)
-for the process boundary, [the architecture study](docs/architecture/pi-desktop-architecture.md)
-for the broader design, and the [credential storage and keychain policy](docs/architecture/credential-storage-keychain-policy.md)
-before touching anything that reads or writes provider credentials.
+Apple Pi bundles one exact Pi version. Upgrading it follows the routine in
+[the architecture doc](docs/architecture/apple-pi-pi-agent-integration.md#upgrading-pi),
+and release failures are covered by the [release runbook](docs/operations/release-runbook.md).

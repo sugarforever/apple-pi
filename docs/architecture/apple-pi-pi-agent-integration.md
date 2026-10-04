@@ -1,76 +1,68 @@
-# Apple Pi and Pi Agent integration
+# Apple Pi and Pi: the RPC thin client
 
-> Current baseline: Apple Pi `0.1.0`, `@earendil-works/pi-coding-agent`
-> `0.84.2`, Apple Pi Protocol v1, Node `>=22.22.1`, Electron `39.8.2`.
+> Baseline: `@earendil-works/pi-coding-agent` `1.0.0`, Electron `39.8.2`, Node `>=22.22.1`.
 
-Apple Pi is an Electron desktop host for Pi Agent, not a separate agent runtime.
-The renderer talks through a sandboxed preload API to Electron main. Main
-supervises a separate Node `agent-host`, which exchanges newline-delimited JSON
-using Apple Pi's runtime-validated protocol. `packages/pi-adapter` is the only
-package that imports the Pi SDK.
+Apple Pi is a graphical client for Pi, not a second agent runtime. Electron main
+runs one `pi --mode rpc` child process per open session and passes Pi's own RPC
+commands, responses, and events between that child and the renderer unchanged.
 
 ```text
-React renderer -> preload -> Electron main -> agent-host -> pi-adapter -> Pi SDK
-                                      |                         |
-                               Protocol v1                 Pi JSONL/auth
+React renderer  (transcript, composer, extension UI, sidebar, settings)
+   │  window.applePi: workspaces · sessions · pi · shell
+preload  (contextBridge, no logic)
+   │  IPC: workspaces:*, sessions:list, pi:open/send/respondUI/close, pi:event, shell:*
+Electron main
+   ├─ pi-ipc.ts        validates the sender and payload shape, forwards the rest
+   ├─ PiProcessPool    one child per session, cap of 6, idle LRU eviction, stopAll on quit
+   ├─ shell-env.ts     login-shell environment for the children (macOS/Linux)
+   └─ app-catalog.ts   the list of workspaces Apple Pi remembers
+   │  JSON lines over stdio
+pi --mode rpc  ×N   (Electron's Node via ELECTRON_RUN_AS_NODE, bundled rpc-entry)
 ```
 
-## Current ownership boundary
+## Who owns what
 
-Apple Pi owns workspace selection, desktop UI state, its catalog, process
-supervision, protocol schemas, capabilities, and projections displayed by the
-renderer. Pi owns the agent loop, tools, provider authentication, model runtime,
-and authoritative JSONL transcript.
+| Apple Pi | Pi |
+| --- | --- |
+| Windows, menus, title bar, the workspace list | Sessions and their JSONL files |
+| Rendering events into a transcript | The agent loop, tools, compaction |
+| Composer, model and thinking pickers (via RPC) | Models, providers, credentials (`/login`, `auth.json`) |
+| Extension UI dialogs, status, widgets | Extensions, skills, prompt templates, packages |
+| Process lifecycle and the shell environment | `settings.json` and the `pi` CLI |
 
-The current host handshake reports exact Apple Pi host, Pi, and protocol versions
-plus the required `sessionEvents` and `modelSelection` capabilities. Desktop main
-rejects a missing capability or any version other than the exact supported
-combination before business commands are accepted. Host commands, results,
-errors, and events are runtime validated at the boundary.
+Sessions are listed by reading Pi's session files with Pi's exported
+`SessionManager`; main never runs an agent loop itself.
 
-The adapter currently maps Pi messages, tool activity, events, models, and session
-summaries into Apple Pi-owned domain types. It creates, opens, lists, replaces,
-aborts, and disposes sessions with deterministic ownership. Pi JSONL remains the
-source of truth and the compatibility gate proves recovery from the retained v3
-fixture produced for the Pi `0.84.2` baseline.
+## Rules
 
-## Current user-facing behavior
+- **Never redeclare Pi types.** Import them from `@earendil-works/pi-coding-agent`
+  (type-only in the renderer, see `renderer/src/pi/types.ts`). The preload
+  contract in `shared/pi-api.ts` only adds what Apple Pi itself owns: workspaces
+  and session keys.
+- **Render unknowns generically.** An unknown event, message role, content
+  block, or extension UI method gets a generic block or a cancel response, never
+  a crash or a hang.
+- **No Apple Pi resource logic.** Skills, extensions, packages, providers, and
+  settings stay in Pi. The app offers "Open settings.json" and "Open terminal
+  here" and points to `pi config`, `pi install`, and `/login`.
 
-- Workspace selection, session create/list/open, prompt streaming, cancellation,
-  transcript recovery, model listing, per-session model switching, and an
-  app-catalog default model are implemented.
-- Skill browsing, install, enable/disable, and remove are implemented in the
-  Settings panel. Install writes to the standard `~/.pi/agent/skills/` (user
-  scope) or project `.pi/skills/` root. Enable/disable/remove act on every root
-  Pi's own `DefaultResourceLoader` auto-discovers for the scope — those two plus
-  the cross-agent-tool `~/.agents/skills/` (user) and `.agents/skills/` in the
-  project and its ancestors up to the git root (project) — so a skill installed
-  or removed through Apple Pi is immediately visible to (and manageable by) the
-  Pi CLI, and vice versa. Disabling moves a skill into an Apple Pi-owned
-  `-disabled` holding directory sibling to the root it came from (e.g.
-  `~/.agents/skills-disabled/`); every same-named copy across the scope's roots
-  moves together, since Pi resolves such duplicates as a collision (first root
-  wins) and moving only the winner would just surface the hidden copy. Enabling
-  moves each copy back into its own root. The Skills settings panel currently shows an empty catalog until a
-  workspace is open, even for user-scope skills that have nothing to do with any
-  project; making user-scope skills visible with no workspace open is tracked
-  separately (issue #68) and is not yet fixed.
-- Apple Pi reuses Pi's provider configuration under `~/.pi/agent`. There is no
-  native login UI; users authenticate through the Pi CLI with `/login` first.
-- Signing, notarization, automatic updates, integrated terminal, Git worktree/diff
-  workflows, attachments, orchestration, and productized extension management
-  beyond skills remain planned. They are not covered by the current compatibility
-  claim.
+## Environment
 
-## Upgrade boundary
+An app opened from Finder, the Dock, or a Linux launcher does not inherit the
+login shell's environment, so keys exported in `~/.zshrc` would be invisible to
+Pi. `shell-env.ts` runs `$SHELL -ilc` once at startup, prints the environment as
+JSON with Electron's Node, and merges it over `process.env` for every Pi child. On
+failure or after 5 seconds it falls back to `process.env`. Windows is skipped.
 
-An upstream SDK change stays inside `packages/pi-adapter` when it can preserve the
-existing Apple Pi protocol semantics. A breaking wire-contract change requires a
-new protocol version or a safely negotiated capability. Pi upgrades are exact,
-fixture-backed changes and must follow the [Pi upgrade runbook](../operations/pi-upgrade-runbook.md)
-and update the [compatibility matrix](../operations/pi-compatibility-matrix.md).
+## Upgrading Pi
 
-For the broader desktop design and future direction, see
-[Pi desktop architecture](./pi-desktop-architecture.md). Treat its proposed
-components as design direction unless this page or executable code identifies
-them as current behavior.
+1. Bump the exact version of `@earendil-works/pi-coding-agent` in
+   `apps/desktop/package.json` and run `corepack pnpm install`.
+2. Read Pi's changelog for RPC, event, and extension UI changes.
+3. `corepack pnpm typecheck`: Pi's types flow end to end, so a changed command or
+   event shows up here.
+4. `corepack pnpm test`: the transcript and extension UI reducer tests are typed
+   against Pi's events; add a case for any new event or UI method worth more
+   than the generic fallback.
+5. Smoke test one real session in the built app: open, prompt, a tool call, and
+   quit with no `pi` processes left behind.

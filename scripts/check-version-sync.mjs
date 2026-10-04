@@ -6,12 +6,6 @@ import { findVersionFailures, MANIFESTS, readAllVersions } from "./version-decla
 /**
  * Asserts that every version declaration in the repository agrees.
  *
- * The version is not metadata: `apps/desktop/src/main/host-compatibility.ts`
- * compares the desktop's `app.getVersion()` against the agent host's compiled
- * `HOST_VERSION` and refuses to start the host on a mismatch. A release that
- * bumps one declaration and misses another therefore produces an application
- * that cannot open a session, not a cosmetic slip.
- *
  * The same script guards the release workflow via `--tag`, because the tag does
  * not carry the version: electron-builder names artifacts and stamps the app
  * from the committed `package.json`, so a tag that disagrees with it publishes
@@ -28,8 +22,8 @@ function readTagArgument() {
   return tag;
 }
 
-const { versions, hostVersion } = await readAllVersions(ROOT);
-const failures = findVersionFailures({ versions, hostVersion });
+const versions = await readAllVersions(ROOT);
+const failures = findVersionFailures(versions);
 
 const [[canonicalManifest, canonicalVersion]] = versions;
 const tag = readTagArgument();
@@ -42,7 +36,5 @@ if (failures.length > 0) {
   console.error(`Version declarations disagree:\n${failures.map((failure) => `  ${failure}`).join("\n")}`);
   process.exitCode = 1;
 } else {
-  console.log(
-    `Version declarations agree at ${canonicalVersion} across ${MANIFESTS.length} manifests, and HOST_VERSION matches${tag ? `, and tag ${tag} matches` : ""}.`,
-  );
+  console.log(`Version declarations agree at ${canonicalVersion} across ${MANIFESTS.length} manifests${tag ? `, and tag ${tag} matches` : ""}.`);
 }
