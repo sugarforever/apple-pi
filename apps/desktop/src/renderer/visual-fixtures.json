@@ -16,6 +16,7 @@
     "conversation/edit-diff",
     "conversation/write-file",
     "conversation/highlighted-code",
+    "conversation/fork-action",
     "composer/attachment",
     "composer/commands",
     "composer/queued",
@@ -27,6 +28,7 @@
     "extension-ui/notification",
     "shell/conversation",
     "shell/conversation-menu",
+    "shell/forked-chat",
     "shell/new-chat",
     "shell/settings"
   ]

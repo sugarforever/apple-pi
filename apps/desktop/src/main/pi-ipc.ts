@@ -14,6 +14,8 @@ const execFileAsync = promisify(execFile);
 /** Commands whose answer waits on the work itself rather than a quick round trip. */
 const LONG_COMMANDS = new Set<RpcCommand["type"]>(["bash", "compact", "export_html"]);
 const LONG_COMMAND_TIMEOUT_MS = 30 * 60_000;
+/** Commands after which the process writes a different session file than before. */
+const MOVES_SESSION = new Set<RpcCommand["type"]>(["new_session", "switch_session", "fork", "clone"]);
 
 export interface PiIpcOptions {
   /** Registers an IPC handler that only answers the trusted renderer. */
@@ -41,9 +43,10 @@ export function registerPiIpc({ handle, getWindow, catalog, pool, spawnEnv }: Pi
     return piProcess;
   };
   const push = (message: PiSessionMessage) => getWindow()?.webContents.send("pi:event", message);
-  // A new session is keyed by a random id until Pi names its file. Remembering
-  // the file once `get_state` reports it lets a later open of that file reach
-  // the same process instead of starting a second writer.
+  // Keys are opaque: a process can move to another file (fork, clone, switch),
+  // and a new session has no file until Pi names one. This map follows the file
+  // each process writes, so a later open of that file reaches the same process
+  // instead of starting a second writer.
   const keyByFile = new Map<string, string>();
   const forgetKey = (sessionKey: string) => {
     for (const [file, key] of keyByFile) if (key === sessionKey) keyByFile.delete(file);
@@ -51,6 +54,10 @@ export function registerPiIpc({ handle, getWindow, catalog, pool, spawnEnv }: Pi
   const liveKeyFor = (sessionFile: string): string | undefined => {
     const key = keyByFile.get(sessionFile);
     return key && pool.get(key) ? key : undefined;
+  };
+  const remember = (sessionKey: string, sessionFile: string) => {
+    forgetKey(sessionKey);
+    keyByFile.set(sessionFile, sessionKey);
   };
 
   handle("workspaces:pick", async () => {
@@ -79,9 +86,10 @@ export function registerPiIpc({ handle, getWindow, catalog, pool, spawnEnv }: Pi
     if (sessionFile !== undefined && (typeof sessionFile !== "string" || !path.isAbsolute(sessionFile))) throw new Error("Invalid session file");
     const env = await spawnEnv();
     // Nothing below awaits, so two opens of one file cannot both start a process.
-    // A resumed session is keyed by its file, so one file never gets two Pi writers.
-    const sessionKey = (sessionFile && liveKeyFor(sessionFile)) ?? sessionFile ?? randomUUID();
-    if (pool.get(sessionKey)) return sessionKey;
+    const live = sessionFile && liveKeyFor(sessionFile);
+    if (live) return live;
+    const sessionKey = randomUUID();
+    if (sessionFile) remember(sessionKey, sessionFile);
     const piProcess = pool.open(sessionKey, { workspace: cwd, sessionFile, env });
     piProcess.on("event", (event) => push({ sessionKey, event }));
     piProcess.once("exit", (exited) => {
@@ -93,12 +101,11 @@ export function registerPiIpc({ handle, getWindow, catalog, pool, spawnEnv }: Pi
   handle("pi:send", async (_event, sessionKey: unknown, command: unknown) => {
     if (!command || typeof command !== "object" || typeof (command as RpcCommand).type !== "string") throw new Error("Invalid Pi command");
     const { type } = command as RpcCommand;
-    const response = await openSession(sessionKey).send(command as RpcCommand, LONG_COMMANDS.has(type) ? LONG_COMMAND_TIMEOUT_MS : undefined);
-    if (response.success && response.command === "get_state" && response.data.sessionFile) {
-      // The session may have moved to another file; only the current one maps here.
-      forgetKey(sessionKey as string);
-      keyByFile.set(response.data.sessionFile, sessionKey as string);
-    }
+    const piProcess = openSession(sessionKey);
+    const response = await piProcess.send(command as RpcCommand, LONG_COMMANDS.has(type) ? LONG_COMMAND_TIMEOUT_MS : undefined);
+    // Follow the process to the file it writes now, so opening either file finds the right process.
+    const state = response.success && MOVES_SESSION.has(type) ? await piProcess.send({ type: "get_state" }) : response;
+    if (state.success && state.command === "get_state" && state.data.sessionFile) remember(sessionKey as string, state.data.sessionFile);
     return response;
   });
   handle("pi:respondUI", (_event, sessionKey: unknown, response: unknown) => {

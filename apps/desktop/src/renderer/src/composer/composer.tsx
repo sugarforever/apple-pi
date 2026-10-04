@@ -79,6 +79,11 @@ export function Composer(props: ComposerProps) {
   useEffect(() => {
     if (editorText) input.current?.focus();
   }, [editorText]);
+  // A draft handed over on open, such as a forked message, is there to be edited.
+  const [startsWithDraft] = useState(Boolean(props.initialDraft));
+  useEffect(() => {
+    if (startsWithDraft) input.current?.focus();
+  }, [startsWithDraft]);
 
   const canSend = !disabled && (draft.trim().length > 0 || attachments.length > 0);
 

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Copy, Ellipsis, FileCog, FoldVertical, SquareTerminal } from "lucide-react";
+import { Copy, CopyPlus, Ellipsis, FileCog, FoldVertical, SquareTerminal } from "lucide-react";
 import { MenuItem, useMenu } from "../menu/menu.js";
 import type { SessionStats } from "../pi/types.js";
 
@@ -9,6 +9,8 @@ export interface ConversationMenuProps {
   /** Pi's statistics for the open session; absent when no session is open. */
   loadStats?(): Promise<SessionStats>;
   compact?(): Promise<void>;
+  /** Copies the chat into a new one; absent until the chat has a session file. */
+  duplicate?(): Promise<void>;
   onError(error: unknown): void;
   /** Starts open with these statistics, for visual fixtures. */
   initialStats?: SessionStats;
@@ -17,7 +19,7 @@ export interface ConversationMenuProps {
 const compactNumber = new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 });
 
 /** The title bar's "…" menu: workspace shortcuts, session actions, and Pi's session statistics. */
-export function ConversationMenu({ workspace, sessionFile, loadStats, compact, onError, initialStats }: ConversationMenuProps) {
+export function ConversationMenu({ workspace, sessionFile, loadStats, compact, duplicate, onError, initialStats }: ConversationMenuProps) {
   const { open, setOpen, focusItem, toggle, rootRef, triggerRef, menuRef, onMenuKey } = useMenu(Boolean(initialStats));
   const [stats, setStats] = useState<SessionStats | undefined>(initialStats);
   const loader = useRef(loadStats);
@@ -63,6 +65,7 @@ export function ConversationMenu({ workspace, sessionFile, loadStats, compact, o
           <MenuItem icon={<SquareTerminal size={15} />} label="Open terminal here" onSelect={run(() => window.applePi.shell.openTerminal(workspace))} />
           <MenuItem icon={<FileCog size={15} />} label="Open Pi settings.json" onSelect={run(() => window.applePi.shell.openSettingsFile())} />
           <div className="menu-separator" role="separator" />
+          <MenuItem icon={<CopyPlus size={15} />} label="Duplicate chat" disabled={!duplicate} onSelect={run(() => duplicate?.())} />
           <MenuItem icon={<FoldVertical size={15} />} label="Compact conversation" disabled={!compact} onSelect={run(() => compact?.())} />
           <MenuItem
             icon={<Copy size={15} />}

@@ -8,7 +8,7 @@ vi.mock("electron", () => ({ dialog: {}, shell: {} }));
 
 const env = { PATH: "/from/login/shell" };
 
-it("opens only known workspaces, keys resumed sessions by file, and passes Pi traffic through unchanged", async () => {
+it("opens only known workspaces, gives one file one process, and passes Pi traffic through unchanged", async () => {
   const handlers = new Map<string, Parameters<PiIpcOptions["handle"]>[1]>();
   const toRenderer = vi.fn();
   const piProcess = Object.assign(new EventEmitter(), { send: vi.fn().mockResolvedValue({ type: "response", success: true }) });
@@ -79,5 +79,41 @@ it("routes a reopened session file to the live new-session process Pi reported i
 
   live.get(fresh)!.emit("exit", { code: 0, signal: null, stderr: "" });
   live.delete(fresh);
-  expect(await call("pi:open", { workspace: "/w", sessionFile: "/s/new.jsonl" })).toBe("/s/new.jsonl");
+  pool.open.mockClear();
+  expect(await call("pi:open", { workspace: "/w", sessionFile: "/s/new.jsonl" })).not.toBe(fresh);
+  expect(pool.open).toHaveBeenCalledOnce();
+});
+
+it("follows a process to the file a fork moves it to", async () => {
+  const handlers = new Map<string, Parameters<PiIpcOptions["handle"]>[1]>();
+  const live = new Map<string, EventEmitter & { send: ReturnType<typeof vi.fn> }>();
+  const pool = {
+    open: vi.fn((key: string) => {
+      const piProcess = Object.assign(new EventEmitter(), {
+        send: vi.fn(async ({ type }: { type: string }) =>
+          type === "get_state"
+            ? { type: "response", command: "get_state", success: true, data: { sessionFile: "/s/child.jsonl" } }
+            : { type: "response", command: type, success: true, data: { cancelled: false } },
+        ),
+      });
+      live.set(key, piProcess);
+      return piProcess;
+    }),
+    get: (key: string) => live.get(key),
+  };
+  registerPiIpc({
+    handle: (channel, handler) => handlers.set(channel, handler),
+    getWindow: () => undefined,
+    catalog: { snapshot: () => ({ workspaces: [{ path: "/w", name: "w" }] }) } as unknown as AppCatalog,
+    pool: pool as unknown as PiProcessPool,
+    spawnEnv: async () => env,
+  });
+  const call = (channel: string, ...args: unknown[]) => handlers.get(channel)!({} as never, ...args);
+
+  const parent = (await call("pi:open", { workspace: "/w", sessionFile: "/s/parent.jsonl" })) as string;
+  await call("pi:send", parent, { type: "fork", entryId: "e1" });
+  expect(live.get(parent)!.send).toHaveBeenLastCalledWith({ type: "get_state" });
+  expect(await call("pi:open", { workspace: "/w", sessionFile: "/s/child.jsonl" })).toBe(parent);
+  expect(await call("pi:open", { workspace: "/w", sessionFile: "/s/parent.jsonl" })).not.toBe(parent);
+  expect(pool.open).toHaveBeenCalledTimes(2);
 });

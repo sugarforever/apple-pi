@@ -59,8 +59,11 @@ const bash2 = toolCall("call-test", "bash", { command: "pnpm --filter @orchard/d
 const search = toolCall("call-find", "find", { pattern: "**/*.d.ts", path: "node_modules/@pi/agent/dist" });
 const edit = toolCall("call-edit", "edit", { path: "apps/desktop/src/renderer/src/transcript/reducer.ts", edits: [] });
 
+const researchPrompt =
+  "This project has a big code base on top of the agent. I feel it slows down the desktop app development. Maybe that's not needed at all.";
+
 const researchTurn = [
-  user("This project has a big code base on top of the agent. I feel it slows down the desktop app development. Maybe that's not needed at all.", s(0)),
+  user(researchPrompt, s(0)),
   assistant(
     [
       thinking("Compare the app's own protocol layer with what the RPC mode already offers."),
@@ -245,8 +248,9 @@ const workspaces = [
 ];
 const project = workspaces[6]!;
 
-const session = (title: string, index: number, named = true): SessionInfo => ({
+const session = (title: string, index: number, named = true, parent?: number): SessionInfo => ({
   path: `/demo/sessions/${index}.jsonl`,
+  parentSessionPath: parent === undefined ? undefined : `/demo/sessions/${parent}.jsonl`,
   id: `session-${index}`,
   cwd: project.path,
   name: named ? title : undefined,
@@ -266,6 +270,9 @@ const sessions = [
   session("Update the record terminal skill", 6),
   session("Draft release notes", 7),
 ];
+// A fork of the first chat, taken from its second message, and a copy of the third.
+const forkedChat = { ...session("What does the desktop app do on start-up?", 8, false, 1), modified: new Date(t0 + 600_000) };
+const forkedSessions = [forkedChat, ...sessions, session("Plan the RPC rebuild", 9, true, 3)];
 const indicators: Record<string, ChatIndicator> = { [sessions[1]!.path]: "running", [sessions[3]!.path]: "unread" };
 
 const stats: SessionStats = {
@@ -351,6 +358,8 @@ interface FixtureDefinition {
   isNew?: boolean;
   /** Opens the title bar's conversation menu with these statistics. */
   menuStats?: SessionStats;
+  /** Lists forks and copies in the sidebar, with this chat open. */
+  forked?: SessionInfo;
   extensionUI?(): ExtensionUIState;
   composer?: Partial<ComposerProps>;
   /** Runs once the page is painted, before capture: expand rows, scroll. */
@@ -424,6 +433,22 @@ const fixtures: Record<string, FixtureDefinition> = {
     },
   },
   "shell/conversation-menu": { state: finishedState, menuStats: stats },
+  "shell/forked-chat": {
+    // Just forked from the second message: the history before it, and that message back in the composer.
+    state: () => ({ ...finishedState(), messages: finishedState().messages.slice(0, 2) }),
+    forked: forkedChat,
+    composer: { initialDraft: researchPrompt },
+  },
+  "conversation/fork-action": {
+    state: finishedState,
+    async prepare() {
+      // As if the pointer rested on the last message.
+      const actions = document.querySelector<HTMLElement>(".turn:last-of-type .user-actions");
+      if (actions) actions.style.opacity = "1";
+      document.querySelector(".turn:last-of-type")?.scrollIntoView();
+      document.querySelector(".transcript-scroller")?.scrollBy(0, -120);
+    },
+  },
   "shell/new-chat": { state: () => initialTranscript, isNew: true },
   "shell/settings": { state: () => initialTranscript, page: "settings" },
   "composer/attachment": {
@@ -527,7 +552,7 @@ export function ConversationFixture({ id }: { id: string }) {
     void (fixture.prepare?.() ?? Promise.resolve()).then(nextFrame).then(() => (document.documentElement.dataset.visualFixtureReady = id));
   }, [fixture, id]);
   if (!state) return <p>Unknown fixture: {id}</p>;
-  const selected = fixture?.isNew || fixture?.page ? undefined : sessions[0]!;
+  const selected = fixture?.isNew || fixture?.page ? undefined : (fixture?.forked ?? sessions[0]!);
   const noop = () => undefined;
   const titleBar =
     fixture?.page === "settings" ? (
@@ -537,8 +562,22 @@ export function ConversationFixture({ id }: { id: string }) {
         sidebarOpen
         onToggleSidebar={noop}
         icon={<Folder size={16} />}
-        title={selected ? "This project has a big code base on top of the agent. I feel it slows down the desktop app development." : "New chat"}
-        actions={<ConversationMenu workspace={project.path} sessionFile={selected?.path} initialStats={fixture?.menuStats} onError={noop} />}
+        title={
+          selected === forkedChat
+            ? forkedChat.firstMessage
+            : selected
+              ? "This project has a big code base on top of the agent. I feel it slows down the desktop app development."
+              : "New chat"
+        }
+        actions={
+          <ConversationMenu
+            workspace={project.path}
+            sessionFile={selected?.path}
+            duplicate={selected && (() => Promise.resolve())}
+            initialStats={fixture?.menuStats}
+            onError={noop}
+          />
+        }
       />
     );
   return (
@@ -548,7 +587,7 @@ export function ConversationFixture({ id }: { id: string }) {
       sidebar={
         <Sidebar
           workspaces={workspaces}
-          sessions={{ [project.path]: sessions }}
+          sessions={{ [project.path]: fixture?.forked ? forkedSessions : sessions }}
           expanded={new Set([project.path])}
           activeSessionFile={selected?.path}
           indicator={(file) => indicators[file]}
@@ -568,6 +607,7 @@ export function ConversationFixture({ id }: { id: string }) {
           state={state}
           workspaceName={project.name}
           isNew={fixture?.isNew}
+          onFork={noop}
           extensionUI={extensionUI && { state: extensionUI, onRespond: noop, onDismissNotice: noop }}
           composer={
             <Composer
