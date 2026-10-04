@@ -86,7 +86,8 @@ export function usePiSession({ workspace, sessionFile, onSessionFile, onSettled,
   const adoptState = useCallback((next: SessionState) => {
     setSessionState(next);
     const reported = next.sessionFile;
-    if (reported && key.current && reported !== file.current) {
+    // Reported each time, since process keys are opaque and a resumed session needs its key mapped too.
+    if (reported && key.current) {
       file.current = reported;
       callbacks.current.onSessionFile?.(reported, key.current);
     }

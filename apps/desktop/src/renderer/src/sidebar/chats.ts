@@ -21,6 +21,51 @@ export const sessionTitle = (session: SessionInfo): string => chatTitle({ sessio
 export const newestFirst = (sessions: readonly SessionInfo[]): SessionInfo[] =>
   [...sessions].sort((a, b) => new Date(b.modified).getTime() - new Date(a.modified).getTime());
 
+export interface NestedChat {
+  session: SessionInfo;
+  /** 0 for a chat listed on its own, 1 for a fork or copy of it, and so on. */
+  depth: number;
+}
+
+/**
+ * Chats in sidebar order: each fork or copy right under the chat Pi recorded as
+ * its parent, when that chat is listed too. A family sits where its most
+ * recently written chat would, so a new fork brings its parent along.
+ */
+export function nestChats(sessions: readonly SessionInfo[]): NestedChat[] {
+  const listed = new Set(sessions.map((session) => session.path));
+  const children = new Map<string, SessionInfo[]>();
+  const roots: SessionInfo[] = [];
+  for (const session of sessions) {
+    const parent = session.parentSessionPath;
+    if (parent && parent !== session.path && listed.has(parent)) children.set(parent, [...(children.get(parent) ?? []), session]);
+    else roots.push(session);
+  }
+  const latest = new Map<string, number>();
+  const latestOf = (session: SessionInfo): number => {
+    let value = latest.get(session.path);
+    if (value === undefined) {
+      value = Math.max(new Date(session.modified).getTime(), ...(children.get(session.path) ?? []).map(latestOf));
+      latest.set(session.path, value);
+    }
+    return value;
+  };
+  const byLatest = (items: readonly SessionInfo[]) => [...items].sort((a, b) => latestOf(b) - latestOf(a));
+
+  const result: NestedChat[] = [];
+  const place = (session: SessionInfo, depth: number) => {
+    result.push({ session, depth });
+    for (const child of byLatest(children.get(session.path) ?? [])) place(child, depth + 1);
+  };
+  for (const root of byLatest(roots)) place(root, 0);
+  // Parent links that loop leave chats no root reaches; list them on their own.
+  if (result.length < sessions.length) {
+    const placed = new Set(result.map((item) => item.session.path));
+    for (const session of sessions) if (!placed.has(session.path)) result.push({ session, depth: 0 });
+  }
+  return result;
+}
+
 export interface ChatRef {
   workspace: string;
   sessionFile: string;

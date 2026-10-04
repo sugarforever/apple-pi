@@ -1,12 +1,18 @@
 import React, { useEffect, useState } from "react";
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, GitBranch } from "lucide-react";
 import type { UserMessage } from "../pi/types.js";
 import { RowGroup } from "./activity-rows.js";
 import { Markdown } from "./markdown.js";
 import { MessageBlock, UnknownBlock } from "./message-block.js";
 import { formatDuration, type ActivityItem, type Turn } from "./turns.js";
 
-export function TurnView({ turn }: { turn: Turn }) {
+export interface TurnViewProps {
+  turn: Turn;
+  /** Starts a new chat from just before this turn's message; absent while forking is unavailable. */
+  onFork?(message: UserMessage): void;
+}
+
+export function TurnView({ turn, onFork }: TurnViewProps) {
   // Live turns start open and finished ones closed; a click overrides that until the turn changes state.
   const [override, setOverride] = useState<{ running: boolean; open: boolean }>();
   const expanded = override?.running === turn.running ? override.open : turn.running;
@@ -14,7 +20,7 @@ export function TurnView({ turn }: { turn: Turn }) {
 
   return (
     <section className="turn">
-      <UserBubble message={turn.user} />
+      <UserBubble message={turn.user} onFork={turn.pending ? undefined : onFork} />
       {(hasActivity || turn.running || turn.durationMs !== undefined) && (
         <button
           type="button"
@@ -74,10 +80,17 @@ function ActivityItemView({ item }: { item: ActivityItem }) {
   }
 }
 
-export function UserBubble({ message }: { message: UserMessage }) {
+export function UserBubble({ message, onFork }: { message: UserMessage; onFork?(message: UserMessage): void }) {
   const parts = typeof message.content === "string" ? [{ type: "text" as const, text: message.content }] : message.content;
   return (
     <div className="user-message">
+      {onFork && (
+        <div className="user-actions">
+          <button type="button" className="icon-button" aria-label="Fork from here" title="Fork from here" onClick={() => onFork(message)}>
+            <GitBranch size={15} />
+          </button>
+        </div>
+      )}
       <div className="user-bubble">
         {parts.map((part, index) =>
           part.type === "text" ? (

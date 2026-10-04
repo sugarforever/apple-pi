@@ -1,10 +1,10 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { Folder, FolderOpen, Trash2 } from "lucide-react";
 import type { SessionInfo } from "@earendil-works/pi-coding-agent";
 import type { Workspace } from "../../../shared/pi-api.js";
 import type { ChatIndicator } from "./activity.js";
 import { ChatRow } from "./chat-row.js";
-import { sessionTitle } from "./chats.js";
+import { nestChats, sessionTitle } from "./chats.js";
 import { RowMenu } from "./row-menu.js";
 
 /** Chats listed before "Show more". */
@@ -13,7 +13,7 @@ const VISIBLE_CHATS = 5;
 export interface ProjectRowProps {
   workspace: Workspace;
   open: boolean;
-  /** This project's chats to list, newest first; undefined while loading. */
+  /** This project's chats to list, newest first; undefined while loading. Forks nest under their parent. */
   chats?: SessionInfo[];
   /** Lists every chat at once, as search does. */
   showAll?: boolean;
@@ -27,10 +27,11 @@ export interface ProjectRowProps {
 
 /** A project folder and, while open, its chats. */
 export function ProjectRow(props: ProjectRowProps) {
-  const { workspace, open, chats = [], activeSessionFile } = props;
+  const { workspace, open, activeSessionFile } = props;
+  const chats = useMemo(() => nestChats(props.chats ?? []), [props.chats]);
   const [expandedList, setExpandedList] = useState(false);
   // Keep the open chat in view even when it is older than the first few.
-  const activeIndex = chats.findIndex((session) => session.path === activeSessionFile);
+  const activeIndex = chats.findIndex(({ session }) => session.path === activeSessionFile);
   const limit = props.showAll || expandedList ? chats.length : Math.max(VISIBLE_CHATS, activeIndex + 1);
   const Icon = open ? FolderOpen : Folder;
 
@@ -48,10 +49,11 @@ export function ProjectRow(props: ProjectRowProps) {
       </div>
       {open && chats.length > 0 && (
         <ul className="sidebar-list project-chats">
-          {chats.slice(0, limit).map((session) => (
+          {chats.slice(0, limit).map(({ session, depth }) => (
             <ChatRow
               key={session.path}
               title={sessionTitle(session)}
+              depth={depth}
               active={session.path === activeSessionFile}
               indicator={props.indicator(session.path)}
               onSelect={() => props.onSelectChat(session.path)}

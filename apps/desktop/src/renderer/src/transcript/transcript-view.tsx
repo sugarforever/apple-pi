@@ -1,5 +1,6 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ArrowDown } from "lucide-react";
+import type { UserMessage } from "../pi/types.js";
 import type { TranscriptState } from "./reducer.js";
 import { MessageBlock } from "./message-block.js";
 import { buildTranscript } from "./turns.js";
@@ -9,7 +10,15 @@ import "./transcript.css";
 /** Distance from the bottom, in pixels, that still counts as following the conversation. */
 const FOLLOW_THRESHOLD = 48;
 
-export function TranscriptView({ state, empty, footer }: { state: TranscriptState; empty?: ReactNode; footer?: ReactNode }) {
+export interface TranscriptViewProps {
+  state: TranscriptState;
+  empty?: ReactNode;
+  footer?: ReactNode;
+  /** Offered on each sent message; see `TurnView`. */
+  onFork?(message: UserMessage): void;
+}
+
+export function TranscriptView({ state, empty, footer, onFork }: TranscriptViewProps) {
   const entries = useMemo(() => buildTranscript(state), [state]);
   const scroller = useRef<HTMLDivElement>(null);
   const following = useRef(true);
@@ -52,7 +61,11 @@ export function TranscriptView({ state, empty, footer }: { state: TranscriptStat
         <div className="transcript" role="log" aria-label="Conversation">
           {entries.length === 0 && empty}
           {entries.map((entry) =>
-            entry.kind === "turn" ? <TurnView key={entry.turn.key} turn={entry.turn} /> : <MessageBlock key={entry.key} message={entry.message} />,
+            entry.kind === "turn" ? (
+              <TurnView key={entry.turn.key} turn={entry.turn} onFork={onFork} />
+            ) : (
+              <MessageBlock key={entry.key} message={entry.message} />
+            ),
           )}
           {state.status && <p className="transcript-status">{state.status}</p>}
           {state.error && (

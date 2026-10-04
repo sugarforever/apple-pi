@@ -1,12 +1,11 @@
 /*
  * Which chats are running and which finished out of sight, across every live
  * Pi process. Events arrive by session key; the sidebar asks by session file.
- * A resumed session's key is its file; a new one's key maps to the file Pi
- * reports once it opens.
+ * Each key maps to the file Pi reports for it, which a fork or clone can change.
  */
 
 export interface ActivityState {
-  /** Session file per key, for keys that are not themselves the file. */
+  /** Session file per key, as Pi last reported it. */
   files: Readonly<Record<string, string>>;
   /** Keys whose agent is mid-run. */
   running: Readonly<Record<string, true>>;

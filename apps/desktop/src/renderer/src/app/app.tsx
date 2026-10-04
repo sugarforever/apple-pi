@@ -8,7 +8,7 @@ import { IconRail, type ShellView } from "../shell/icon-rail.js";
 import { Shell } from "../shell/shell.js";
 import { TitleBar } from "../shell/title-bar.js";
 import { chatIndicator } from "../sidebar/activity.js";
-import { adjacentChat } from "../sidebar/chats.js";
+import { adjacentChat, nestChats } from "../sidebar/chats.js";
 import { Sidebar } from "../sidebar/sidebar.js";
 import { useActivity } from "../sidebar/use-activity.js";
 import { useWorkspaces } from "../sidebar/use-workspaces.js";
@@ -22,6 +22,8 @@ interface Chat {
   sessionFile?: string;
   /** Started in this window rather than picked from the sidebar. */
   isNew: boolean;
+  /** Composer text to start with, such as the message a fork was taken from. */
+  draft?: string;
 }
 
 let nextChat = 0;
@@ -64,6 +66,13 @@ export function App() {
     setChat({ id: sessionFile, workspace, sessionFile, isNew: false });
   };
 
+  /** Opens the fork or copy a conversation's process now writes; the same process serves it. */
+  const openBranch = (workspace: string, sessionFile: string, draft?: string) => {
+    setView("chats");
+    setChat({ id: sessionFile, workspace, sessionFile, isNew: false, draft });
+    projects.setExpanded(workspace, true);
+  };
+
   const addProject = async () => {
     const added = await projects.add();
     if (added) await startChat(added.path);
@@ -101,7 +110,7 @@ export function App() {
     (chatId: string, sessionFile: string, sessionKey: string) => {
       attach(sessionKey, sessionFile);
       // The chat keeps its id, so the conversation stays mounted as it gains a file.
-      setChat((current) => (current?.id === chatId ? { ...current, sessionFile } : current));
+      setChat((current) => (current?.id === chatId && current.sessionFile !== sessionFile ? { ...current, sessionFile } : current));
     },
     [attach],
   );
@@ -121,7 +130,9 @@ export function App() {
 
   /** Moves through the chats the sidebar lists, in its order. */
   const stepChat = (step: 1 | -1) => {
-    const listed = workspaces.filter((item) => projects.expanded.has(item.path)).map((item) => ({ workspace: item.path, chats: projects.sessions[item.path] }));
+    const listed = workspaces
+      .filter((item) => projects.expanded.has(item.path))
+      .map((item) => ({ workspace: item.path, chats: nestChats(projects.sessions[item.path] ?? []).map(({ session }) => session) }));
     const next = adjacentChat(listed, chat?.sessionFile, step);
     if (next) openChat(next.workspace, next.sessionFile);
   };
@@ -161,6 +172,7 @@ export function App() {
             compact={async () => {
               await conversation.current?.request({ type: "compact" });
             }}
+            duplicate={chat?.sessionFile ? () => conversation.current!.duplicate() : undefined}
             onError={report}
           />
         )
@@ -204,7 +216,10 @@ export function App() {
           workspaceName={current.name}
           sessionFile={chat.sessionFile}
           isNew={chat.isNew}
+          initialDraft={chat.draft}
           onTitle={setTitle}
+          onBranch={(sessionFile, draft) => openBranch(current.path, sessionFile, draft)}
+          onError={report}
           onSessionFile={(sessionFile, sessionKey) => onSessionFile(chat.id, sessionFile, sessionKey)}
           onSettled={onSettled}
         />
