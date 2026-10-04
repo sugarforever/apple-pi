@@ -1,6 +1,9 @@
 import React, { useEffect, useMemo } from "react";
 import type { SessionInfo } from "@earendil-works/pi-coding-agent";
 import { ConversationLayout } from "../app/conversation.js";
+import { Composer, type ComposerProps } from "../composer/composer.js";
+import { ModelPicker } from "../composer/model-picker.js";
+import type { Model, SlashCommand, ThinkingLevel } from "../pi/types.js";
 import { initialTranscript, isRunning, type TranscriptState } from "../transcript/reducer.js";
 import { Sidebar } from "../sidebar/sidebar.js";
 import { assistant, text, thinking, toolCall, toolResult, user } from "./sample-messages.js";
@@ -135,8 +138,50 @@ const session = (name: string, index: number): SessionInfo => ({
 
 const sessions = [session("Thin client architecture", 1), session("Plan the RPC rebuild", 2), session("Sync main branch", 3)];
 
+const model = (provider: string, id: string, name: string, reasoning = true): Model => ({
+  id,
+  name,
+  api: "openai-responses",
+  provider,
+  baseUrl: `https://${provider}.example`,
+  reasoning,
+  input: ["text", "image"],
+  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+  contextWindow: 200_000,
+  maxTokens: 32_000,
+});
+
+const models = [
+  model("anthropic", "fixture-opus", "Fixture Opus"),
+  model("anthropic", "fixture-haiku", "Fixture Haiku"),
+  model("openai", "fixture-sol", "Fixture Sol"),
+  model("ollama", "fixture-local", "fixture-local:27b", false),
+];
+const levels: ThinkingLevel[] = ["off", "minimal", "low", "medium", "high"];
+
+const command = (name: string, description: string, source: SlashCommand["source"]): SlashCommand => ({
+  name,
+  description,
+  source,
+  sourceInfo: { path: `/demo/.pi/${name}`, source: "local", scope: "user", origin: "top-level" },
+});
+
+const commands = [
+  command("review", "Review the working tree diff for correctness bugs", "extension"),
+  command("fix-tests", "Fix failing tests and explain each change", "prompt"),
+  command("release-notes", "Draft release notes from merged pull requests since the last tag", "prompt"),
+  command("skill:diagram-to-image", "Convert Mermaid diagrams and Markdown tables to PNG images for platforms without rich formatting", "skill"),
+  command("skill:handoff", "Compact the conversation into a handoff document for another agent", "skill"),
+];
+
+// A small invented screenshot: a window with a title bar and two panes.
+const screenshot = btoa(
+  '<svg xmlns="http://www.w3.org/2000/svg" width="120" height="90"><rect width="120" height="90" fill="#eef1f5"/><rect width="120" height="14" fill="#d5dbe3"/><rect x="6" y="20" width="30" height="64" rx="3" fill="#c9d3df"/><rect x="42" y="20" width="72" height="30" rx="3" fill="#ffffff"/><rect x="42" y="56" width="72" height="28" rx="3" fill="#a8c1e0"/></svg>',
+);
+
 interface FixtureDefinition {
   state(): TranscriptState;
+  composer?: Partial<ComposerProps>;
   /** Runs once the page is painted, before capture: expand rows, scroll. */
   prepare?(): Promise<void>;
 }
@@ -167,7 +212,37 @@ const fixtures: Record<string, FixtureDefinition> = {
     },
   },
   "conversation/running": { state: runningState },
+  "composer/attachment": {
+    state: finishedState,
+    composer: {
+      initialDraft: "Why does the sidebar overlap the title bar in this screenshot?",
+      initialAttachments: [{ id: "shot", name: "sidebar.png", image: { type: "image", data: screenshot, mimeType: "image/svg+xml" } }],
+    },
+  },
+  "composer/commands": {
+    state: finishedState,
+    composer: { initialDraft: "/" },
+    prepare: () => waitFor(".command-palette"),
+  },
+  "composer/queued": {
+    state: () => ({
+      ...runningState(),
+      queue: { steering: ["Skip the e2e suite, it needs a display"], followUp: ["When you're done, summarise what changed in two sentences"] },
+    }),
+    composer: { initialDraft: "Also run the linter" },
+  },
+  "composer/model-menu": {
+    state: finishedState,
+    async prepare() {
+      await click(".model-chip");
+      await waitFor(".model-menu .composer-menu-item");
+    },
+  },
 };
+
+async function waitFor(selector: string): Promise<void> {
+  while (!document.querySelector(selector)) await nextFrame();
+}
 
 export function ConversationFixture({ id }: { id: string }) {
   const fixture = fixtures[id];
@@ -189,7 +264,30 @@ export function ConversationFixture({ id }: { id: string }) {
         onSelectWorkspace={() => undefined}
         onSelectSession={() => undefined}
       />
-      <ConversationLayout state={state} running={isRunning(state)} workspaceName="orchard" onSend={() => undefined} onStop={() => undefined} />
+      <ConversationLayout
+        state={state}
+        workspaceName="orchard"
+        composer={
+          <Composer
+            running={isRunning(state)}
+            queue={state.queue}
+            loadCommands={() => Promise.resolve(commands)}
+            onSend={() => undefined}
+            onStop={() => undefined}
+            onClearQueue={() => Promise.resolve([])}
+            controls={
+              <ModelPicker
+                model={models[2]}
+                thinkingLevel="low"
+                load={() => Promise.resolve({ models, levels })}
+                onSelectModel={() => undefined}
+                onSelectThinking={() => undefined}
+              />
+            }
+            {...fixture?.composer}
+          />
+        }
+      />
     </div>
   );
 }
