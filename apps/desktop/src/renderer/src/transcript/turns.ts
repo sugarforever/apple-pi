@@ -45,51 +45,86 @@ export interface Turn {
 
 export type TranscriptEntry = { kind: "turn"; turn: Turn } | { kind: "message"; key: string; message: AgentMessage };
 
+/** A user message and the messages after it, until the next one. */
+interface Segment {
+  user: UserMessage;
+  start: number;
+  pending: boolean;
+  messages: { index: number; message: AgentMessage }[];
+}
+
 interface Draft {
   turn: Turn;
-  start: number;
-  messages: { index: number; message: AgentMessage }[];
+  messages: Segment["messages"];
   /** Activity items that belong to each assistant message, so the answer can be lifted out. */
   textItems: Map<number, ActivityItem[]>;
 }
 
 const MAX_OUTPUT_CHARS = 20_000;
 
-/** Groups session messages into turns for display. Pure; recomputed from reducer state. */
-export function buildTranscript(state: TranscriptState): TranscriptEntry[] {
+/** What each turn was built from, compared by identity to decide whether it can be reused. */
+const inputsOf = new WeakMap<Turn, unknown[]>();
+
+/**
+ * Groups session messages into turns for display. Pure; recomputed from reducer
+ * state. A turn of `previous` whose messages, tool status, results, and run
+ * timing are all unchanged is returned as the same object, so a streaming
+ * delta rebuilds only the turn it lands in.
+ */
+export function buildTranscript(state: TranscriptState, previous: readonly TranscriptEntry[] = []): TranscriptEntry[] {
   const all = state.streaming ? [...state.messages, state.streaming] : state.messages;
   const results = new Map<string, ToolResultMessage>();
   for (const message of all) if (message.role === "toolResult") results.set(message.toolCallId, message);
 
   const entries: TranscriptEntry[] = [];
-  const drafts: Draft[] = [];
-  const startTurn = (user: UserMessage, index: number, pending: boolean) => {
-    const turn: Turn = { key: `turn-${index}`, user, pending, activity: [], running: false };
-    drafts.push({ turn, start: index, messages: [], textItems: new Map() });
-    entries.push({ kind: "turn", turn });
-  };
-
+  const segments: Segment[] = [];
   all.forEach((message, index) => {
-    if (message.role === "user") return startTurn(message, index, false);
-    const draft = drafts.at(-1);
-    if (message.role === "system" || message.role === "toolResult") return;
-    if (!draft) {
-      entries.push({ kind: "message", key: `message-${index}`, message });
-      return;
-    }
-    draft.messages.push({ index, message });
-    if (message.role === "assistant") addAssistant(draft, message, index, state, results);
-    else draft.turn.activity.push({ kind: "message", key: `message-${index}`, message });
+    if (message.role === "user") segments.push({ user: message, start: index, pending: false, messages: [] });
+    else if (message.role === "system" || message.role === "toolResult") return;
+    else if (segments.length > 0) segments.at(-1)!.messages.push({ index, message });
+    else entries.push({ kind: "message", key: `message-${index}`, message });
   });
+  const { pendingPrompt } = state;
+  if (pendingPrompt)
+    segments.push({ user: { role: "user", content: pendingPrompt.text, timestamp: pendingPrompt.at }, start: all.length, pending: true, messages: [] });
 
-  if (state.pendingPrompt) startTurn({ role: "user", content: state.pendingPrompt.text, timestamp: state.pendingPrompt.at }, all.length, true);
-
+  const before = new Map(previous.flatMap((entry) => (entry.kind === "turn" ? [[entry.turn.key, entry.turn] as const] : [])));
   const running = isRunning(state);
-  drafts.forEach((draft, i) => {
-    const next = drafts[i + 1]?.start ?? Infinity;
-    finishTurn(draft, state, running && i === drafts.length - 1, next);
+  segments.forEach((segment, i) => {
+    const nextStart = segments[i + 1]?.start ?? Infinity;
+    const live = running && i === segments.length - 1;
+    const runs = state.runs.filter((run) => run.messageIndex >= segment.start && run.messageIndex < nextStart);
+    const inputs: unknown[] = [segment.pending ? pendingPrompt : segment.user, live, ...runs];
+    for (const { message } of segment.messages) {
+      inputs.push(message, message === state.streaming);
+      if (message.role !== "assistant") continue;
+      for (const block of message.content) if (block.type === "toolCall") inputs.push(state.tools[block.id], results.get(block.id));
+    }
+    const old = before.get(`turn-${segment.start}`);
+    const oldInputs = old && inputsOf.get(old);
+    const same = oldInputs?.length === inputs.length && oldInputs.every((input, j) => input === inputs[j]);
+    const turn = same ? old! : buildTurn(segment, state, results, live, runs);
+    inputsOf.set(turn, inputs);
+    entries.push({ kind: "turn", turn });
   });
   return entries;
+}
+
+/** Remembers its last result, so each call reuses the turns that did not change. */
+export function transcriptBuilder(): (state: TranscriptState) => TranscriptEntry[] {
+  let last: TranscriptEntry[] = [];
+  return (state) => (last = buildTranscript(state, last));
+}
+
+function buildTurn(segment: Segment, state: TranscriptState, results: Map<string, ToolResultMessage>, running: boolean, runs: TranscriptState["runs"]): Turn {
+  const turn: Turn = { key: `turn-${segment.start}`, user: segment.user, pending: segment.pending, activity: [], running: false };
+  const draft: Draft = { turn, messages: segment.messages, textItems: new Map() };
+  for (const { index, message } of segment.messages) {
+    if (message.role === "assistant") addAssistant(draft, message, index, state, results);
+    else turn.activity.push({ kind: "message", key: `message-${index}`, message });
+  }
+  finishTurn(draft, running, runs);
+  return turn;
 }
 
 function addAssistant(draft: Draft, message: AssistantMessage, index: number, state: TranscriptState, results: Map<string, ToolResultMessage>) {
@@ -159,7 +194,7 @@ function fileView(call: ToolCall, result: ToolResultMessage | undefined, output:
   }
 }
 
-function finishTurn(draft: Draft, state: TranscriptState, running: boolean, nextStart: number) {
+function finishTurn(draft: Draft, running: boolean, runs: TranscriptState["runs"]) {
   const { turn } = draft;
   turn.running = running;
   for (const item of turn.activity) if (item.kind === "rows") item.summary = summarize(item.rows.map((row) => row.verb));
@@ -176,7 +211,6 @@ function finishTurn(draft: Draft, state: TranscriptState, running: boolean, next
     else if (assistant.stopReason === "aborted" && !running) turn.notice = { tone: "muted", text: "Stopped" };
   }
 
-  const runs = state.runs.filter((run) => run.messageIndex >= draft.start && run.messageIndex < nextStart);
   const first = runs[0];
   if (first) {
     turn.startedAt = first.startedAt;

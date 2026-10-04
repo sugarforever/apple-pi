@@ -1,16 +1,15 @@
-import type { SessionEntry } from "../pi/types.js";
+import type { SessionEntry, UserMessage } from "../pi/types.js";
 
 /**
- * The id of the user message `fromEnd` places from the end of the active branch
- * (1 is the latest), walking up from `leafId`. The transcript shows that branch,
- * and compaction only trims its start, so counting from the end lines a shown
- * message up with its entry.
+ * The id of the entry holding `message` on the active branch, walking up from
+ * `leafId`. The transcript's messages are the entries' own messages, so the
+ * timestamp Pi stamped on the user message identifies it even when compaction
+ * or an extension leaves other messages out of view.
  */
-export function userEntryFromEnd(entries: readonly SessionEntry[], leafId: string | null, fromEnd: number): string | undefined {
+export function userEntryId(entries: readonly SessionEntry[], leafId: string | null, message: UserMessage): string | undefined {
   const byId = new Map(entries.map((entry) => [entry.id, entry]));
-  let seen = 0;
   for (let entry = leafId ? byId.get(leafId) : undefined; entry; entry = entry.parentId ? byId.get(entry.parentId) : undefined) {
-    if (entry.type === "message" && entry.message.role === "user" && ++seen === fromEnd) return entry.id;
+    if (entry.type === "message" && entry.message.role === "user" && entry.message.timestamp === message.timestamp) return entry.id;
   }
   return undefined;
 }

@@ -23,6 +23,7 @@
 
   /* Lines */
   --color-border: #e8e8e8;
+  --color-border-focus: #cfcfcf;
   --color-hairline: #ededed;
   --color-scrollbar: rgba(0, 0, 0, 0.16);
 
@@ -125,6 +126,7 @@
     --color-text-faint: #5e5e5e;
 
     --color-border: #333333;
+    --color-border-focus: #4d4d4d;
     --color-hairline: #2c2c2c;
     --color-scrollbar: rgba(255, 255, 255, 0.18);
 

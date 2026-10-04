@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { memo, useEffect, useState } from "react";
 import { ChevronRight, GitBranch } from "lucide-react";
 import type { UserMessage } from "../pi/types.js";
 import { RowGroup } from "./activity-rows.js";
@@ -10,9 +10,12 @@ export interface TurnViewProps {
   turn: Turn;
   /** Starts a new chat from just before this turn's message; absent while forking is unavailable. */
   onFork?(message: UserMessage): void;
+  /** Parses the answer's markdown only once it comes into view; see `Markdown`. */
+  deferred?: boolean;
 }
 
-export function TurnView({ turn, onFork }: TurnViewProps) {
+/** Memoised: a turn re-renders only when it was rebuilt (see `buildTranscript`) or `onFork` changed. */
+export const TurnView = memo(function TurnView({ turn, onFork, deferred }: TurnViewProps) {
   // Live turns start open and finished ones closed; a click overrides that until the turn changes state.
   const [override, setOverride] = useState<{ running: boolean; open: boolean }>();
   const expanded = override?.running === turn.running ? override.open : turn.running;
@@ -40,7 +43,7 @@ export function TurnView({ turn, onFork }: TurnViewProps) {
           ))}
         </div>
       )}
-      {turn.answer && <Markdown text={turn.answer} />}
+      {turn.answer && <Markdown text={turn.answer} deferred={deferred} />}
       {turn.notice && (
         <p className="turn-notice" data-tone={turn.notice.tone}>
           {turn.notice.text}
@@ -48,7 +51,7 @@ export function TurnView({ turn, onFork }: TurnViewProps) {
       )}
     </section>
   );
-}
+});
 
 function WorkedForLabel({ turn }: { turn: Turn }) {
   const now = useNow(turn.running);

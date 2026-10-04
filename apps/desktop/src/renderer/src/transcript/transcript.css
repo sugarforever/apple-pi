@@ -373,6 +373,11 @@
   overflow-wrap: break-word;
 }
 
+/* Unparsed text standing in for markdown that has not come into view yet. */
+.markdown-deferred {
+  white-space: pre-wrap;
+}
+
 .markdown > :first-child {
   margin-top: 0;
 }

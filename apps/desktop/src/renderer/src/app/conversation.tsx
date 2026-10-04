@@ -9,7 +9,7 @@ import { StatusLine } from "../extension-ui/status-line.js";
 import { useExtensionUI } from "../extension-ui/use-extension-ui.js";
 import { Widgets } from "../extension-ui/widgets.js";
 import { chatTitle } from "../sidebar/chats.js";
-import { userEntryFromEnd } from "../transcript/fork.js";
+import { userEntryId } from "../transcript/fork.js";
 import { TranscriptView } from "../transcript/transcript-view.js";
 import { usePiSession, type PiSession, type PiSessionOptions } from "../transcript/use-pi-session.js";
 import type { TranscriptState } from "../transcript/reducer.js";
@@ -64,9 +64,9 @@ export function Conversation({ workspaceName, isNew, onTitle, onBranch, onError,
     await branched((await request({ type: "clone" })).data.cancelled);
   };
   const fork = async (message: UserMessage) => {
-    const users = session.state.messages.filter((item) => item.role === "user");
+    // The whole session, as Pi has no lighter way to map a shown message to its entry id.
     const { data } = await request({ type: "get_entries" });
-    const entryId = userEntryFromEnd(data.entries, data.leafId, users.length - users.indexOf(message));
+    const entryId = userEntryId(data.entries, data.leafId, message);
     if (!entryId) throw new Error("Pi could not find this message in the session.");
     const forked = await request({ type: "fork", entryId });
     await branched(forked.data.cancelled, forked.data.text);

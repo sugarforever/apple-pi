@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { AgentMessage } from "../pi/types.js";
 import { assistant, text, thinking, toolCall, toolResult, user } from "../fixtures/sample-messages.js";
 import { rowLabel, summarize, toolTarget, toolVerb } from "./activity-labels.js";
-import { initialTranscript, type TranscriptState } from "./reducer.js";
+import { applyDelta, initialTranscript, type TranscriptState } from "./reducer.js";
 import { buildTranscript, formatDuration, type Turn } from "./turns.js";
 
 const turnsOf = (state: Partial<TranscriptState>): Turn[] =>
@@ -87,6 +87,21 @@ describe("buildTranscript", () => {
     const turn = entries[1]?.kind === "turn" ? entries[1].turn : undefined;
     expect(turn?.activity.map((item) => item.kind)).toEqual(["message", "unknown"]);
     expect(turn?.answer).toBe("ok");
+  });
+
+  it("keeps finished turns as the same objects while a reply streams, and rebuilds the live one", () => {
+    const streaming = assistant([text("Partial")], 30, "pending");
+    const state: TranscriptState = {
+      ...initialTranscript,
+      messages: [user("One", 0), assistant([text("Done")], 10), user("Two", 20)],
+      streaming,
+      runs: [{ messageIndex: 2, startedAt: 20 }],
+    };
+    const before = buildTranscript(state);
+    const after = buildTranscript({ ...state, streaming: applyDelta(streaming, { type: "text_delta", contentIndex: 0, delta: " more" }) }, before);
+    expect(after[0]!.kind === "turn" && after[0]!.turn).toBe(before[0]!.kind === "turn" && before[0]!.turn);
+    expect(after[1]!.kind === "turn" && after[1]!.turn).not.toBe(before[1]!.kind === "turn" && before[1]!.turn);
+    expect(after[1]).toMatchObject({ turn: { running: true, answer: "Partial more" } });
   });
 });
 
