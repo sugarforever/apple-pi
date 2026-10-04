@@ -1,7 +1,10 @@
 import React, { useState } from "react";
 import { BookOpen, Brain, ChevronRight, FilePen, FolderTree, Search, SquareTerminal, Wrench, type LucideIcon } from "lucide-react";
 import type { ActivityVerb } from "./activity-labels.js";
-import type { ActivityRow } from "./turns.js";
+import { Code } from "./code.js";
+import { DiffView } from "./diff-view.js";
+import { languageForPath } from "./highlight.js";
+import type { ActivityRow, ToolView } from "./turns.js";
 
 const icons: Record<ActivityVerb, LucideIcon> = {
   ran: SquareTerminal,
@@ -41,7 +44,7 @@ export function RowGroup({ rows, summary }: { rows: ActivityRow[]; summary: stri
 export function ActivityRowView({ row }: { row: ActivityRow }) {
   const [open, setOpen] = useState(false);
   const Icon = icons[row.verb];
-  const hasDetail = Boolean(row.input || row.output);
+  const hasDetail = Boolean(row.view || row.input || row.output);
   return (
     <div className="activity-item">
       <button
@@ -55,14 +58,35 @@ export function ActivityRowView({ row }: { row: ActivityRow }) {
       >
         <Icon className="activity-icon" size={16} aria-hidden />
         <span className="activity-label">{row.label}</span>
+        {row.changes && (
+          <span className="activity-changes">
+            {row.changes.added > 0 && <span className="change-added">+{row.changes.added}</span>}
+            {row.changes.removed > 0 && <span className="change-removed">−{row.changes.removed}</span>}
+          </span>
+        )}
         {row.status === "error" && <span className="activity-badge">failed</span>}
       </button>
       {open && hasDetail && (
         <div className="activity-detail">
-          {row.input && <pre className="activity-input">{row.verb === "ran" ? `$ ${row.input}` : row.input}</pre>}
-          {row.output && <pre className="activity-output">{row.output}</pre>}
+          {row.view ? (
+            <FileView view={row.view} />
+          ) : (
+            <>
+              {row.input && <pre className="activity-input">{row.verb === "ran" ? `$ ${row.input}` : row.input}</pre>}
+              {row.output && <pre className="activity-output">{row.output}</pre>}
+            </>
+          )}
         </div>
       )}
     </div>
+  );
+}
+
+function FileView({ view }: { view: ToolView }) {
+  const language = languageForPath(view.path);
+  return view.kind === "diff" ? (
+    <DiffView lines={view.lines} language={language} />
+  ) : (
+    <Code className="activity-code" code={view.code} language={language} collapse />
   );
 }

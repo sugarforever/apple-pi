@@ -1,6 +1,8 @@
 import type { RpcCommand, RpcResponse } from "@earendil-works/pi-coding-agent";
 import type { PiProcessEvent } from "../../../shared/pi-api.js";
 
+export type { EditToolDetails } from "@earendil-works/pi-coding-agent";
+
 /*
  * Pi's package root exports its RPC and event types but not the message and
  * content types they carry, so these aliases reach them through the exported

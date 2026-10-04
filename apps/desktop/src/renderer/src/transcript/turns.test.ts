@@ -107,3 +107,25 @@ describe("activity labels", () => {
     expect([formatDuration(400), formatDuration(12_000), formatDuration(386_000), formatDuration(3_900_000)]).toEqual(["0s", "12s", "6m 26s", "1h 5m"]);
   });
 });
+
+describe("file views", () => {
+  it("shows an edit's diff and a write's content with line counts, and the raw view for a failed edit", () => {
+    const edit = toolCall("e1", "edit", { path: "src/a.ts", edits: [] });
+    const write = toolCall("w1", "write", { path: "src/b.ts", content: "one\ntwo\n" });
+    const failed = toolCall("e2", "edit", { path: "src/c.ts", edits: [] });
+    const [turn] = turnsOf({
+      messages: [
+        user("Change it", 0),
+        assistant([edit, write, failed], 1_000, "toolUse"),
+        { ...toolResult(edit, "Edited", 2_000), details: { diff: " 1 a\n-2 b\n+2 c", patch: "", firstChangedLine: 2 } },
+        toolResult(write, "Wrote", 3_000),
+        { ...toolResult(failed, "No match", 4_000, true), details: {} },
+      ],
+    });
+    const rows = turn!.activity.flatMap((item) => (item.kind === "rows" ? item.rows : []));
+    expect(rows[0]).toMatchObject({ changes: { added: 1, removed: 1 }, view: { kind: "diff", path: "src/a.ts" } });
+    expect(rows[1]).toMatchObject({ changes: { added: 2, removed: 0 }, view: { kind: "code", code: "one\ntwo\n" } });
+    expect(rows[2]).toMatchObject({ status: "error", output: "No match" });
+    expect(rows[2]!.view).toBeUndefined();
+  });
+});

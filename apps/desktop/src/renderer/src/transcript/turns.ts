@@ -1,5 +1,6 @@
-import type { AgentMessage, AssistantMessage, ToolResultMessage, UserMessage } from "../pi/types.js";
+import type { AgentMessage, AssistantMessage, ToolCall, ToolResultMessage, UserMessage } from "../pi/types.js";
 import { type ActivityVerb, rowLabel, summarize, toolTarget, toolVerb } from "./activity-labels.js";
+import { countChanges, type DiffLine, type LineChanges, lineCount, parseEditDiff } from "./diff.js";
 import { isRunning, resultText, type ToolExecution, type TranscriptState } from "./reducer.js";
 
 /** One line inside "Worked for …": a tool call or a block of thinking. */
@@ -11,7 +12,13 @@ export interface ActivityRow {
   /** What the row acted on, for its detail view: a command, arguments, or the thinking text. */
   input?: string;
   output?: string;
+  /** Lines an edit or write added and removed, shown after the label. */
+  changes?: LineChanges;
+  /** A richer detail view than the raw input and output: an edit's diff or a file's content. */
+  view?: ToolView;
 }
+
+export type ToolView = { kind: "diff"; path: string; lines: DiffLine[] } | { kind: "code"; path: string; code: string };
 
 export type ActivityItem =
   | { kind: "text"; key: string; text: string }
@@ -113,14 +120,16 @@ function addAssistant(draft: Draft, message: AssistantMessage, index: number, st
         const execution = state.tools[block.id];
         const status = result ? (result.isError ? "error" : "done") : (execution?.status ?? (state.streaming === message ? "running" : "done"));
         const verb = toolVerb(block.name);
-        const output = result ? resultText(result) : execution?.output;
+        const fullOutput = result ? resultText(result) : execution?.output;
+        const output = fullOutput && fullOutput.length > MAX_OUTPUT_CHARS ? `${fullOutput.slice(0, MAX_OUTPUT_CHARS)}\n…` : fullOutput;
         pushRow({
           key,
           verb,
           label: rowLabel(verb, toolTarget(block.name, block.arguments), status === "running"),
           status,
           input: block.name === "bash" && typeof block.arguments.command === "string" ? block.arguments.command : JSON.stringify(block.arguments, null, 2),
-          output: output && output.length > MAX_OUTPUT_CHARS ? `${output.slice(0, MAX_OUTPUT_CHARS)}\n…` : output,
+          output,
+          ...fileView(block, result, output),
         });
         return;
       }
@@ -129,6 +138,25 @@ function addAssistant(draft: Draft, message: AssistantMessage, index: number, st
     }
   });
   draft.textItems.set(index, texts);
+}
+
+/** The diff of an edit, the content of a write, or the text of a read; failed or unrecognised calls keep the raw view. */
+function fileView(call: ToolCall, result: ToolResultMessage | undefined, output: string | undefined): Pick<ActivityRow, "changes" | "view"> {
+  const { path, content } = call.arguments;
+  if (typeof path !== "string" || result?.isError) return {};
+  switch (call.name) {
+    case "edit": {
+      const lines = result && parseEditDiff(result.details);
+      return lines ? { view: { kind: "diff", path, lines }, changes: countChanges(lines) } : {};
+    }
+    case "write":
+      if (typeof content !== "string") return {};
+      return { view: { kind: "code", path, code: content }, changes: result ? { added: lineCount(content), removed: 0 } : undefined };
+    case "read":
+      return output ? { view: { kind: "code", path, code: output } } : {};
+    default:
+      return {};
+  }
 }
 
 function finishTurn(draft: Draft, state: TranscriptState, running: boolean, nextStart: number) {

@@ -12,6 +12,7 @@ import { IconRail } from "../shell/icon-rail.js";
 import { Shell } from "../shell/shell.js";
 import { TitleBar } from "../shell/title-bar.js";
 import type { ChatIndicator } from "../sidebar/activity.js";
+import { loadHighlighter } from "../transcript/highlight.js";
 import { initialTranscript, isRunning, type TranscriptState } from "../transcript/reducer.js";
 import { Sidebar } from "../sidebar/sidebar.js";
 import { assistant, text, thinking, toolCall, toolResult, user } from "./sample-messages.js";
@@ -122,6 +123,113 @@ const runningState = (): TranscriptState => {
     streaming: assistant([text("Typecheck passes. Running the desktop tests next."), live], now - 5_000, "pending"),
     tools: { [live.id]: { status: "running", output: "RUN  v4.0.18" } },
     runs: [{ messageIndex: researchTurn.length, startedAt: now - 12_000 }],
+  };
+};
+
+// Pi's display diff for an edit: sign, padded line number, text, and `...` between hunks.
+const retryDiff = [
+  "    ...",
+  " 18 export async function withRetry<T>(run: () => Promise<T>, options: RetryOptions = {}): Promise<T> {",
+  "-19   const attempts = options.attempts ?? 3;",
+  "+19   const { attempts = 3, signal } = options;",
+  "+20   let delay = options.initialDelayMs ?? 250;",
+  " 21   for (let attempt = 1; ; attempt++) {",
+  " 22     try {",
+  " 23       return await run();",
+  " 24     } catch (error) {",
+  "-25       if (attempt >= attempts) throw error;",
+  "-26       await sleep(250 * attempt);",
+  "+25       if (attempt >= attempts || signal?.aborted || !isRetryable(error)) throw error;",
+  "+26       await sleep(jitter(delay), signal);",
+  "+27       delay = Math.min(delay * 2, MAX_DELAY_MS);",
+  " 28     }",
+  " 29   }",
+  " 30 }",
+  "    ...",
+  " 41 /** Network failures and 5xx responses; a 4xx will fail the same way again. */",
+  "-42 const isRetryable = (error: unknown) => error instanceof NetworkError;",
+  "+42 const isRetryable = (error: unknown): boolean =>",
+  "+43   error instanceof NetworkError || (error instanceof HttpError && error.status >= 500);",
+  "    ...",
+].join("\n");
+
+const backoffFile = `/**
+ * Exponential backoff with full jitter, shared by every retrying caller.
+ * Delays double from the initial value up to MAX_DELAY_MS.
+ */
+export const MAX_DELAY_MS = 8_000;
+
+export interface RetryOptions {
+  /** Total tries, including the first. */
+  attempts?: number;
+  initialDelayMs?: number;
+  signal?: AbortSignal;
+}
+
+export class NetworkError extends Error {
+  readonly name = "NetworkError";
+}
+
+export class HttpError extends Error {
+  constructor(readonly status: number, message: string) {
+    super(message);
+  }
+}
+
+/** A random delay between zero and \`ms\`, so clients that failed together retry apart. */
+export const jitter = (ms: number): number => Math.round(Math.random() * ms);
+
+export function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) return reject(signal.reason);
+    const timer = setTimeout(resolve, ms);
+    signal?.addEventListener(
+      "abort",
+      () => {
+        clearTimeout(timer);
+        reject(signal.reason);
+      },
+      { once: true },
+    );
+  });
+}
+`;
+
+const toolResultsAnswer = `Retries now back off exponentially with jitter, stop early on an aborted signal, and give up at once on 4xx responses.
+
+\`\`\`ts
+const data = await withRetry(() => fetchIndex(url), { attempts: 5, signal: controller.signal });
+\`\`\`
+
+The new helpers live in \`session/backoff.ts\`. To check the change locally:
+
+\`\`\`bash
+pnpm --filter @orchard/desktop test -- retry
+git diff --stat
+\`\`\``;
+
+const toolResultsState = (): TranscriptState => {
+  const readRetry = toolCall("call-read-retry", "read", { path: "apps/desktop/src/renderer/src/session/retry.ts" });
+  const write = toolCall("call-write", "write", { path: "apps/desktop/src/renderer/src/session/backoff.ts", content: backoffFile });
+  const editRetry = toolCall("call-edit-retry", "edit", { path: "apps/desktop/src/renderer/src/session/retry.ts", edits: [] });
+  const test = toolCall("call-test-retry", "bash", { command: "pnpm --filter @orchard/desktop test -- retry" });
+  return {
+    ...initialTranscript,
+    messages: [
+      user("Make the session retries back off properly and skip errors that will never succeed.", s(0)),
+      assistant([text("I'll read the current retry helper first."), readRetry], s(3), "toolUse"),
+      toolResult(readRetry, "import { sleep } from './sleep';\n\nexport async function withRetry<T>(run: () => Promise<T>) {\n  // …\n}", s(4)),
+      assistant([text("The backoff helpers deserve their own module, then the retry loop can use them."), write, editRetry], s(40), "toolUse"),
+      toolResult(write, `Successfully wrote ${backoffFile.length} bytes to apps/desktop/src/renderer/src/session/backoff.ts`, s(41)),
+      {
+        ...toolResult(editRetry, "Successfully replaced 3 blocks in apps/desktop/src/renderer/src/session/retry.ts.", s(42)),
+        details: { diff: retryDiff, patch: "", firstChangedLine: 19 },
+      },
+      assistant([test], s(50), "toolUse"),
+      toolResult(test, " ✓ src/session/retry.test.ts (6 tests) 18ms\n\n Test Files  1 passed (1)\n      Tests  6 passed (6)", s(58)),
+      assistant([text(toolResultsAnswer)], s(64)),
+    ],
+    runs: [],
   };
 };
 
@@ -275,6 +383,39 @@ const fixtures: Record<string, FixtureDefinition> = {
     },
   },
   "conversation/running": { state: runningState },
+  "conversation/edit-diff": {
+    state: toolResultsState,
+    async prepare() {
+      await click(".worked-for");
+      await click(".activity-group > .activity-row");
+      await click('.activity-row[title^="Edited"]');
+      await loadHighlighter();
+      await nextFrame();
+      document.querySelector('.activity-row[title^="Edited"]')?.scrollIntoView();
+      document.querySelector(".transcript-scroller")?.scrollBy(0, -96);
+    },
+  },
+  "conversation/write-file": {
+    state: toolResultsState,
+    async prepare() {
+      await click(".worked-for");
+      await click(".activity-group > .activity-row");
+      await click('.activity-row[title^="Wrote"]');
+      await loadHighlighter();
+      await nextFrame();
+      document.querySelector('.activity-row[title^="Wrote"]')?.scrollIntoView();
+      document.querySelector(".transcript-scroller")?.scrollBy(0, -96);
+    },
+  },
+  "conversation/highlighted-code": {
+    state: toolResultsState,
+    async prepare() {
+      await loadHighlighter();
+      await nextFrame();
+      const scroller = document.querySelector(".transcript-scroller");
+      if (scroller) scroller.scrollTop = scroller.scrollHeight;
+    },
+  },
   "shell/conversation": {
     state: finishedState,
     async prepare() {
