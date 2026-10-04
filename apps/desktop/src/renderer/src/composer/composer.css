@@ -10,6 +10,11 @@
   box-shadow: var(--shadow-composer);
 }
 
+/* The card shows focus for its text field, which draws no ring of its own. */
+.composer:has(.composer-input:focus-visible) {
+  border-color: var(--color-border-focus);
+}
+
 .composer-input {
   min-height: 48px;
   max-height: 240px;
@@ -21,6 +26,11 @@
   font-size: var(--text-body);
   line-height: 1.5;
   field-sizing: content;
+}
+
+/* Outranks the shared :focus-visible ring in base.css, which loads after this file. */
+.composer-input:focus-visible {
+  outline: none;
 }
 
 .composer-input::placeholder {
