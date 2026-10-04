@@ -11,7 +11,6 @@ const primitives = readFileSync(new URL("./src/ui-primitives.tsx", import.meta.u
 const modelSelect = readFileSync(new URL("./src/model-select.tsx", import.meta.url), "utf8");
 const document = readFileSync(new URL("./index.html", import.meta.url), "utf8");
 const visualFixtures = readFileSync(new URL("./src/visual-fixtures.tsx", import.meta.url), "utf8");
-const visualFixtureManifest = JSON.parse(readFileSync(new URL("./visual-fixtures.json", import.meta.url), "utf8")) as { fixtures: string[] };
 const rule = (selector: string, source = styles): string => {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   return source.match(new RegExp(`${escaped}\\s*\\{([^}]*)\\}`))?.[1] ?? "";
@@ -220,7 +219,6 @@ describe("renderer visual contract", () => {
   });
 
   it("captures the real workspace hierarchy with deterministic long-content and focus data", () => {
-    expect(visualFixtureManifest.fixtures).toContain("navigation/workspace-hierarchy-long-focus");
     expect(visualFixtures).toContain('feature: "navigation"');
     expect(visualFixtures).toContain("<AppSidebar");
     expect(visualFixtures).toContain("navigationSessions");

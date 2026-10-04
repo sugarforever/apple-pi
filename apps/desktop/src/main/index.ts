@@ -1,4 +1,4 @@
-import { app, BrowserWindow, crashReporter, dialog, ipcMain, safeStorage, session, shell, type IpcMainInvokeEvent } from "electron";
+import { app, BrowserWindow, crashReporter, dialog, ipcMain, nativeTheme, safeStorage, session, shell, type IpcMainInvokeEvent } from "electron";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { AgentHostSupervisor } from "./agent-host-supervisor.js";
@@ -57,7 +57,8 @@ function createWindow(): void {
     minWidth: 760,
     minHeight: 560,
     titleBarStyle: "hiddenInset",
-    backgroundColor: "#101213",
+    // Matches --color-canvas so the window does not flash before the renderer paints.
+    backgroundColor: nativeTheme.shouldUseDarkColors ? "#1a1a1a" : "#ffffff",
     show: false,
     webPreferences: {
       preload: path.join(dirname, "../preload/index.js"),
