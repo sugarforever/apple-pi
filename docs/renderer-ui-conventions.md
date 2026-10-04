@@ -6,6 +6,7 @@ Apple Pi Lite's renderer is a compact, text-first desktop interface. Its source 
 
 - Components read custom properties (`--color-*`, `--text-*`, `--space-*`, `--radius-*`, `--shadow-*`, `--width-*`) and never hard-code colours, sizes, or shadows. A restyle or a new theme is an edit to `tokens.css`.
 - Light and dark values live side by side in `tokens.css`; components never branch on the colour scheme.
+- Code is highlighted by highlight.js, loaded on first use; [`theme/syntax.css`](../apps/desktop/src/renderer/src/theme/syntax.css) maps its classes onto the `--color-syntax-*` tokens.
 - Use `--font-mono` for identifiers, model ids, paths, code, and numeric metadata. Long names and paths wrap with `overflow-wrap: anywhere` or truncate with the full value in `title`.
 
 ## Layout

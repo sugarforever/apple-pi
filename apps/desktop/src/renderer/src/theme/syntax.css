@@ -1,0 +1,71 @@
+/* highlight.js token classes, coloured from the --color-syntax-* tokens. */
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-literal,
+.hljs-doctag,
+.hljs-meta .hljs-keyword {
+  color: var(--color-syntax-keyword);
+}
+
+.hljs-string,
+.hljs-regexp,
+.hljs-meta .hljs-string,
+.hljs-template-tag {
+  color: var(--color-syntax-string);
+}
+
+.hljs-number,
+.hljs-attr,
+.hljs-attribute,
+.hljs-variable,
+.hljs-template-variable,
+.hljs-selector-attr,
+.hljs-selector-class,
+.hljs-selector-id,
+.hljs-symbol,
+.hljs-bullet,
+.hljs-property {
+  color: var(--color-syntax-number);
+}
+
+.hljs-comment,
+.hljs-quote,
+.hljs-meta {
+  color: var(--color-syntax-comment);
+}
+
+.hljs-title,
+.hljs-title.function_,
+.hljs-section {
+  color: var(--color-syntax-function);
+}
+
+.hljs-type,
+.hljs-built_in,
+.hljs-title.class_,
+.hljs-params .hljs-type {
+  color: var(--color-syntax-type);
+}
+
+.hljs-name,
+.hljs-tag,
+.hljs-selector-pseudo {
+  color: var(--color-syntax-tag);
+}
+
+.hljs-addition {
+  background: var(--color-diff-added-bg);
+}
+
+.hljs-deletion {
+  background: var(--color-diff-removed-bg);
+}
+
+.hljs-emphasis {
+  font-style: italic;
+}
+
+.hljs-strong,
+.hljs-section {
+  font-weight: 600;
+}

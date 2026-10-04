@@ -2,6 +2,8 @@ import React, { useState } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Check, CodeXml, Copy } from "lucide-react";
+import { Code } from "./code.js";
+import { languageOf } from "./highlight.js";
 
 interface HastNode {
   type: string;
@@ -43,6 +45,7 @@ export function Markdown({ text }: { text: string }) {
 
 export function CodeBlock({ code, language }: { code: string; language?: string }) {
   const [copied, setCopied] = useState(false);
+  const known = languageOf(language);
   const copy = () => {
     void navigator.clipboard.writeText(code).then(() => {
       setCopied(true);
@@ -53,14 +56,12 @@ export function CodeBlock({ code, language }: { code: string; language?: string 
     <figure className="code-block">
       <figcaption className="code-block-header">
         <CodeXml size={16} aria-hidden />
-        <span>{language ?? "Plain text"}</span>
+        <span>{known?.name ?? language ?? "Plain text"}</span>
         <button type="button" className="icon-button" onClick={copy} aria-label={copied ? "Copied" : "Copy code"} title="Copy">
           {copied ? <Check size={16} /> : <Copy size={16} />}
         </button>
       </figcaption>
-      <pre>
-        <code>{code}</code>
-      </pre>
+      <Code code={code} language={known} />
     </figure>
   );
 }

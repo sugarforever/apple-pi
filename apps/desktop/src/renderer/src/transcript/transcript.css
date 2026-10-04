@@ -180,6 +180,22 @@
   font-size: var(--text-small);
 }
 
+.activity-changes {
+  display: flex;
+  flex: none;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+}
+
+.change-added {
+  color: var(--color-diff-added);
+}
+
+.change-removed {
+  color: var(--color-diff-removed);
+}
+
 .activity-chevron {
   flex: none;
   transition: transform 120ms ease;
@@ -221,6 +237,83 @@
 
 .activity-detail .activity-output {
   border-top: 1px solid var(--color-hairline);
+  color: var(--color-text-secondary);
+}
+
+/* File views: an edit's diff, a written or read file */
+
+.activity-detail .activity-code {
+  max-height: none;
+  overflow-x: auto;
+  white-space: pre;
+  overflow-wrap: normal;
+}
+
+.diff {
+  padding: var(--space-2) 0;
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: var(--text-code);
+  line-height: var(--leading-code);
+}
+
+/* As wide as the longest line, so every row's tint spans the scrolled width. */
+.diff-lines {
+  width: max-content;
+  min-width: 100%;
+}
+
+.diff-line {
+  display: flex;
+  color: var(--color-code-text);
+}
+
+.diff-line[data-kind="added"] {
+  background: var(--color-diff-added-bg);
+}
+
+.diff-line[data-kind="removed"] {
+  background: var(--color-diff-removed-bg);
+}
+
+.diff-line[data-kind="context"] code {
+  opacity: 0.7;
+}
+
+.diff-number {
+  flex: none;
+  width: calc(var(--diff-digits) + var(--space-4) + var(--space-2));
+  padding: 0 var(--space-2) 0 var(--space-4);
+  color: var(--color-text-faint);
+  text-align: right;
+  user-select: none;
+}
+
+.diff-sign {
+  flex: none;
+  width: 2ch;
+  color: var(--color-text-muted);
+  user-select: none;
+}
+
+.diff-line code {
+  padding-right: var(--space-4);
+  white-space: pre;
+}
+
+.show-all {
+  display: block;
+  width: 100%;
+  padding: var(--space-2) var(--space-4);
+  border: 0;
+  border-top: 1px solid var(--color-hairline);
+  background: none;
+  color: var(--color-text-muted);
+  font-size: var(--text-small);
+  text-align: left;
+}
+
+.show-all:hover {
   color: var(--color-text-secondary);
 }
 

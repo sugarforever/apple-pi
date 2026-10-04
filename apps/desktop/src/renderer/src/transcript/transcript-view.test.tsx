@@ -29,6 +29,6 @@ describe("TranscriptView", () => {
     expect(html).not.toContain("Ran pnpm test");
     expect(html).toContain("<code>pnpm test</code>");
     expect(html).toContain('class="code-block"');
-    expect(html).toContain(">sh<");
+    expect(html).toContain(">Bash<");
   });
 });
