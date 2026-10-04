@@ -77,7 +77,9 @@ export function registerPiIpc({ handle, getWindow, catalog, pool, spawnEnv }: Pi
   // Importing Pi costs most of a second, so it waits until something needs it.
   handle("sessions:list", async (_event, workspace: unknown) => {
     const { SessionManager } = await import("@earendil-works/pi-coding-agent");
-    return SessionManager.list(knownWorkspace(workspace));
+    const sessions = await SessionManager.list(knownWorkspace(workspace));
+    // `allMessagesText` is every message of the chat; nothing in the window reads it, so it stays here.
+    return sessions.map((session) => ({ ...session, allMessagesText: "" }));
   });
 
   handle("pi:open", async (_event, value: unknown) => {

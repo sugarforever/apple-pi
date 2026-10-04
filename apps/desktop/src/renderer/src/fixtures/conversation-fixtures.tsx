@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo } from "react";
+import React, { useEffect, useMemo, useReducer } from "react";
+import { flushSync } from "react-dom";
 import { Folder, Settings } from "lucide-react";
 import type { SessionInfo } from "@earendil-works/pi-coding-agent";
 import { ConversationLayout } from "../app/conversation.js";
@@ -13,8 +14,9 @@ import { Shell } from "../shell/shell.js";
 import { TitleBar } from "../shell/title-bar.js";
 import type { ChatIndicator } from "../sidebar/activity.js";
 import { loadHighlighter } from "../transcript/highlight.js";
-import { initialTranscript, isRunning, type TranscriptState } from "../transcript/reducer.js";
+import { initialTranscript, isRunning, reduceTranscript, type TranscriptAction, type TranscriptState } from "../transcript/reducer.js";
 import { Sidebar } from "../sidebar/sidebar.js";
+import { longSession } from "./long-session.js";
 import { assistant, text, thinking, toolCall, toolResult, user } from "./sample-messages.js";
 
 /*
@@ -449,6 +451,14 @@ const fixtures: Record<string, FixtureDefinition> = {
       document.querySelector(".transcript-scroller")?.scrollBy(0, -120);
     },
   },
+  // ~1,500 messages. `window.fixtureDispatch` feeds it reducer actions, such as streaming deltas, for timing.
+  "conversation/long-session": {
+    state: () => ({ ...initialTranscript, messages: longSession() }),
+    async prepare() {
+      const scroller = document.querySelector(".transcript-scroller");
+      if (scroller) scroller.scrollTop = scroller.scrollHeight;
+    },
+  },
   "shell/new-chat": { state: () => initialTranscript, isNew: true },
   "shell/settings": { state: () => initialTranscript, page: "settings" },
   "composer/attachment": {
@@ -545,13 +555,17 @@ async function waitFor(selector: string): Promise<void> {
 
 export function ConversationFixture({ id }: { id: string }) {
   const fixture = fixtures[id];
-  const state = useMemo(() => fixture?.state(), [fixture]);
+  const initial = useMemo(() => fixture?.state(), [fixture]);
+  const [state, dispatch] = useReducer(reduceTranscript, initial ?? initialTranscript);
+  useEffect(() => {
+    Object.assign(window, { fixtureState: initial, fixtureDispatch: (action: TranscriptAction) => flushSync(() => dispatch(action)) });
+  }, [initial]);
   const extensionUI = useMemo(() => fixture?.extensionUI?.(), [fixture]);
   useEffect(() => {
     if (!fixture) return;
     void (fixture.prepare?.() ?? Promise.resolve()).then(nextFrame).then(() => (document.documentElement.dataset.visualFixtureReady = id));
   }, [fixture, id]);
-  if (!state) return <p>Unknown fixture: {id}</p>;
+  if (!initial) return <p>Unknown fixture: {id}</p>;
   const selected = fixture?.isNew || fixture?.page ? undefined : (fixture?.forked ?? sessions[0]!);
   const noop = () => undefined;
   const titleBar =

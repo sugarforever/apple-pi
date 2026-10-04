@@ -47,6 +47,7 @@ export interface ApplePiApi {
     remove(path: string): Promise<void>;
   };
   sessions: {
+    /** Pi's sessions for the workspace, with `allMessagesText` left empty: it holds the whole chat and nothing searches it. */
     list(workspace: string): Promise<SessionInfo[]>;
   };
   pi: {

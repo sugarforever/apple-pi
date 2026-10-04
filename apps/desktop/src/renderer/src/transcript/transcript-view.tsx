@@ -1,14 +1,17 @@
-import React, { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ArrowDown } from "lucide-react";
 import type { UserMessage } from "../pi/types.js";
 import type { TranscriptState } from "./reducer.js";
+import { ScrollRoot } from "./markdown.js";
 import { MessageBlock } from "./message-block.js";
-import { buildTranscript } from "./turns.js";
+import { transcriptBuilder } from "./turns.js";
 import { TurnView } from "./turn-view.js";
 import "./transcript.css";
 
 /** Distance from the bottom, in pixels, that still counts as following the conversation. */
 const FOLLOW_THRESHOLD = 48;
+/** The newest turns render their answers right away, so the view opens at an exact bottom; older ones parse as they come into view. */
+const EAGER_TURNS = 4;
 
 export interface TranscriptViewProps {
   state: TranscriptState;
@@ -19,8 +22,15 @@ export interface TranscriptViewProps {
 }
 
 export function TranscriptView({ state, empty, footer, onFork }: TranscriptViewProps) {
-  const entries = useMemo(() => buildTranscript(state), [state]);
+  // Turns that did not change keep their identity, so memoised turn views skip them while a reply streams.
+  const [build] = useState(transcriptBuilder);
+  const entries = useMemo(() => build(state), [build, state]);
   const scroller = useRef<HTMLDivElement>(null);
+  const [scrollRoot, setScrollRoot] = useState<HTMLDivElement | null>(null);
+  const attachScroller = useCallback((element: HTMLDivElement | null) => {
+    scroller.current = element;
+    setScrollRoot(element);
+  }, []);
   const following = useRef(true);
   const [atBottom, setAtBottom] = useState(true);
 
@@ -57,16 +67,18 @@ export function TranscriptView({ state, empty, footer, onFork }: TranscriptViewP
 
   return (
     <div className="transcript-frame">
-      <div className="transcript-scroller" ref={scroller} onScroll={measure}>
+      <div className="transcript-scroller" ref={attachScroller} onScroll={measure}>
         <div className="transcript" role="log" aria-label="Conversation">
           {entries.length === 0 && empty}
-          {entries.map((entry) =>
-            entry.kind === "turn" ? (
-              <TurnView key={entry.turn.key} turn={entry.turn} onFork={onFork} />
-            ) : (
-              <MessageBlock key={entry.key} message={entry.message} />
-            ),
-          )}
+          <ScrollRoot value={scrollRoot}>
+            {entries.map((entry, index) =>
+              entry.kind === "turn" ? (
+                <TurnView key={entry.turn.key} turn={entry.turn} onFork={onFork} deferred={index < entries.length - EAGER_TURNS} />
+              ) : (
+                <MessageBlock key={entry.key} message={entry.message} />
+              ),
+            )}
+          </ScrollRoot>
           {state.status && <p className="transcript-status">{state.status}</p>}
           {state.error && (
             <p className="transcript-error" role="alert">
