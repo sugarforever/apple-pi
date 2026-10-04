@@ -39,11 +39,13 @@ app
     window.webContents.debugger.attach("1.3");
     // Hidden windows never receive page focus; emulate it so :focus-visible fixtures render their rings.
     await window.webContents.debugger.sendCommand("Emulation.setFocusEmulationEnabled", { enabled: true });
-    await window.webContents.debugger.sendCommand("Emulation.setEmulatedMedia", {
-      features: [{ name: "prefers-reduced-motion", value: "reduce" }],
-    });
-
     for (const item of plan) {
+      await window.webContents.debugger.sendCommand("Emulation.setEmulatedMedia", {
+        features: [
+          { name: "prefers-reduced-motion", value: "reduce" },
+          { name: "prefers-color-scheme", value: item.colorScheme ?? "light" },
+        ],
+      });
       window.setContentSize(item.viewport.width, item.viewport.height);
       // Pin 1x through CDP; the command-line switch alone does not reach captures on HiDPI macOS displays.
       await window.webContents.debugger.sendCommand("Emulation.setDeviceMetricsOverride", {

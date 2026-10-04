@@ -174,7 +174,14 @@ export function Composer(props: ComposerProps) {
     >
       {paletteOpen && <CommandPalette id={paletteId} commands={matches} active={highlighted} onPick={pick} onHover={setActive} />}
       {queue && <QueuedMessages queue={queue} onClear={() => void clearQueue()} />}
-      <Attachments items={attachments} onRemove={(id) => setAttachments((current) => current.filter((item) => item.id !== id))} />
+      <Attachments
+        items={attachments}
+        onRemove={(id) => {
+          setAttachments((current) => current.filter((item) => item.id !== id));
+          // The removed button takes focus with it; the message box is where the user carries on.
+          input.current?.focus();
+        }}
+      />
       <textarea
         ref={input}
         className="composer-input"

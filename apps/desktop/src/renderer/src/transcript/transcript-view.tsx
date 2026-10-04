@@ -60,9 +60,12 @@ export function TranscriptView({ state, empty, footer, onFork }: TranscriptViewP
     return () => observer.disconnect();
   }, []);
 
-  const scrollToBottom = () => {
+  const scrollToBottom = (event: React.MouseEvent<HTMLButtonElement>) => {
     following.current = true;
-    scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: "smooth" });
+    // The button goes away at the bottom; keyboard focus moves on to the message box instead of being dropped.
+    if (document.activeElement === event.currentTarget) document.querySelector<HTMLElement>(".composer-input")?.focus({ preventScroll: true });
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: reduceMotion ? "auto" : "smooth" });
   };
 
   return (
@@ -89,7 +92,7 @@ export function TranscriptView({ state, empty, footer, onFork }: TranscriptViewP
         </div>
       </div>
       {!atBottom && (
-        <button type="button" className="scroll-to-bottom" onClick={scrollToBottom} aria-label="Scroll to bottom">
+        <button type="button" className="scroll-to-bottom" onClick={scrollToBottom} aria-label="Scroll to bottom" title="Scroll to bottom">
           <ArrowDown size={18} />
         </button>
       )}

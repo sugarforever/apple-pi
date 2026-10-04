@@ -24,4 +24,4 @@ Each feature folder under `apps/desktop/src/renderer/src/` owns its components a
 
 ## Visual fixtures
 
-`corepack pnpm --filter @apple-pi/desktop fixtures:generate` renders the static pages in [`fixtures/conversation-fixtures.tsx`](../apps/desktop/src/renderer/src/fixtures/conversation-fixtures.tsx), listed in [`visual-fixtures.json`](../apps/desktop/src/renderer/visual-fixtures.json), to `apps/desktop/out/visual-fixtures/` for review.
+`corepack pnpm --filter @apple-pi/desktop fixtures:generate` renders the static pages in [`fixtures/conversation-fixtures.tsx`](../apps/desktop/src/renderer/src/fixtures/conversation-fixtures.tsx), listed in [`visual-fixtures.json`](../apps/desktop/src/renderer/visual-fixtures.json), to `apps/desktop/out/visual-fixtures/` for review. Each page is captured at every viewport in each of the manifest's `colorSchemes`; dark captures carry a `--dark` suffix.

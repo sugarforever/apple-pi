@@ -4,7 +4,7 @@ import { MenuItem, useMenu, type MenuItemProps } from "../menu/menu.js";
 
 /** The "…" button a sidebar row reveals on hover, and its menu. */
 export function RowMenu({ label, items }: { label: string; items: (MenuItemProps & { key: string })[] }) {
-  const { open, setOpen, focusItem, toggle, rootRef, triggerRef, menuRef, onMenuKey } = useMenu();
+  const { open, close, focusItem, toggle, rootRef, triggerRef, menuRef, onMenuKey } = useMenu();
   useEffect(() => {
     if (open) focusItem();
   }, [open, focusItem]);
@@ -30,7 +30,7 @@ export function RowMenu({ label, items }: { label: string; items: (MenuItemProps
               key={key}
               {...item}
               onSelect={() => {
-                setOpen(false);
+                close();
                 onSelect();
               }}
             />

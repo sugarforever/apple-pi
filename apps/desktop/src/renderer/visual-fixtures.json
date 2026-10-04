@@ -9,6 +9,7 @@
       "height": 640
     }
   ],
+  "colorSchemes": ["light", "dark"],
   "fixtures": [
     "conversation/finished",
     "conversation/expanded",

@@ -55,7 +55,17 @@ export const TurnView = memo(function TurnView({ turn, onFork, deferred }: TurnV
 
 function WorkedForLabel({ turn }: { turn: Turn }) {
   const now = useNow(turn.running);
-  if (turn.running) return <span className="worked-for-live">Working for {formatDuration(now - (turn.startedAt ?? now))}</span>;
+  if (turn.running) {
+    // The transcript is a live log; a clock ticking inside it would be read out every second.
+    return (
+      <>
+        <span className="worked-for-live" aria-hidden>
+          Working for {formatDuration(now - (turn.startedAt ?? now))}
+        </span>
+        <span className="sr-only">Working</span>
+      </>
+    );
+  }
   return <span>{turn.durationMs !== undefined && turn.durationMs >= 1000 ? `Worked for ${formatDuration(turn.durationMs)}` : "Worked"}</span>;
 }
 
@@ -99,7 +109,7 @@ export function UserBubble({ message, onFork }: { message: UserMessage; onFork?(
           part.type === "text" ? (
             <p key={index}>{part.text}</p>
           ) : part.type === "image" ? (
-            <img key={index} src={`data:${part.mimeType};base64,${part.data}`} alt="" />
+            <img key={index} src={`data:${part.mimeType};base64,${part.data}`} alt="Attached image" />
           ) : (
             <UnknownBlock key={index} label="Unsupported content" value={part} />
           ),

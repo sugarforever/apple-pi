@@ -27,7 +27,6 @@ export function TitleBar({ sidebarOpen, onToggleSidebar, icon, title, detail, ac
           className="icon-button title-bar-button"
           aria-label={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
           title={`${sidebarOpen ? "Hide sidebar" : "Show sidebar"} ${shortcut("B")}`}
-          aria-pressed={sidebarOpen}
           onClick={onToggleSidebar}
         >
           <PanelLeft size={17} />

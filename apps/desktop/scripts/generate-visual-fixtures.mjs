@@ -5,12 +5,19 @@ import { fileURLToPath } from "node:url";
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
 
-function referenceFilename(fixture, viewport) {
-  return `${fixture.replaceAll("/", "-")}--${viewport.width}x${viewport.height}.png`;
+/** Light captures keep their original names; other schemes add a suffix. */
+function referenceFilename(fixture, viewport, colorScheme) {
+  const suffix = colorScheme === "light" ? "" : `--${colorScheme}`;
+  return `${fixture.replaceAll("/", "-")}--${viewport.width}x${viewport.height}${suffix}.png`;
 }
 
 function capturePlan(manifest) {
-  return manifest.fixtures.flatMap((fixture) => manifest.viewports.map((viewport) => ({ fixture, viewport, filename: referenceFilename(fixture, viewport) })));
+  const schemes = manifest.colorSchemes ?? ["light"];
+  return manifest.fixtures.flatMap((fixture) =>
+    schemes.flatMap((colorScheme) =>
+      manifest.viewports.map((viewport) => ({ fixture, viewport, colorScheme, filename: referenceFilename(fixture, viewport, colorScheme) })),
+    ),
+  );
 }
 
 function pngDimensions(buffer) {

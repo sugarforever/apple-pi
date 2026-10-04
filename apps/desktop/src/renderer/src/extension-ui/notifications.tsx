@@ -7,9 +7,9 @@ const ICONS = { info: Info, warning: TriangleAlert, error: CircleAlert } as cons
 
 /** Extension notifications and errors, stacked under the title bar and dismissed on their own. */
 export function Notifications({ notices, onDismiss }: { notices: readonly Notice[]; onDismiss(id: string): void }) {
-  if (notices.length === 0) return null;
+  // The region stays mounted even when empty: screen readers only announce what is added to a live region they already know.
   return (
-    <div className="extension-notices">
+    <div className="extension-notices" aria-live="polite">
       {notices.map((notice) => (
         <Toast key={notice.id} notice={notice} onDismiss={onDismiss} />
       ))}
@@ -29,7 +29,7 @@ function Toast({ notice, onDismiss }: { notice: Notice; onDismiss(id: string): v
 
   const Icon = ICONS[notice.level];
   return (
-    <div className={`extension-notice extension-notice-${notice.level}`} role={notice.level === "error" ? "alert" : "status"}>
+    <div className={`extension-notice extension-notice-${notice.level}`} role={notice.level === "error" ? "alert" : undefined}>
       <Icon className="extension-notice-icon" size={15} aria-hidden />
       <span className="extension-notice-text">{notice.message}</span>
       <button type="button" className="extension-notice-close" aria-label="Dismiss" onClick={() => onDismiss(notice.id)}>
