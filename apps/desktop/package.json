@@ -1,7 +1,7 @@
 {
   "name": "@apple-pi/desktop",
-  "productName": "Apple Pi",
-  "version": "0.6.0",
+  "productName": "Apple Pi Lite",
+  "version": "0.7.0",
   "private": true,
   "homepage": "https://github.com/sugarforever/apple-pi",
   "type": "module",
@@ -42,19 +42,23 @@
     "vitest": "4.0.18"
   },
   "build": {
-    "appId": "verysmallwoods.applepi",
+    "appId": "ai.applepi.lite",
     "afterSign": "scripts/resign-macos-adhoc.mjs",
     "publish": [
       {
         "provider": "github",
         "owner": "sugarforever",
-        "repo": "apple-pi"
+        "repo": "apple-pi",
+        "channel": "lite"
       }
     ],
+    "extraMetadata": {
+      "name": "apple-pi-lite"
+    },
     "directories": {
       "output": "release"
     },
-    "artifactName": "apple-pi-${version}-${os}-${arch}.${ext}",
+    "artifactName": "apple-pi-lite-${version}-${os}-${arch}.${ext}",
     "files": [
       "out/**/*",
       "package.json"
@@ -77,10 +81,10 @@
       ]
     },
     "nsis": {
-      "artifactName": "apple-pi-${version}-win-${arch}-setup.${ext}"
+      "artifactName": "apple-pi-lite-${version}-win-${arch}-setup.${ext}"
     },
     "portable": {
-      "artifactName": "apple-pi-${version}-win-${arch}-portable.${ext}"
+      "artifactName": "apple-pi-lite-${version}-win-${arch}-portable.${ext}"
     },
     "linux": {
       "target": [
@@ -91,10 +95,10 @@
       "maintainer": "sugarforever"
     },
     "appImage": {
-      "artifactName": "apple-pi-${version}-linux-x64.${ext}"
+      "artifactName": "apple-pi-lite-${version}-linux-x64.${ext}"
     },
     "deb": {
-      "artifactName": "apple-pi-${version}-linux-x64.${ext}"
+      "artifactName": "apple-pi-lite-${version}-linux-x64.${ext}"
     }
   }
 }

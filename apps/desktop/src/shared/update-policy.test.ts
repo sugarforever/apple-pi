@@ -23,25 +23,30 @@ describe("update eligibility", () => {
 
 describe("update channel", () => {
   it("defaults to stable", () => {
-    expect(resolveUpdateChannel(undefined)).toBe("latest");
-    expect(resolveUpdateChannel("")).toBe("latest");
-    expect(resolveUpdateChannel("   ")).toBe("latest");
+    expect(resolveUpdateChannel(undefined)).toBe("lite");
+    expect(resolveUpdateChannel("")).toBe("lite");
+    expect(resolveUpdateChannel("   ")).toBe("lite");
   });
 
   it("accepts beta however it is written", () => {
-    expect(resolveUpdateChannel("beta")).toBe("beta");
-    expect(resolveUpdateChannel(" Beta ")).toBe("beta");
+    expect(resolveUpdateChannel("beta")).toBe("lite-beta");
+    expect(resolveUpdateChannel(" Beta ")).toBe("lite-beta");
   });
 
   it("falls back to stable rather than to a channel with no manifest", () => {
-    // The release workflow only ever publishes latest and beta manifests, so an
+    // The release workflow only ever publishes the lite manifests, so an
     // unknown value must not become a channel the updater cannot fetch.
-    expect(resolveUpdateChannel("nightly")).toBe("latest");
-    expect(resolveUpdateChannel("latest")).toBe("latest");
+    expect(resolveUpdateChannel("nightly")).toBe("lite");
+    expect(resolveUpdateChannel("lite")).toBe("lite");
+  });
+
+  it("never follows the earlier Apple Pi's latest feed", () => {
+    // Apple Pi 0.6 and earlier read latest*.yml from the same releases.
+    expect(resolveUpdateChannel("latest")).toBe("lite");
   });
 
   it("describes the channel for a log line", () => {
-    expect(describeUpdateTarget("latest")).toBe("the stable channel");
-    expect(describeUpdateTarget("beta")).toBe("the beta channel");
+    expect(describeUpdateTarget("lite")).toBe("the stable channel");
+    expect(describeUpdateTarget("lite-beta")).toBe("the beta channel");
   });
 });

@@ -241,7 +241,7 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         shell: bash
         run: |
-          app_path="apps/desktop/release/${{ matrix.app-dir }}/Apple Pi.app"
+          app_path="apps/desktop/release/${{ matrix.app-dir }}/Apple Pi Lite.app"
           codesign --verify --deep --strict --verbose=2 "$app_path"
           team_id="$(codesign -dv --verbose=4 "$app_path" 2>&1 | sed -n 's/^TeamIdentifier=//p')"
           [[ "$team_id" == "$APPLE_TEAM_ID" ]] || { echo "Unexpected signing team" >&2; exit 1; }
@@ -293,8 +293,8 @@ jobs:
           node-version: 22.22.1
 
       # The updater on each platform reads one canonical manifest, but
-      # electron-builder names the manifest after the platform rather than the
-      # build — so both macOS jobs uploaded a file called latest-mac.yml, each
+      # electron-builder names the manifest after the channel and platform rather
+      # than the build — so both macOS jobs uploaded a file called lite-mac.yml, each
       # listing only its own archive. Merge them here: after every platform has
       # uploaded, and before the release becomes immutable and unpublishable.
       - name: Assemble the update feed
@@ -309,7 +309,7 @@ jobs:
           gh release download "$TAG_NAME" --pattern 'update-*.yml' --dir "$feed"
           node apps/desktop/scripts/assemble-update-manifests.mjs \
             --input "$feed" --output "$feed" --expect "$APPLE_PI_RELEASE_PLATFORMS"
-          gh release upload "$TAG_NAME" "$feed"/latest*.yml --clobber
+          gh release upload "$TAG_NAME" "$feed"/lite*.yml --clobber
           for staged in "$feed"/update-*.yml; do
             gh release delete-asset "$TAG_NAME" "$(basename "$staged")" --yes
           done

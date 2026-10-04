@@ -1,24 +1,25 @@
 import { spawn } from "node:child_process";
-import { mkdtemp, readdir, rm } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const desktopDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const releaseDir = path.join(desktopDir, "release");
+const { productName } = JSON.parse(await readFile(path.join(desktopDir, "package.json"), "utf8"));
 
 if (process.platform !== "darwin") throw new Error("The macOS package launch smoke check must run on macOS");
 
 async function findMacApps(directory) {
   const entries = await readdir(directory, { withFileTypes: true });
-  return entries.filter((entry) => entry.isDirectory() && entry.name.startsWith("mac")).map((entry) => path.join(directory, entry.name, "Apple Pi.app"));
+  return entries.filter((entry) => entry.isDirectory() && entry.name.startsWith("mac")).map((entry) => path.join(directory, entry.name, `${productName}.app`));
 }
 
 const apps = await findMacApps(releaseDir);
 if (apps.length !== 1) throw new Error(`Expected one unpacked macOS app in ${releaseDir}, found ${apps.length}`);
 
 const profileDir = await mkdtemp(path.join(os.tmpdir(), "apple-pi-package-smoke-"));
-const executable = path.join(apps[0], "Contents", "MacOS", "Apple Pi");
+const executable = path.join(apps[0], "Contents", "MacOS", productName);
 const child = spawn(executable, [`--user-data-dir=${profileDir}`], { stdio: ["ignore", "pipe", "pipe"] });
 let stderr = "";
 child.stderr.setEncoding("utf8").on("data", (chunk) => {

@@ -1,6 +1,11 @@
-# Apple Pi
+# Apple Pi Lite
 
 An experimental Electron desktop client for the [pi coding agent](https://github.com/earendil-works/pi).
+
+Apple Pi Lite is a separate app from the earlier Apple Pi (v0.6 and earlier). It has
+its own bundle identifier (`ai.applepi.lite`), installs side by side with the earlier
+app, keeps its data in its own `Apple Pi Lite` folder, and follows its own update
+feed. It does not share or migrate settings or data from Apple Pi.
 
 ## Getting started
 
@@ -15,11 +20,11 @@ corepack pnpm install
 corepack pnpm dev
 ```
 
-Apple Pi is a thin graphical client: every session runs the bundled Pi in RPC
+Apple Pi Lite is a thin graphical client: every session runs the bundled Pi in RPC
 mode, so providers, credentials, skills, extensions, and settings are Pi's own.
 If Pi is not authenticated, run `pi` in a terminal and use `/login` first; API
 keys exported in your shell profile are picked up too. Manage skills, extensions,
-and packages with `pi config` and `pi install`. In Apple Pi, add a project, start
+and packages with `pi config` and `pi install`. In Apple Pi Lite, add a project, start
 a chat, and send a prompt.
 
 Sessions are Pi's normal JSONL files and stay compatible with the Pi CLI.
@@ -28,7 +33,7 @@ Sessions are Pi's normal JSONL files and stay compatible with the Pi CLI.
 
 Everything lives in `apps/desktop`: Electron main, preload, and the React
 renderer. See [the RPC thin-client architecture](docs/architecture/apple-pi-pi-agent-integration.md)
-for the process boundary and the rules that keep Apple Pi thin, and
+for the process boundary and the rules that keep Apple Pi Lite thin, and
 [Renderer UI conventions](docs/renderer-ui-conventions.md) for tokens and layout.
 
 Run commands from the repository root. `corepack pnpm dev` starts Electron with
@@ -86,7 +91,8 @@ corepack pnpm test:mac-package-launch
 | Windows  | `x64`                             | NSIS installer, portable EXE |
 | Linux    | `x64`                             | AppImage, DEB                |
 
-Local packages are written to `apps/desktop/release/`. Push a `v*` tag to run the
+Packages are named `apple-pi-lite-<version>-<os>-<arch>.<ext>`; on macOS the app is
+`Apple Pi Lite.app`. Local packages are written to `apps/desktop/release/`. Push a `v*` tag to run the
 [Package desktop workflow](.github/workflows/package-desktop.yml), which uploads
 each successful native build directly to a draft GitHub Release with deterministic
 version/OS/architecture names and a `.sha256` sidecar for every download. The
@@ -119,6 +125,6 @@ unsigned until a trusted Windows code-signing certificate is configured.
 
 ## Architecture and compatibility
 
-Apple Pi bundles one exact Pi version. Upgrading it follows the routine in
+Apple Pi Lite bundles one exact Pi version. Upgrading it follows the routine in
 [the architecture doc](docs/architecture/apple-pi-pi-agent-integration.md#upgrading-pi),
 and release failures are covered by the [release runbook](docs/operations/release-runbook.md).

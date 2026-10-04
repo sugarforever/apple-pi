@@ -12,10 +12,10 @@ test("collects only expected packages and writes portable SHA-256 sidecars", asy
   const releaseDir = path.join(root, "release");
   const outputRoot = path.join(root, "artifacts");
   await mkdir(path.join(releaseDir, "mac-arm64"), { recursive: true });
-  await writeFile(path.join(releaseDir, "apple-pi-0.1.0-mac-arm64.dmg"), "dmg");
-  await writeFile(path.join(releaseDir, "apple-pi-0.1.0-mac-arm64.zip"), "zip");
-  await writeFile(path.join(releaseDir, "apple-pi-0.1.0-mac-arm64.zip.blockmap"), "blockmap");
-  await writeFile(path.join(releaseDir, "latest-mac.yml"), "version: 0.1.0\n");
+  await writeFile(path.join(releaseDir, "apple-pi-lite-0.1.0-mac-arm64.dmg"), "dmg");
+  await writeFile(path.join(releaseDir, "apple-pi-lite-0.1.0-mac-arm64.zip"), "zip");
+  await writeFile(path.join(releaseDir, "apple-pi-lite-0.1.0-mac-arm64.zip.blockmap"), "blockmap");
+  await writeFile(path.join(releaseDir, "lite-mac.yml"), "version: 0.1.0\n");
   await writeFile(path.join(releaseDir, "builder-debug.yml"), "ignored");
 
   const outputDir = await collectPackageArtifacts({
@@ -28,18 +28,18 @@ test("collects only expected packages and writes portable SHA-256 sidecars", asy
     requiredSuffixes: [".dmg", ".zip"],
   });
 
-  assert.equal(outputDir, path.join(outputRoot, "apple-pi-0.1.0-macos-arm64"));
+  assert.equal(outputDir, path.join(outputRoot, "apple-pi-lite-0.1.0-macos-arm64"));
   assert.deepEqual(await readdir(outputDir), [
-    "apple-pi-0.1.0-mac-arm64.dmg",
-    "apple-pi-0.1.0-mac-arm64.dmg.sha256",
-    "apple-pi-0.1.0-mac-arm64.zip",
-    "apple-pi-0.1.0-mac-arm64.zip.blockmap",
-    "apple-pi-0.1.0-mac-arm64.zip.sha256",
+    "apple-pi-lite-0.1.0-mac-arm64.dmg",
+    "apple-pi-lite-0.1.0-mac-arm64.dmg.sha256",
+    "apple-pi-lite-0.1.0-mac-arm64.zip",
+    "apple-pi-lite-0.1.0-mac-arm64.zip.blockmap",
+    "apple-pi-lite-0.1.0-mac-arm64.zip.sha256",
     "update-mac-arm64.yml",
   ]);
   assert.equal(
-    await readFile(path.join(outputDir, "apple-pi-0.1.0-mac-arm64.dmg.sha256"), "utf8"),
-    "00cbbd0ddbda2762798f7009838ed34ca1f12b93965813c7df22943bc62166d1  apple-pi-0.1.0-mac-arm64.dmg\n",
+    await readFile(path.join(outputDir, "apple-pi-lite-0.1.0-mac-arm64.dmg.sha256"), "utf8"),
+    "00cbbd0ddbda2762798f7009838ed34ca1f12b93965813c7df22943bc62166d1  apple-pi-lite-0.1.0-mac-arm64.dmg\n",
   );
 });
 
@@ -59,7 +59,7 @@ test("rejects a release directory with no matching package", async (t) => {
       arch: "x64",
       requiredSuffixes: ["-setup.exe", "-portable.exe"],
     }),
-    /Missing packaged artifacts: apple-pi-0\.1\.0-win-x64-portable\.exe, apple-pi-0\.1\.0-win-x64-setup\.exe/,
+    /Missing packaged artifacts: apple-pi-lite-0\.1\.0-win-x64-portable\.exe, apple-pi-lite-0\.1\.0-win-x64-setup\.exe/,
   );
 });
 
@@ -69,9 +69,9 @@ test("collects distinct installer targets that share an extension", async (t) =>
   const releaseDir = path.join(root, "release");
   const outputRoot = path.join(root, "artifacts");
   await mkdir(releaseDir);
-  await writeFile(path.join(releaseDir, "apple-pi-0.1.0-win-x64-setup.exe"), "setup");
-  await writeFile(path.join(releaseDir, "apple-pi-0.1.0-win-x64-portable.exe"), "portable");
-  await writeFile(path.join(releaseDir, "latest.yml"), "version: 0.1.0\n");
+  await writeFile(path.join(releaseDir, "apple-pi-lite-0.1.0-win-x64-setup.exe"), "setup");
+  await writeFile(path.join(releaseDir, "apple-pi-lite-0.1.0-win-x64-portable.exe"), "portable");
+  await writeFile(path.join(releaseDir, "lite.yml"), "version: 0.1.0\n");
 
   const outputDir = await collectPackageArtifacts({
     releaseDir,
@@ -85,7 +85,7 @@ test("collects distinct installer targets that share an extension", async (t) =>
 
   assert.deepEqual(
     (await readdir(outputDir)).filter((file) => !file.endsWith(".sha256")),
-    ["apple-pi-0.1.0-win-x64-portable.exe", "apple-pi-0.1.0-win-x64-setup.exe", "update-win-x64.yml"],
+    ["apple-pi-lite-0.1.0-win-x64-portable.exe", "apple-pi-lite-0.1.0-win-x64-setup.exe", "update-win-x64.yml"],
   );
 });
 
@@ -94,8 +94,10 @@ test("rejects a release directory whose update manifest is missing", async (t) =
   t.after(() => rm(root, { recursive: true, force: true }));
   const releaseDir = path.join(root, "release");
   await mkdir(releaseDir);
-  await writeFile(path.join(releaseDir, "apple-pi-0.1.0-linux-x64.AppImage"), "appimage");
-  await writeFile(path.join(releaseDir, "apple-pi-0.1.0-linux-x64.deb"), "deb");
+  await writeFile(path.join(releaseDir, "apple-pi-lite-0.1.0-linux-x64.AppImage"), "appimage");
+  await writeFile(path.join(releaseDir, "apple-pi-lite-0.1.0-linux-x64.deb"), "deb");
+  // The default channel's feed belongs to the earlier Apple Pi, so it never counts.
+  await writeFile(path.join(releaseDir, "latest-linux.yml"), "version: 0.1.0\n");
 
   // Without a manifest the release would publish with no update feed at all, and
   // nothing else in the pipeline would notice.
@@ -118,7 +120,7 @@ test("rejects a partial multi-target package set", async (t) => {
   t.after(() => rm(root, { recursive: true, force: true }));
   const releaseDir = path.join(root, "release");
   await mkdir(releaseDir);
-  await writeFile(path.join(releaseDir, "apple-pi-0.1.0-linux-x64.AppImage"), "appimage");
+  await writeFile(path.join(releaseDir, "apple-pi-lite-0.1.0-linux-x64.AppImage"), "appimage");
 
   await assert.rejects(
     collectPackageArtifacts({
@@ -130,7 +132,7 @@ test("rejects a partial multi-target package set", async (t) => {
       arch: "x64",
       requiredSuffixes: [".AppImage", ".deb"],
     }),
-    /Missing packaged artifacts: apple-pi-0\.1\.0-linux-x64\.deb/,
+    /Missing packaged artifacts: apple-pi-lite-0\.1\.0-linux-x64\.deb/,
   );
 });
 
@@ -141,8 +143,8 @@ test("writes version and artifact path as GitHub step outputs", async (t) => {
 
   await writeGitHubOutputs(outputFile, {
     version: "0.1.0",
-    artifact_path: "/tmp/artifacts/apple-pi-0.1.0-macos-arm64",
+    artifact_path: "/tmp/artifacts/apple-pi-lite-0.1.0-macos-arm64",
   });
 
-  assert.equal(await readFile(outputFile, "utf8"), ["version=0.1.0", "artifact_path=/tmp/artifacts/apple-pi-0.1.0-macos-arm64", ""].join("\n"));
+  assert.equal(await readFile(outputFile, "utf8"), ["version=0.1.0", "artifact_path=/tmp/artifacts/apple-pi-lite-0.1.0-macos-arm64", ""].join("\n"));
 });

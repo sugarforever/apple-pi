@@ -38,13 +38,18 @@ bridge would cascade. The manual tag push is the trigger, not ceremony.
 ## The update feed
 
 Each build publishes an electron-updater manifest next to its artifacts, and installed apps
-read it to find the next release:
+read it to find the next release. Apple Pi Lite publishes on the `lite` channel
+(`build.publish[].channel` in `apps/desktop/package.json`), never the default `latest`: the
+earlier Apple Pi (v0.6 and earlier) reads `latest*.yml` from the same GitHub releases, so a
+`lite` feed keeps old installs from updating into Lite and Lite from updating into an old
+build. An old install that checks a Lite release finds no `latest-mac.yml`, logs a failed
+check, and stays on its version.
 
 | Platform | Manifest | Notes |
 | --- | --- | --- |
-| macOS | `latest-mac.yml` | **Both architectures in one file** — electron-builder adds no arch suffix here, so the two macOS jobs each write a file with the same name and the feeds must be merged |
-| Windows | `latest.yml` | one architecture, so nothing to merge |
-| Linux | `latest-linux.yml` | `x64` has no arch suffix; an `arm64` build would add `-arm64` |
+| macOS | `lite-mac.yml` | **Both architectures in one file** — electron-builder adds no arch suffix here, so the two macOS jobs each write a file with the same name and the feeds must be merged |
+| Windows | `lite.yml` | one architecture, so nothing to merge |
+| Linux | `lite-linux.yml` | `x64` has no arch suffix; an `arm64` build would add `-arm64` |
 
 `collect-package-artifacts.mjs` carries the manifest and the `.blockmap` files (which enable
 differential downloads) into the uploaded artifact set, staging the manifest under a
@@ -60,7 +65,7 @@ idempotent.
 
 ### Behaviour in the app
 
-An update downloads in the background and installs when Apple Pi quits. There is no prompt and no
+An update downloads in the background and installs when Apple Pi Lite quits. There is no prompt and no
 update UI. Downgrades are refused (`allowDowngrade = false`), so a published version cannot be
 replaced by an older one.
 
@@ -68,7 +73,7 @@ replaced by an older one.
 | --- | --- |
 | `APPLE_PI_DISABLE_UPDATES=1` | never check |
 | `APPLE_PI_FORCE_UPDATES=1` | allow a dev build to check, for testing a feed |
-| `APPLE_PI_UPDATE_CHANNEL=beta` | follow the beta channel instead of stable — **not yet usable**: this workflow only ever publishes the stable feed, so a beta check never finds a manifest |
+| `APPLE_PI_UPDATE_CHANNEL=beta` | follow the `lite-beta` channel instead of `lite` — **not yet usable**: this workflow only ever publishes the stable feed, so a beta check never finds a manifest |
 
 Two requirements come from macOS, not from this repository:
 
@@ -83,7 +88,7 @@ Two requirements come from macOS, not from this repository:
 publisher config existed can update itself** — including every release up to this point. Those
 installs need one manual download. The feed then describes each *next* release, so verifying it
 end to end takes two releases: install one, publish the next, and confirm the app logs
-`update downloaded; it will install when Apple Pi quits`, then reports the new version after a
+`update downloaded; it will install when Apple Pi Lite quits`, then reports the new version after a
 restart.
 
 ## Immutable releases are enabled
@@ -165,9 +170,9 @@ shasum -a 256 -c apple-pi-<version>-mac-arm64.dmg.sha256
 For macOS, confirm the artifact is signed, notarized, and stapled:
 
 ```bash
-spctl -a -vvv -t exec "Apple Pi.app"      # expect: accepted, source=Notarized Developer ID
-xcrun stapler validate "Apple Pi.app"     # expect: The validate action worked!
-codesign -dv --verbose=4 "Apple Pi.app"   # expect: Developer ID Application, flags=…(runtime)
+spctl -a -vvv -t exec "Apple Pi Lite.app"      # expect: accepted, source=Notarized Developer ID
+xcrun stapler validate "Apple Pi Lite.app"     # expect: The validate action worked!
+codesign -dv --verbose=4 "Apple Pi Lite.app"   # expect: Developer ID Application, flags=…(runtime)
 ```
 
 Windows artifacts are unsigned, so SmartScreen will warn until a code-signing certificate is

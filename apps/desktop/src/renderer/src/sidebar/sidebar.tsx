@@ -44,7 +44,7 @@ export function Sidebar(props: SidebarProps) {
   return (
     <nav className="sidebar" aria-label="Projects and chats">
       <div className="sidebar-header">
-        <span className="sidebar-app-name">Apple Pi</span>
+        <span className="sidebar-app-name">Apple Pi Lite</span>
         <button
           type="button"
           className="icon-button"

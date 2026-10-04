@@ -7,9 +7,9 @@ import { pathToFileURL } from "node:url";
  * Turns the per-build update manifests into the one file each platform's updater
  * looks for.
  *
- * electron-builder names the feed after the platform, not the build, so a
- * two-architecture macOS release produces two manifests both called
- * latest-mac.yml — each listing only the archive that job built. Uploaded to the
+ * electron-builder names the feed after the channel and platform, not the build,
+ * so a two-architecture macOS release produces two manifests both called
+ * lite-mac.yml — each listing only the archive that job built. Uploaded to the
  * same release, the second replaces the first, and the updater on the other
  * architecture finds no file matching its own and silently never updates. So the
  * macOS manifests are collected under build-specific names and merged here.
@@ -18,11 +18,15 @@ import { pathToFileURL } from "node:url";
  * `-${buildConfigurationKey}` on every platform except Windows, plus an arch
  * suffix only outside x64 on Linux. That is why macOS needs merging and the
  * others do not, and why this only runs before the release is published.
+ *
+ * The channel is `lite` (`build.publish[].channel` in package.json). The earlier
+ * Apple Pi (0.6 and before) reads the default `latest*.yml` from the same GitHub
+ * releases, so Apple Pi Lite must never publish under those names.
  */
 const CANONICAL_NAMES = {
-  mac: "latest-mac.yml",
-  win: "latest.yml",
-  linux: "latest-linux.yml",
+  mac: "lite-mac.yml",
+  win: "lite.yml",
+  linux: "lite-linux.yml",
 };
 
 /** `update-<platform>-<arch>.yml`, the name the collector stages. */

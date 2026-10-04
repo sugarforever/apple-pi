@@ -4,19 +4,21 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 export async function collectPackageArtifacts({ releaseDir, outputRoot, version, osName, artifactOs, arch, requiredSuffixes }) {
-  const prefix = `apple-pi-${version}-${artifactOs}-${arch}`;
+  const prefix = `apple-pi-lite-${version}-${artifactOs}-${arch}`;
   const entries = (await readdir(releaseDir, { withFileTypes: true })).filter((entry) => entry.isFile()).map((entry) => entry.name);
   const available = new Set(entries);
   const files = requiredSuffixes.map((suffix) => `${prefix}${suffix}`).sort();
   const missing = files.filter((file) => !available.has(file));
   if (missing.length > 0) throw new Error(`Missing packaged artifacts: ${missing.join(", ")}`);
 
-  // electron-builder names the update feed after the platform rather than the
-  // build, so both macOS jobs write latest-mac.yml and would clobber each other
-  // when they upload. Stage it under a build-specific name instead;
+  // electron-builder names the update feed after the channel and platform rather
+  // than the build, so both macOS jobs write lite-mac.yml and would clobber each
+  // other when they upload. Stage it under a build-specific name instead;
   // assemble-update-manifests.mjs writes the canonical file once every platform
-  // has been collected.
-  const manifests = entries.filter((entry) => /^latest.*\.yml$/.test(entry)).sort();
+  // has been collected. Only the `lite` channel is accepted: a `latest*.yml` here
+  // would mean the publish config lost its channel, and that feed belongs to the
+  // earlier Apple Pi.
+  const manifests = entries.filter((entry) => /^lite(-[a-z0-9-]+)?\.yml$/.test(entry)).sort();
   if (manifests.length !== 1) {
     throw new Error(`Expected exactly one update manifest in ${releaseDir}, found ${manifests.length === 0 ? "none" : manifests.join(", ")}`);
   }
@@ -24,7 +26,7 @@ export async function collectPackageArtifacts({ releaseDir, outputRoot, version,
   // not collide. They enable differential downloads.
   const blockmaps = entries.filter((entry) => entry.endsWith(".blockmap"));
 
-  const outputDir = path.join(outputRoot, `apple-pi-${version}-${osName}-${arch}`);
+  const outputDir = path.join(outputRoot, `apple-pi-lite-${version}-${osName}-${arch}`);
   await rm(outputDir, { recursive: true, force: true });
   await mkdir(outputDir, { recursive: true });
   for (const file of files) {
