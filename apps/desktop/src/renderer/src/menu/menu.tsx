@@ -60,6 +60,8 @@ export function useMenu(initiallyOpen = false): MenuState {
         event.preventDefault();
         close();
       } else if (event.key === "Tab") {
+        // From the trigger, the browser's own Tab moves on to the next control instead of losing focus with the menu.
+        trigger.current?.focus();
         setOpen(false);
       }
     },

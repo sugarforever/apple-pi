@@ -119,8 +119,14 @@ function ConfirmBody({ message, footer, onAnswer }: { message: string; footer: R
 function SelectBody({ options, labelledBy, onPick }: { options: string[]; labelledBy: string; onPick(value: string): void }) {
   const [active, setActive] = useState(0);
   const id = useId();
+  const list = useRef<HTMLUListElement>(null);
+  // Focus stays on the list, so keep the highlighted option in view as the arrows move it.
+  useEffect(() => {
+    list.current?.children[active]?.scrollIntoView({ block: "nearest" });
+  }, [active]);
   return (
     <ul
+      ref={list}
       className="extension-options"
       role="listbox"
       tabIndex={0}
@@ -128,10 +134,10 @@ function SelectBody({ options, labelledBy, onPick }: { options: string[]; labell
       aria-labelledby={labelledBy}
       aria-activedescendant={options.length > 0 ? `${id}-${active}` : undefined}
       onKeyDown={(event) => {
-        const step = { ArrowDown: 1, ArrowUp: -1 }[event.key];
-        if (step !== undefined && options.length > 0) {
+        const target = { ArrowDown: active + 1, ArrowUp: active - 1, Home: 0, End: options.length - 1 }[event.key];
+        if (target !== undefined && options.length > 0) {
           event.preventDefault();
-          setActive((active + step + options.length) % options.length);
+          setActive((target + options.length) % options.length);
         } else if (event.key === "Enter" && options[active] !== undefined) {
           event.preventDefault();
           onPick(options[active]);

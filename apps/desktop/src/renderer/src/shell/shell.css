@@ -39,10 +39,15 @@
   min-width: 0;
   font-size: var(--text-ui);
   user-select: none;
+}
+
+/* Only macOS draws its own title bar; elsewhere the system frame stays and drags the window. */
+.shell[data-platform="mac"] .title-bar {
   -webkit-app-region: drag;
 }
 
-.title-bar button {
+.shell[data-platform="mac"] .title-bar button,
+.shell[data-platform="mac"] .title-bar .menu {
   -webkit-app-region: no-drag;
 }
 

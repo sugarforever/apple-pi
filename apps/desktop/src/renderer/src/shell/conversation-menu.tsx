@@ -20,7 +20,7 @@ const compactNumber = new Intl.NumberFormat("en", { notation: "compact", maximum
 
 /** The title bar's "…" menu: workspace shortcuts, session actions, and Pi's session statistics. */
 export function ConversationMenu({ workspace, sessionFile, loadStats, compact, duplicate, onError, initialStats }: ConversationMenuProps) {
-  const { open, setOpen, focusItem, toggle, rootRef, triggerRef, menuRef, onMenuKey } = useMenu(Boolean(initialStats));
+  const { open, close, focusItem, toggle, rootRef, triggerRef, menuRef, onMenuKey } = useMenu(Boolean(initialStats));
   const [stats, setStats] = useState<SessionStats | undefined>(initialStats);
   const loader = useRef(loadStats);
   useEffect(() => {
@@ -42,7 +42,7 @@ export function ConversationMenu({ workspace, sessionFile, loadStats, compact, d
   }, [open, focusItem]);
 
   const run = (action: () => Promise<unknown> | undefined) => () => {
-    setOpen(false);
+    close();
     void Promise.resolve(action()).catch(onError);
   };
 

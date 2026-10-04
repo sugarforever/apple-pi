@@ -78,10 +78,19 @@
   right: var(--space-4);
   bottom: var(--space-4);
   max-width: 420px;
-  padding: var(--space-3) var(--space-4);
   border-radius: var(--radius-md);
   background: var(--color-danger-bg);
   color: var(--color-danger);
   font-size: var(--text-ui);
   box-shadow: var(--shadow-floating);
+}
+
+/* The whole message is the dismiss control, so it works from the keyboard too. */
+.app-error-dismiss {
+  width: 100%;
+  padding: var(--space-3) var(--space-4);
+  border: 0;
+  border-radius: inherit;
+  background: none;
+  text-align: left;
 }

@@ -8,6 +8,7 @@
   border-radius: var(--radius-composer);
   background: var(--color-surface);
   box-shadow: var(--shadow-composer);
+  container-type: inline-size;
 }
 
 /* The card shows focus for its text field, which draws no ring of its own. */
@@ -82,6 +83,13 @@
   color: var(--color-text-muted);
   font-size: var(--text-small);
   white-space: nowrap;
+}
+
+/* In a narrow window the model chip keeps its name; the key hint gives way. */
+@container (max-width: 440px) {
+  .composer-hint {
+    display: none;
+  }
 }
 
 .composer-text-button {

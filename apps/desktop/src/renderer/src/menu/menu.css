@@ -44,10 +44,14 @@
   text-align: left;
 }
 
-.menu-item:hover:not(:disabled),
+.menu-item:hover:not(:disabled) {
+  background: var(--color-hover);
+}
+
+/* The keyboard's item reads a step stronger than a hover, in place of the shared ring. */
 .menu-item:focus-visible {
   outline: none;
-  background: var(--color-hover);
+  background: var(--color-selected);
 }
 
 .menu-item:disabled {

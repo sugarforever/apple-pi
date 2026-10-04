@@ -233,8 +233,11 @@ export function App() {
         </main>
       )}
       {error && (
-        <div className="app-error" role="alert" onClick={() => setError("")}>
-          {error}
+        <div className="app-error" role="alert">
+          <button type="button" className="app-error-dismiss" title="Dismiss" onClick={() => setError("")}>
+            {error}
+            <span className="sr-only">, dismiss</span>
+          </button>
         </div>
       )}
     </Shell>
