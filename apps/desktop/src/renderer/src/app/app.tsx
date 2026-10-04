@@ -8,10 +8,12 @@ import { IconRail, type ShellView } from "../shell/icon-rail.js";
 import { Shell } from "../shell/shell.js";
 import { TitleBar } from "../shell/title-bar.js";
 import { chatIndicator } from "../sidebar/activity.js";
+import { adjacentChat } from "../sidebar/chats.js";
 import { Sidebar } from "../sidebar/sidebar.js";
 import { useActivity } from "../sidebar/use-activity.js";
 import { useWorkspaces } from "../sidebar/use-workspaces.js";
 import { Conversation, type ConversationHandle } from "./conversation.js";
+import { useAppCommands } from "./use-app-commands.js";
 
 /** Which conversation is on screen. `id` changes only when the user picks another chat. */
 interface Chat {
@@ -110,15 +112,43 @@ export function App() {
     refresh(chatWorkspace);
   }, [chatWorkspace, refresh, setExpanded]);
 
+  const [searchRequest, setSearchRequest] = useState(0);
+  const toggleSidebar = () => {
+    setSidebarOpen((open) => !open);
+    // A sidebar shown again starts with search closed, whatever opened it last time.
+    setSearchRequest(0);
+  };
+
+  /** Moves through the chats the sidebar lists, in its order. */
+  const stepChat = (step: 1 | -1) => {
+    const listed = workspaces.filter((item) => projects.expanded.has(item.path)).map((item) => ({ workspace: item.path, chats: projects.sessions[item.path] }));
+    const next = adjacentChat(listed, chat?.sessionFile, step);
+    if (next) openChat(next.workspace, next.sessionFile);
+  };
+
+  useAppCommands({
+    "new-chat": () => void startChat().catch(report),
+    "add-project": () => void addProject().catch(report),
+    "open-settings": () => setView("settings"),
+    "toggle-sidebar": toggleSidebar,
+    "search-chats": () => {
+      setSidebarOpen(true);
+      setSearchRequest((count) => count + 1);
+      projects.refreshAll();
+    },
+    "previous-chat": () => stepChat(-1),
+    "next-chat": () => stepChat(1),
+  });
+
   const current = workspaces.find((item) => item.path === chat?.workspace);
   const settings = view === "settings";
 
   const titleBar = settings ? (
-    <TitleBar sidebarOpen={sidebarOpen} onToggleSidebar={() => setSidebarOpen((open) => !open)} icon={<Settings size={16} />} title="Settings" />
+    <TitleBar sidebarOpen={sidebarOpen} onToggleSidebar={toggleSidebar} icon={<Settings size={16} />} title="Settings" />
   ) : (
     <TitleBar
       sidebarOpen={sidebarOpen}
-      onToggleSidebar={() => setSidebarOpen((open) => !open)}
+      onToggleSidebar={toggleSidebar}
       icon={current && <Folder size={16} />}
       title={current && (title || "New chat")}
       detail={current && `${current.name} · ${current.path}`}
@@ -157,6 +187,7 @@ export function App() {
             onSelectChat={openChat}
             onRenameChat={(workspace, session, name) => void renameChat(workspace, session, name).catch(report)}
             onSearch={projects.refreshAll}
+            searchRequest={searchRequest}
           />
         )
       }

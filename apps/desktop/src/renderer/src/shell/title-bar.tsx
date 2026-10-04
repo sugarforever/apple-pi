@@ -1,5 +1,6 @@
 import React, { type ReactNode } from "react";
 import { PanelLeft } from "lucide-react";
+import { shortcut } from "./shortcut.js";
 
 export interface TitleBarProps {
   sidebarOpen: boolean;
@@ -25,7 +26,7 @@ export function TitleBar({ sidebarOpen, onToggleSidebar, icon, title, detail, ac
           type="button"
           className="icon-button title-bar-button"
           aria-label={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
-          title={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
+          title={`${sidebarOpen ? "Hide sidebar" : "Show sidebar"} ${shortcut("B")}`}
           aria-pressed={sidebarOpen}
           onClick={onToggleSidebar}
         >

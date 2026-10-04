@@ -8,12 +8,13 @@ commands, responses, and events between that child and the renderer unchanged.
 
 ```text
 React renderer  (transcript, composer, extension UI, sidebar, settings)
-   │  window.applePi: workspaces · sessions · pi · shell
+   │  window.applePi: workspaces · sessions · pi · shell · app
 preload  (contextBridge, no logic)
-   │  IPC: workspaces:*, sessions:list, pi:open/send/respondUI/close, pi:event, shell:*
+   │  IPC: workspaces:*, sessions:list, pi:open/send/respondUI/close, pi:event, shell:*, app:command
 Electron main
    ├─ pi-ipc.ts        validates the sender and payload shape, forwards the rest
    ├─ PiProcessPool    one child per session, cap of 6, idle LRU eviction, stopAll on quit
+   ├─ app-menu.ts      native menu; UI items send one app:command to the renderer
    ├─ shell-env.ts     login-shell environment for the children (macOS/Linux)
    └─ app-catalog.ts   the list of workspaces Apple Pi Lite remembers
    │  JSON lines over stdio

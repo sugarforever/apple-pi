@@ -30,13 +30,14 @@ describe("applePi preload API contract", () => {
     const invoke = vi.fn().mockResolvedValue(undefined);
     const api = await loadExposedApi(invoke);
 
-    expect(Object.keys(api).sort()).toEqual(["pi", "sessions", "shell", "workspaces"]);
-    const surface = Object.fromEntries(["workspaces", "sessions", "pi", "shell"].map((name) => [name, Object.keys(api[name]).sort()]));
+    expect(Object.keys(api).sort()).toEqual(["app", "pi", "sessions", "shell", "workspaces"]);
+    const surface = Object.fromEntries(["workspaces", "sessions", "pi", "shell", "app"].map((name) => [name, Object.keys(api[name]).sort()]));
     expect(surface).toEqual({
       workspaces: ["list", "pick", "remove"],
       sessions: ["list"],
       pi: ["close", "onEvent", "open", "respondUI", "send"],
       shell: ["openSettingsFile", "openTerminal"],
+      app: ["onCommand"],
     });
 
     const command = { type: "prompt", message: "hi" };
@@ -78,5 +79,20 @@ describe("applePi preload API contract", () => {
     expect(listener).toHaveBeenCalledWith({ sessionKey: "key", event: { type: "agent_start" } });
     unsubscribe();
     expect(removeListener).toHaveBeenCalledWith("pi:event", handler);
+  });
+
+  it("delivers app:command menu commands to subscribers until they unsubscribe", async () => {
+    const on = vi.fn();
+    const removeListener = vi.fn();
+    const api = await loadExposedApi(vi.fn(), { on, removeListener });
+
+    const listener = vi.fn();
+    const unsubscribe = api.app.onCommand(listener);
+    const [channel, handler] = on.mock.calls[0]!;
+    expect(channel).toBe("app:command");
+    handler({}, "new-chat");
+    expect(listener).toHaveBeenCalledWith("new-chat");
+    unsubscribe();
+    expect(removeListener).toHaveBeenCalledWith("app:command", handler);
   });
 });

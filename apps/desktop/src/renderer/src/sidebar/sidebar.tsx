@@ -1,8 +1,9 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { FolderPlus, Search, SquarePen, X } from "lucide-react";
 import type { SessionInfo } from "@earendil-works/pi-coding-agent";
 import type { Workspace } from "../../../shared/pi-api.js";
 import type { ChatIndicator } from "./activity.js";
+import { shortcut } from "../shell/shortcut.js";
 import { matchesQuery, sessionTitle } from "./chats.js";
 import { ProjectRow } from "./project-row.js";
 import "./sidebar.css";
@@ -24,12 +25,24 @@ export interface SidebarProps {
   onSearch?(): void;
   /** Starting query, for visual fixtures. */
   initialQuery?: string;
+  /** Raised by the Search Chats command: a new value opens and focuses search. */
+  searchRequest?: number;
 }
 
 /** Projects and their chats, with new chat and search at the top. */
 export function Sidebar(props: SidebarProps) {
-  // Undefined while the search field is closed.
-  const [query, setQuery] = useState<string | undefined>(props.initialQuery);
+  const { searchRequest } = props;
+  // Undefined while the search field is closed. A sidebar shown by Search Chats opens on it.
+  const [query, setQuery] = useState<string | undefined>(props.initialQuery ?? (searchRequest ? "" : undefined));
+  const [seenSearchRequest, setSeenSearchRequest] = useState(searchRequest);
+  if (searchRequest !== seenSearchRequest) {
+    setSeenSearchRequest(searchRequest);
+    setQuery((current) => current ?? "");
+  }
+  const searchInput = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (searchRequest) searchInput.current?.focus();
+  }, [searchRequest]);
   const searching = Boolean(query?.trim());
   const projects = props.workspaces.map((workspace) => {
     const all = props.sessions[workspace.path];
@@ -49,7 +62,7 @@ export function Sidebar(props: SidebarProps) {
           type="button"
           className="icon-button"
           aria-label="Search chats"
-          title="Search chats"
+          title={`Search chats ${shortcut("K")}`}
           aria-pressed={query !== undefined}
           onClick={() => (query === undefined ? openSearch() : setQuery(undefined))}
         >
@@ -60,6 +73,7 @@ export function Sidebar(props: SidebarProps) {
         <div className="sidebar-search">
           <Search size={14} aria-hidden />
           <input
+            ref={searchInput}
             type="search"
             value={query}
             placeholder="Search chats"
@@ -73,13 +87,19 @@ export function Sidebar(props: SidebarProps) {
           </button>
         </div>
       )}
-      <button type="button" className="sidebar-item new-chat" onClick={props.onNewChat}>
+      <button type="button" className="sidebar-item new-chat" title={`New chat ${shortcut("N")}`} onClick={props.onNewChat}>
         <SquarePen size={16} className="sidebar-icon" aria-hidden />
         <span className="sidebar-label">New chat</span>
       </button>
       <div className="sidebar-heading">
         <span>Projects</span>
-        <button type="button" className="icon-button" onClick={props.onAddProject} aria-label="Add project folder" title="Add project folder">
+        <button
+          type="button"
+          className="icon-button"
+          onClick={props.onAddProject}
+          aria-label="Add project folder"
+          title={`Add project folder ${shortcut("O", true)}`}
+        >
           <FolderPlus size={15} />
         </button>
       </div>
