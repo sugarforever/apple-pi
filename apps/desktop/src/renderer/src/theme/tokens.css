@@ -15,15 +15,16 @@
   --color-hover: rgba(0, 0, 0, 0.045);
   --color-selected: rgba(0, 0, 0, 0.07);
 
-  /* Text */
+  /* Text. Muted meets WCAG AA (4.5:1) on every surface; faint (placeholders,
+     line numbers, disabled items) meets 3:1. */
   --color-text: #0d0d0d;
   --color-text-secondary: #5d5d5d;
-  --color-text-muted: #8f8f8f;
-  --color-text-faint: #b4b4b4;
+  --color-text-muted: #6e6e6e;
+  --color-text-faint: #8f8f8f;
 
-  /* Lines */
+  /* Lines. The focused composer's border keeps 3:1 against the canvas. */
   --color-border: #e8e8e8;
-  --color-border-focus: #cfcfcf;
+  --color-border-focus: #949494;
   --color-hairline: #ededed;
   --color-scrollbar: rgba(0, 0, 0, 0.16);
 
@@ -40,26 +41,26 @@
   /* Diffs: tinted added and removed lines, and the +/− counts on edit rows */
   --color-diff-added-bg: #e9f6ec;
   --color-diff-removed-bg: #fcebea;
-  --color-diff-added: #2f8a4a;
-  --color-diff-removed: #c4473f;
+  --color-diff-added: #237a3d;
+  --color-diff-removed: #b93f37;
 
   /* Syntax highlighting, mapped onto highlight.js classes in syntax.css */
   --color-syntax-keyword: #cf222e;
   --color-syntax-string: #0a3069;
   --color-syntax-number: #0550ae;
-  --color-syntax-comment: #6e7781;
-  --color-syntax-function: #8250df;
+  --color-syntax-comment: #636c76;
+  --color-syntax-function: #7845d6;
   --color-syntax-type: #953800;
   --color-syntax-tag: #116329;
 
   /* States */
   --color-danger: #c4322b;
   --color-danger-bg: #fdf1f0;
-  --color-warning: #b45309;
+  --color-warning: #a34b08;
   --color-focus: #3b82f6;
 
   /* Accent: the primary action in extension dialogs */
-  --color-accent: #1d6ce0;
+  --color-accent: #1a63d0;
   --color-accent-bg: #eaf2fe;
   --color-accent-bg-hover: #dce9fd;
 
@@ -122,11 +123,11 @@
 
     --color-text: #ececec;
     --color-text-secondary: #b4b4b4;
-    --color-text-muted: #8a8a8a;
-    --color-text-faint: #5e5e5e;
+    --color-text-muted: #939393;
+    --color-text-faint: #707070;
 
     --color-border: #333333;
-    --color-border-focus: #4d4d4d;
+    --color-border-focus: #6b6b6b;
     --color-hairline: #2c2c2c;
     --color-scrollbar: rgba(255, 255, 255, 0.18);
 
