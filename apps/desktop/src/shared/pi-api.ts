@@ -20,6 +20,9 @@ export interface PiProcessExit {
 /** Pushed on `pi:event`: one Pi event, or the end of that session's process. */
 export type PiSessionMessage = { sessionKey: string; event: PiProcessEvent } | { sessionKey: string; exited: PiProcessExit };
 
+/** What the native menu asks the window to do; main sends these on `app:command`. */
+export type AppCommand = "new-chat" | "add-project" | "open-settings" | "toggle-sidebar" | "search-chats" | "previous-chat" | "next-chat";
+
 export interface Workspace {
   path: string;
   name: string;
@@ -58,5 +61,9 @@ export interface ApplePiApi {
     /** Opens Pi's user settings.json in the default editor, creating it if needed. */
     openSettingsFile(): Promise<void>;
     openTerminal(workspace: string): Promise<void>;
+  };
+  app: {
+    /** Delivers native menu commands until the returned function is called. */
+    onCommand(listener: (command: AppCommand) => void): () => void;
   };
 }

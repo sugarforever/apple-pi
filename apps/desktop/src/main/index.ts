@@ -3,6 +3,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { AppCatalog } from "./app-catalog.js";
+import { installAppMenu } from "./app-menu.js";
 import { installGracefulShutdown } from "./graceful-shutdown.js";
 import { attachFileLogging, log } from "./logger.js";
 import { registerPiIpc } from "./pi-ipc.js";
@@ -96,6 +97,8 @@ async function bootstrap(): Promise<void> {
   });
   await catalog.load();
   registerPiIpc({ handle, getWindow: () => mainWindow, catalog, pool: piProcesses, spawnEnv: shellEnv });
+  // With the window closed on macOS, any menu command reopens it, which starts a new chat.
+  installAppMenu((command) => (mainWindow ? mainWindow.webContents.send("app:command", command) : createWindow()));
   createWindow();
   // Started after the window exists so a slow update check cannot delay it, and
   // so an update that is already downloaded is reported in a live session.

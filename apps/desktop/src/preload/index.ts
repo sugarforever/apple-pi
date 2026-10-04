@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { ApplePiApi, PiSessionMessage } from "../shared/pi-api.js";
+import type { AppCommand, ApplePiApi, PiSessionMessage } from "../shared/pi-api.js";
 
 /** The thin-client surface over Pi's RPC mode. Main owns the matching `pi-ipc` handlers. */
 const piApi: ApplePiApi = {
@@ -25,6 +25,13 @@ const piApi: ApplePiApi = {
   shell: {
     openSettingsFile: () => ipcRenderer.invoke("shell:openSettingsFile"),
     openTerminal: (workspace) => ipcRenderer.invoke("shell:openTerminal", workspace),
+  },
+  app: {
+    onCommand: (listener) => {
+      const handler = (_event: Electron.IpcRendererEvent, command: AppCommand) => listener(command);
+      ipcRenderer.on("app:command", handler);
+      return () => ipcRenderer.removeListener("app:command", handler);
+    },
   },
 };
 

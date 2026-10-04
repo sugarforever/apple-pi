@@ -65,6 +65,7 @@ export function Conversation({ workspaceName, isNew, onTitle, ref, ...options }:
           loadCommands={async () => (await request({ type: "get_commands" })).data.commands}
           onSend={(command) => void session.prompt(command)}
           onStop={() => void session.abort()}
+          escapeStops={extensionUI.state.dialogs.length === 0}
           onClearQueue={session.clearQueue}
           controls={
             <ModelPicker

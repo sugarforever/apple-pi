@@ -20,6 +20,8 @@ export interface ComposerProps {
   loadCommands?(): Promise<SlashCommand[]>;
   onSend(command: PromptCommand): void;
   onStop(): void;
+  /** Escape in the input stops a running turn; off while something else owns Escape, such as an extension dialog. */
+  escapeStops?: boolean;
   /** Empties Pi's queue and returns the texts it held, which go back into the draft. */
   onClearQueue?(): Promise<string[]>;
   /** Starting content, for restored drafts and visual fixtures. */
@@ -33,7 +35,7 @@ const FOLLOW_UP_KEY = typeof navigator !== "undefined" && navigator.userAgent.in
 let nextAttachment = 0;
 
 export function Composer(props: ComposerProps) {
-  const { running, disabled, placeholder = "Ask Pi anything", controls, queue, loadCommands, onSend, onStop, onClearQueue } = props;
+  const { running, disabled, placeholder = "Ask Pi anything", controls, queue, loadCommands, onSend, onStop, escapeStops, onClearQueue } = props;
   const [draft, setDraft] = useState(props.initialDraft ?? "");
   const [attachments, setAttachments] = useState<Attachment[]>(props.initialAttachments ?? []);
   const [commands, setCommands] = useState<SlashCommand[]>();
@@ -136,6 +138,11 @@ export function Composer(props: ComposerProps) {
     if (paletteOpen && event.key === "Escape") {
       event.preventDefault();
       setDismissedAt(draft);
+      return;
+    }
+    if (escapeStops && running && event.key === "Escape") {
+      event.preventDefault();
+      onStop();
       return;
     }
     if (event.key === "Enter" && !event.shiftKey) {
