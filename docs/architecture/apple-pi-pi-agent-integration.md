@@ -1,8 +1,8 @@
-# Apple Pi and Pi: the RPC thin client
+# Apple Pi Lite and Pi: the RPC thin client
 
 > Baseline: `@earendil-works/pi-coding-agent` `1.0.0`, Electron `39.8.2`, Node `>=22.22.1`.
 
-Apple Pi is a graphical client for Pi, not a second agent runtime. Electron main
+Apple Pi Lite is a graphical client for Pi, not a second agent runtime. Electron main
 runs one `pi --mode rpc` child process per open session and passes Pi's own RPC
 commands, responses, and events between that child and the renderer unchanged.
 
@@ -15,14 +15,14 @@ Electron main
    ├─ pi-ipc.ts        validates the sender and payload shape, forwards the rest
    ├─ PiProcessPool    one child per session, cap of 6, idle LRU eviction, stopAll on quit
    ├─ shell-env.ts     login-shell environment for the children (macOS/Linux)
-   └─ app-catalog.ts   the list of workspaces Apple Pi remembers
+   └─ app-catalog.ts   the list of workspaces Apple Pi Lite remembers
    │  JSON lines over stdio
 pi --mode rpc  ×N   (Electron's Node via ELECTRON_RUN_AS_NODE, bundled rpc-entry)
 ```
 
 ## Who owns what
 
-| Apple Pi | Pi |
+| Apple Pi Lite | Pi |
 | --- | --- |
 | Windows, menus, title bar, the workspace list | Sessions and their JSONL files |
 | Rendering events into a transcript | The agent loop, tools, compaction |
@@ -37,14 +37,24 @@ Sessions are listed by reading Pi's session files with Pi's exported
 
 - **Never redeclare Pi types.** Import them from `@earendil-works/pi-coding-agent`
   (type-only in the renderer, see `renderer/src/pi/types.ts`). The preload
-  contract in `shared/pi-api.ts` only adds what Apple Pi itself owns: workspaces
+  contract in `shared/pi-api.ts` only adds what Apple Pi Lite itself owns: workspaces
   and session keys.
 - **Render unknowns generically.** An unknown event, message role, content
   block, or extension UI method gets a generic block or a cancel response, never
   a crash or a hang.
-- **No Apple Pi resource logic.** Skills, extensions, packages, providers, and
+- **No Apple Pi Lite resource logic.** Skills, extensions, packages, providers, and
   settings stay in Pi. The app offers "Open settings.json" and "Open terminal
   here" and points to `pi config`, `pi install`, and `/login`.
+
+## App identity
+
+Apple Pi Lite is a separate app from the earlier Apple Pi (v0.6 and earlier,
+`verysmallwoods.applepi`). Its bundle identifier is `ai.applepi.lite`, and Electron
+derives its data folders from the product name: `~/Library/Application Support/Apple Pi Lite`
+(the workspace catalog) and `~/Library/Logs/Apple Pi Lite` on macOS. It never reads or
+migrates the earlier app's folder. Its update feed uses the `lite` channel
+(`lite-mac.yml`, `lite.yml`, `lite-linux.yml`), while the earlier app reads
+`latest*.yml` from the same GitHub releases, so neither updates into the other.
 
 ## Environment
 

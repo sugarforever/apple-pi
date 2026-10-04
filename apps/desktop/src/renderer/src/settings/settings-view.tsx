@@ -15,7 +15,7 @@ export interface SettingsViewProps {
   onOpenSettingsFile(): void;
 }
 
-/** What Apple Pi runs and where Pi's own settings live. Everything else is Pi's. */
+/** What Apple Pi Lite runs and where Pi's own settings live. Everything else is Pi's. */
 export function SettingsView({ piVersion, appVersion, onOpenSettingsFile }: SettingsViewProps) {
   return (
     <main className="settings">
@@ -31,7 +31,7 @@ export function SettingsView({ piVersion, appVersion, onOpenSettingsFile }: Sett
               <dd className="settings-mono">{piVersion}</dd>
             </div>
             <div className="settings-row">
-              <dt>Apple Pi</dt>
+              <dt>Apple Pi Lite</dt>
               <dd className="settings-mono">{appVersion}</dd>
             </div>
           </dl>

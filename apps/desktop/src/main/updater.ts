@@ -8,9 +8,12 @@ const { autoUpdater } = electronUpdater;
 /**
  * Automatic updates.
  *
- * Releases publish an electron-updater feed — `latest-mac.yml`, `latest.yml`,
- * `latest-linux.yml` — alongside the artifacts, so the updater reads the channel
- * manifest for the running platform from the newest published GitHub release. On
+ * Releases publish an electron-updater feed on the `lite` channel — `lite-mac.yml`,
+ * `lite.yml`, `lite-linux.yml` — alongside the artifacts, so the updater reads the
+ * channel manifest for the running platform from the newest published GitHub
+ * release. The earlier Apple Pi (0.6 and before) reads `latest*.yml` from the same
+ * releases, which Apple Pi Lite never publishes, so neither app updates into the
+ * other. On
  * macOS it hands the archive to Squirrel.Mac, which is what enforces that an
  * update carries the same code signature as the running app; nothing here has to
  * verify that itself.
@@ -64,7 +67,7 @@ export function startAutoUpdater(channel: UpdateChannel = resolveUpdateChannel(p
   const onUpdateNotAvailable = (): void => log.info("no update available", { channel });
   const onUpdateAvailable = (info: UpdateInfo): void => log.info("update available; downloading in the background", { version: info.version });
   const onUpdateDownloaded = (info: UpdateDownloadedEvent): void =>
-    log.info("update downloaded; it will install when Apple Pi quits", { version: info.version });
+    log.info("update downloaded; it will install when Apple Pi Lite quits", { version: info.version });
   const onError = (error: Error): void => log.warn("update check failed", { message: error?.message ?? String(error) });
 
   // No prompt: the renderer has no update UI, and installing on quit means a user

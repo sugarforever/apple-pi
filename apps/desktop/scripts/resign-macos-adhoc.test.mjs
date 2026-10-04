@@ -6,13 +6,13 @@ import { adHocSignInvocation } from "./resign-macos-adhoc.mjs";
 const context = {
   electronPlatformName: "darwin",
   appOutDir: "/tmp/apple-pi/mac-arm64",
-  packager: { appInfo: { productFilename: "Apple Pi" } },
+  packager: { appInfo: { productFilename: "Apple Pi Lite" } },
 };
 
 test("deeply re-signs the unsigned local macOS app after Electron Builder signs it", () => {
   assert.deepEqual(adHocSignInvocation(context, { APPLE_PI_ADHOC_RESIGN: "1" }), {
     command: "codesign",
-    args: ["--force", "--deep", "--sign", "-", "/tmp/apple-pi/mac-arm64/Apple Pi.app"],
+    args: ["--force", "--deep", "--sign", "-", "/tmp/apple-pi/mac-arm64/Apple Pi Lite.app"],
   });
 });
 

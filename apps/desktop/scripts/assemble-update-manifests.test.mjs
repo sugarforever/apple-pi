@@ -123,6 +123,7 @@ describe("parseStagedName", () => {
   });
 
   it("ignores anything else, including a published manifest", () => {
+    assert.equal(parseStagedName("lite-mac.yml"), undefined);
     assert.equal(parseStagedName("latest-mac.yml"), undefined);
     assert.equal(parseStagedName("update-mac.yml"), undefined);
   });
@@ -192,9 +193,9 @@ test("writes the canonical manifest each platform's updater looks for", async (t
 
   assert.deepEqual(
     written.map((entry) => path.basename(entry.target)),
-    ["latest-mac.yml", "latest.yml", "latest-linux.yml"],
+    ["lite-mac.yml", "lite.yml", "lite-linux.yml"],
   );
-  assert.equal(await readFile(path.join(outputDir, "latest-mac.yml"), "utf8"), MERGED_MAC);
+  assert.equal(await readFile(path.join(outputDir, "lite-mac.yml"), "utf8"), MERGED_MAC);
   assert.deepEqual(written[0].archives, ["apple-pi-0.5.0-mac-arm64.zip", "apple-pi-0.5.0-mac-x64.zip"]);
 });
 
@@ -205,7 +206,7 @@ test("writes a manifest it can read back", async (t) => {
   t.after(() => rm(root, { recursive: true, force: true }));
 
   await assembleUpdateManifests({ inputDir, outputDir, platforms: ["mac"] });
-  const written = parseManifest(await readFile(path.join(outputDir, "latest-mac.yml"), "utf8"));
+  const written = parseManifest(await readFile(path.join(outputDir, "lite-mac.yml"), "utf8"));
 
   assert.deepEqual(written, mergeManifests([ARM64, X64]));
 });
@@ -220,7 +221,7 @@ test("carries a per-file blockMapSize through the published feed (issue #72)", a
   t.after(() => rm(root, { recursive: true, force: true }));
 
   await assembleUpdateManifests({ inputDir, outputDir, platforms: ["mac", "win", "linux"] });
-  const written = parseManifest(await readFile(path.join(outputDir, "latest-linux.yml"), "utf8"));
+  const written = parseManifest(await readFile(path.join(outputDir, "lite-linux.yml"), "utf8"));
 
   assert.equal(written.files.find((file) => file.url.endsWith(".AppImage")).blockMapSize, 146371);
   assert.equal("blockMapSize" in written.files.find((file) => file.url.endsWith(".deb")), false);

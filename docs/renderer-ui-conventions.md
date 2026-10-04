@@ -1,6 +1,6 @@
 # Renderer UI conventions
 
-Apple Pi's renderer is a compact, text-first desktop interface. Its source of truth is the token set in [`theme/tokens.css`](../apps/desktop/src/renderer/src/theme/tokens.css), with resets in [`theme/base.css`](../apps/desktop/src/renderer/src/theme/base.css).
+Apple Pi Lite's renderer is a compact, text-first desktop interface. Its source of truth is the token set in [`theme/tokens.css`](../apps/desktop/src/renderer/src/theme/tokens.css), with resets in [`theme/base.css`](../apps/desktop/src/renderer/src/theme/base.css).
 
 ## Tokens
 

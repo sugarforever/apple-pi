@@ -16,7 +16,7 @@ applyProcessHardening();
 
 // Local dumps only: no crash report leaves the machine. Enabling remote crash
 // reporting is a privacy decision that needs an explicit opt-in first.
-crashReporter.start({ productName: "Apple Pi", companyName: "Apple Pi", uploadToServer: false, compress: true });
+crashReporter.start({ productName: "Apple Pi Lite", companyName: "Apple Pi Lite", uploadToServer: false, compress: true });
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 const piProcesses = new PiProcessPool();
@@ -72,7 +72,7 @@ function createWindow(): void {
 
 async function bootstrap(): Promise<void> {
   const logPath = attachFileLogging(app.getPath("logs"));
-  log.info("Apple Pi starting", {
+  log.info("Apple Pi Lite starting", {
     version: app.getVersion(),
     electron: process.versions.electron,
     node: process.versions.node,
@@ -100,7 +100,7 @@ async function bootstrap(): Promise<void> {
   // Started after the window exists so a slow update check cannot delay it, and
   // so an update that is already downloaded is reported in a live session.
   updates = startAutoUpdater();
-  log.info("Apple Pi ready");
+  log.info("Apple Pi Lite ready");
 }
 
 // Two app instances would mean two Pi writers on the same session file, so a
@@ -121,7 +121,7 @@ if (!app.requestSingleInstanceLock()) {
     .then(bootstrap)
     .catch((error: unknown) => {
       log.error("failed to start", { error });
-      dialog.showErrorBox("Apple Pi failed to start", error instanceof Error ? error.message : String(error));
+      dialog.showErrorBox("Apple Pi Lite failed to start", error instanceof Error ? error.message : String(error));
       app.exit(1);
     });
 
