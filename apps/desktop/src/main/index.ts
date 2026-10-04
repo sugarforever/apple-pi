@@ -5,10 +5,12 @@ import { AgentHostSupervisor } from "./agent-host-supervisor.js";
 import { AppCatalog, type ModelRef } from "./app-catalog.js";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { installGracefulShutdown } from "./graceful-shutdown.js";
+import { registerPiIpc } from "./pi-ipc.js";
+import { PiProcessPool } from "./pi-process.js";
 import { CredentialBroker, CredentialFile } from "./credential-broker.js";
 import { ProviderCredentialController } from "./provider-credential-controller.js";
 import { attachFileLogging, log } from "./logger.js";
-import { applyProcessHardening, applySessionPolicy, applyWindowPolicy } from "./security.js";
+import { applyProcessHardening, applySessionPolicy, applyWindowPolicy, assertTrustedSender } from "./security.js";
 import { startAutoUpdater, type AutoUpdateHandle } from "./updater.js";
 import type { CustomProviderDefinition, SessionSnapshot, SkillScope } from "@apple-pi/protocol";
 
@@ -33,6 +35,7 @@ const host = new AgentHostSupervisor({
   hostPath: () => (app.isPackaged ? path.join(app.getAppPath(), "out", "agent-host", "index.js") : path.resolve(process.cwd(), "../agent-host/dist/index.js")),
   hostVersion: () => app.getVersion(),
 });
+const piProcesses = new PiProcessPool();
 let mainWindow: BrowserWindow | undefined;
 let workspacePath: string | undefined;
 let catalog: AppCatalog;
@@ -40,18 +43,9 @@ let credentials: CredentialBroker;
 let providerCredentials: ProviderCredentialController;
 let updates: AutoUpdateHandle | undefined;
 
-/**
- * The renderer is the only legitimate caller of the IPC surface, and only from
- * its main frame. Anything else is rejected rather than answered.
- */
-function assertTrustedSender(event: IpcMainInvokeEvent): void {
-  if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents) throw new Error("Rejected IPC call from an untrusted sender");
-  if (event.senderFrame && event.senderFrame !== mainWindow.webContents.mainFrame) throw new Error("Rejected IPC call from a subframe");
-}
-
 function handle(channel: string, handler: (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown): void {
   ipcMain.handle(channel, async (event, ...args: unknown[]) => {
-    assertTrustedSender(event);
+    assertTrustedSender(event, mainWindow);
     return handler(event, ...args);
   });
 }
@@ -116,6 +110,7 @@ async function bootstrap(): Promise<void> {
     },
   });
   await catalog.load();
+  registerPiIpc({ handle, getWindow: () => mainWindow, catalog, pool: piProcesses });
   credentials = new CredentialBroker(
     process.platform,
     {
@@ -179,7 +174,11 @@ if (!app.requestSingleInstanceLock()) {
   });
 }
 
-installGracefulShutdown(app, host);
+installGracefulShutdown(app, {
+  stop: async () => {
+    await Promise.allSettled([host.stop(), piProcesses.stopAll()]);
+  },
+});
 // Downloads install on quit, which electron-updater arranges itself; this only
 // releases the listeners and the pending check.
 app.on("will-quit", () => updates?.dispose());
